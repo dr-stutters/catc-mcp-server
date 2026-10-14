@@ -1,0 +1,42 @@
+# catc-mcp-server over streamable HTTP on cortex (host port 8034).
+#
+#   .env needs CATC_URL/USERNAME/PASSWORD (+ CATC_VERIFY_SSL=false for labs) and MCP_AUTH_TOKENS
+#   (generate with `catc-mcp-server token <name>`).
+#   CORE_READ_TOKEN=$(gh auth token) docker compose up -d --build
+#
+# Writes are on (preview-first); the dangerous tier (deploy, provision, SWIM, deletes) stays off.
+services:
+  catc-mcp-server:
+    build:
+      context: .
+      secrets:
+        - core_read_token
+    image: catc-mcp-server:latest
+    container_name: catc-mcp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8000"
+      MCP_CACHE_DIR: /cache
+      MCP_ENABLE_WRITES: "true"
+      MCP_ENABLE_DANGEROUS: "false"
+    ports:
+      - "${MCP_PUBLISH_PORT:-8034}:8000"
+    volumes:
+      - spec-cache:/cache
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  core_read_token:
+    environment: CORE_READ_TOKEN
+
+volumes:
+  spec-cache:
