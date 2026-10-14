@@ -6,10 +6,23 @@ import httpx
 from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
 from stutters_mcp_core import ServerSpec, build_server
+from stutters_mcp_core.spec import SpecSource, bundled
 
 from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
-from catc_mcp.tools import system
+from catc_mcp.tools import (
+    assurance,
+    compliance,
+    discovery,
+    inventory,
+    sites,
+    smart,
+    swim,
+    system,
+    tags,
+    templates,
+    topology,
+)
 
 INSTRUCTIONS = """
 Tools for Cisco Catalyst Center (formerly DNA Center): inventory, sites, assurance health and issues,
@@ -32,7 +45,39 @@ SPEC = ServerSpec(
     instructions=INSTRUCTIONS,
 )
 
-REGISTER = [system.register]
+REGISTER = [
+    system.register,
+    sites.register,
+    inventory.register,
+    assurance.register,
+    smart.register,
+    topology.register,
+    compliance.register,
+    templates.register,
+    swim.register,
+    discovery.register,
+    tags.register,
+]
+
+# The appliance doesn't serve its OpenAPI document over the API, so a copy ships in the wheel
+# (exported from a 3.2.2-75131 Developer Toolkit; see scripts/bundle_spec.py and the README).
+SPEC_VERSION = "3.2.2-75131"
+SPEC_RESOURCE = "specs/catc-3.2.2.json.gz"
+
+
+def spec_sources(app: CatcApp) -> list[SpecSource]:
+    async def version(_app: CatcApp) -> str:
+        return SPEC_VERSION
+
+    return [
+        SpecSource(
+            "intent",
+            bundled("catc_mcp", SPEC_RESOURCE),
+            client=lambda a: a.api,
+            version=version,
+            description=f"Catalyst Center {SPEC_VERSION} Intent/System/Data API (bundled)",
+        )
+    ]
 
 
 def create_server(
@@ -47,5 +92,6 @@ def create_server(
         client_factory=lambda s: CatcApp(s, transport=transport),
         register=REGISTER,
         status=CatcApp.status,
+        spec_sources=spec_sources,
         auth=auth,
     )

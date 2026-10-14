@@ -1,0 +1,41 @@
+{
+    "name": "AAA-Configuration",
+    "description": "",
+    "tags": [],
+    "author": "SYSTEM",
+    "deviceTypes": [
+        {
+            "productFamily": "Switches and Hubs",
+            "productSeries": "Cisco Catalyst 9300 Series Switches"
+        }
+    ],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "templateContent": "aaa new-model\n!\naaa authentication username-prompt \"Authorized Username:\"\naaa authentication login admin local\naaa authorization console\naaa authorization exec admin local\naaa authentication login admin local-case\naaa authorization exec admin local \n!\nmac address-table notification mac-move\nmac address-table notification threshold\nmac-address-table notification change\n!",
+    "rollbackTemplateContent": "",
+    "templateParams": [],
+    "rollbackTemplateParams": [],
+    "composite": false,
+    "containingTemplates": [],
+    "language": "JINJA",
+    "id": "72a0afc4-0b5c-4c69-b47f-f647eb34d71b",
+    "customParamsOrder": false,
+    "createTime": 1777310851887,
+    "lastUpdateTime": 1777310851887,
+    "latestVersionTime": 0,
+    "projectName": "Reference Templates",
+    "projectId": "5d96754b-60e7-4159-880e-ad8e8425786d",
+    "parentTemplateId": "72a0afc4-0b5c-4c69-b47f-f647eb34d71b",
+    "validationErrors": {
+        "templateErrors": [],
+        "rollbackTemplateErrors": [],
+        "templateId": "72a0afc4-0b5c-4c69-b47f-f647eb34d71b",
+        "templateVersion": null
+    },
+    "noOfConflicts": 0,
+    "templateDeploymentType": "DAYN",
+    "templateSource": "SYSTEM_DEFINED",
+    "projectAssociated": true,
+    "editable": false,
+    "documentDatabase": false
+}

@@ -1,0 +1,207 @@
+"""Shared helpers for tools: id/name resolution, time windows, field projection."""
+
+from __future__ import annotations
+
+import ipaddress
+import re
+import time
+from typing import Any
+from urllib.parse import quote
+
+from stutters_mcp_core import InvalidRequest, NotFound
+from stutters_mcp_core.http import OffsetLimit
+
+from catc_mcp.client import CatcApp, safe_id
+
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$|^([0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$")
+
+# Assurance "data" API: {"response": [...], "page": {"count": N}}, 1-based offset; issues accept
+# at most 25 per request.
+DATA_PAGER = OffsetLimit(items="response", total="page.count", one_based=True, max_page=25)
+
+DEVICE_FIELDS = [
+    "hostname",
+    "managementIpAddress",
+    "platformId",
+    "softwareVersion",
+    "role",
+    "reachabilityStatus",
+    "collectionStatus",
+    "serialNumber",
+    "family",
+    "upTime",
+    "id",
+]
+
+
+def is_uuid(value: str) -> bool:
+    return bool(UUID_RE.match(value.strip()))
+
+
+def is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value.strip())
+    except ValueError:
+        return False
+    return True
+
+
+def norm_mac(mac: str) -> str:
+    """aa:bb:cc:dd:ee:ff from any of the usual notations."""
+    raw = re.sub(r"[^0-9a-fA-F]", "", mac)
+    if len(raw) != 12 or not MAC_RE.match(mac.strip()):
+        raise InvalidRequest(f"{mac!r} is not a MAC address (use aa:bb:cc:dd:ee:ff or aabb.ccdd.eeff).")
+    raw = raw.lower()
+    return ":".join(raw[i : i + 2] for i in range(0, 12, 2))
+
+
+def seg(value: str) -> str:
+    """Quote a free-text value for use as one URL path segment."""
+    value = value.strip()
+    if value in ("", ".", ".."):
+        raise InvalidRequest(f"Invalid value {value!r}.")
+    return quote(value, safe="")
+
+
+def window(hours: float) -> dict[str, int]:
+    """startTime/endTime (epoch ms) covering the last `hours`."""
+    end = int(time.time() * 1000)
+    return {"startTime": end - int(hours * 3600 * 1000), "endTime": end}
+
+
+def pick(obj: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+    return {f: obj[f] for f in fields if obj.get(f) not in (None, "")}
+
+
+def ensure_list(v: Any) -> list[Any]:
+    if v is None:
+        return []
+    return v if isinstance(v, list) else [v]
+
+
+# --- resolution ----------------------------------------------------------------------------
+
+
+async def resolve_device(app: CatcApp, ref: str) -> dict[str, Any]:
+    """A network device record from its id, management IP, serial number or hostname (exact, then
+    'hostname.*' so a short name matches an FQDN)."""
+    ref = ref.strip()
+    if not ref:
+        raise InvalidRequest("Give a device hostname, management IP, serial number or id.")
+    if is_uuid(ref):
+        dev = await app.get_response(f"/dna/intent/api/v1/network-device/{ref}")
+        if isinstance(dev, dict) and dev.get("id"):
+            return dev
+        raise NotFound(f"No network device with id {ref}. Use catc_list_devices to find it.")
+    low = ref.lower()
+    # (query, client-side check): the API treats values as patterns, so re-check matches exactly.
+    queries: list[tuple[dict[str, str], Any]]
+    if is_ip(ref):
+        queries = [({"managementIpAddress": ref}, lambda d: d.get("managementIpAddress") == ref)]
+    else:
+        queries = [
+            ({"hostname": ref}, lambda d: str(d.get("hostname", "")).lower() == low),
+            ({"serialNumber": ref}, lambda d: low in str(d.get("serialNumber", "")).lower().split(", ")),
+            ({"hostname": ref + ".*"}, lambda d: str(d.get("hostname", "")).lower().startswith(low + ".")),
+        ]
+    for q, ok in queries:
+        found = ensure_list(await app.get_response("/dna/intent/api/v1/network-device", q))
+        found = [d for d in found if isinstance(d, dict) and ok(d)]
+        if len(found) == 1:
+            return dict(found[0])
+        if len(found) > 1:
+            names = ", ".join(f"{d.get('hostname')} ({d.get('managementIpAddress')})" for d in found[:10])
+            raise InvalidRequest(f"{ref!r} matches {len(found)} devices: {names}. Use the IP or id.")
+    raise NotFound(
+        f"No network device matches {ref!r} (tried IP/hostname/serial). Use catc_list_devices to search."
+    )
+
+
+async def resolve_site(app: CatcApp, ref: str) -> dict[str, Any]:
+    """A site from its id, full name hierarchy ('Global/US/SJC-1/Floor 1') or unique short name."""
+    ref = ref.strip().strip("/")
+    if not ref:
+        raise InvalidRequest("Give a site id or name hierarchy such as 'Global/Area/Building'.")
+    if is_uuid(ref):
+        one = await app.get_response(f"/dna/intent/api/v1/sites/{ref}")
+        if isinstance(one, dict) and one.get("id"):
+            return one
+        raise NotFound(f"No site with id {ref}. Use catc_get_site_hierarchy to list sites.")
+    if "/" in ref or ref.lower() == "global":
+        if ref.lower() != "global" and not ref.lower().startswith("global/"):
+            ref = "Global/" + ref
+        found = ensure_list(await app.get_response("/dna/intent/api/v1/sites", {"nameHierarchy": ref}))
+        found = [s for s in found if str(s.get("nameHierarchy", "")).lower() == ref.lower()]
+    else:
+        found = ensure_list(await app.get_response("/dna/intent/api/v1/sites", {"name": ref}))
+        found = [s for s in found if str(s.get("name", "")).lower() == ref.lower()]
+    if len(found) == 1:
+        site: dict[str, Any] = found[0]
+        return site
+    if len(found) > 1:
+        paths = ", ".join(str(s.get("nameHierarchy")) for s in found[:10])
+        raise InvalidRequest(f"Site name {ref!r} is ambiguous: {paths}. Use the full hierarchy.")
+    raise NotFound(f"No site {ref!r}. Use catc_get_site_hierarchy to list sites.")
+
+
+async def resolve_template(app: CatcApp, ref: str) -> dict[str, Any]:
+    """A template (summary record with templateId/projectName) from its id, 'Project/Name' or a
+    unique template name."""
+    ref = ref.strip()
+    if is_uuid(ref):
+        tpl = await app.get_response(f"/dna/intent/api/v1/template-programmer/template/{ref}")
+        if isinstance(tpl, dict) and tpl.get("id"):
+            return {"templateId": tpl["id"], **tpl}
+        raise NotFound(f"No template with id {ref}.")
+    project, _, name = ref.rpartition("/")
+    found = [
+        t
+        for t in await list_all_templates(app)
+        if str(t.get("name") or "").lower() == name.lower()
+        and (not project or str(t.get("projectName", "")).lower() == project.lower())
+    ]
+    if len(found) == 1:
+        return found[0]
+    if len(found) > 1:
+        where = ", ".join(f"{t.get('projectName')}/{t.get('name')}" for t in found)
+        raise InvalidRequest(f"Template {ref!r} is ambiguous: {where}. Use 'Project/Name' or the id.")
+    raise NotFound(f"No template {ref!r}. Use catc_list_templates to find it.")
+
+
+async def list_all_templates(app: CatcApp, **params: Any) -> list[dict[str, Any]]:
+    """Every template, committed or not (the v1 list hides never-committed templates unless
+    unCommitted=true, which returns both)."""
+    data = await app.api.get(
+        "/dna/intent/api/v1/template-programmer/template", {"unCommitted": "true", **params}
+    )
+    return [t for t in ensure_list(data) if isinstance(t, dict)]
+
+
+async def resolve_project(app: CatcApp, ref: str) -> dict[str, Any]:
+    """A template project ({"id", "name", ...}) from its id or name."""
+    ref = ref.strip()
+    if is_uuid(ref):
+        proj = await app.api.get(f"/dna/intent/api/v1/template-programmer/project/{safe_id(ref)}")
+        if isinstance(proj, dict) and proj.get("id"):
+            return dict(proj)
+        raise NotFound(f"No template project with id {ref}.")
+    found = ensure_list(await app.api.get("/dna/intent/api/v1/template-programmer/project", {"name": ref}))
+    found = [p for p in found if isinstance(p, dict) and str(p.get("name", "")).lower() == ref.lower()]
+    if len(found) == 1:
+        return dict(found[0])
+    raise NotFound(f"No template project named {ref!r}. Use catc_list_template_projects.")
+
+
+async def resolve_tag(app: CatcApp, ref: str) -> dict[str, Any]:
+    ref = ref.strip()
+    if is_uuid(ref):
+        tag = await app.get_response(f"/dna/intent/api/v1/tag/{ref}")
+        if isinstance(tag, dict) and tag.get("id"):
+            return dict(tag)
+        raise NotFound(f"No tag with id {ref}.")
+    found = ensure_list(await app.get_response("/dna/intent/api/v1/tag", {"name": ref}))
+    found = [t for t in found if isinstance(t, dict) and str(t.get("name", "")).lower() == ref.lower()]
+    if len(found) == 1:
+        return dict(found[0])
+    raise NotFound(f"No tag named {ref!r}. Use catc_list_tags.")
