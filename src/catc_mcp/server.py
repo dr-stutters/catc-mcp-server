@@ -11,12 +11,17 @@ from stutters_mcp_core.spec import SpecSource, bundled
 from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
 from catc_mcp.tools import (
+    archive,
     assurance,
     compliance,
+    credentials,
     dangerous,
     discovery,
     inventory,
+    ipam,
     ops_writes,
+    platform,
+    settings_writes,
     site_writes,
     sites,
     smart,
@@ -29,14 +34,21 @@ from catc_mcp.tools import (
 )
 
 INSTRUCTIONS = """
-Tools for Cisco Catalyst Center (formerly DNA Center): inventory, sites, assurance health and issues,
-topology, compliance, templates, software images (SWIM), discovery, path trace and read-only CLI.
+Tools for Cisco Catalyst Center (formerly DNA Center): inventory, sites and network settings,
+credentials and discovery, provisioning, templates, compliance and config drift, assurance (health,
+issues, events, clients), path trace, read-only CLI, software images (SWIM) and IP pools.
 
 Object model: sites form a hierarchy Global/<area>/<building>/<floor>; network devices are assigned
 to sites; ids are UUIDs. Most tools accept a name, IP, serial or site path and resolve the id.
 Start with catc_status, then catc_list_devices or catc_get_site_hierarchy.
-Smart tools: catc_device_360 (everything about one device), catc_client_360 (one client by MAC),
-catc_path_trace (source -> destination path), catc_run_show_commands (read-only show commands).
+Workflows:
+- Onboard: catc_create_global_credential -> catc_create_discovery (wait=true) -> catc_create_site ->
+  catc_update_site_settings -> catc_assign_devices_to_site -> catc_provision_devices.
+- Day-N change: catc_create_template -> catc_commit_template -> catc_preview_template ->
+  catc_deploy_template -> verify with catc_run_show_commands -> catc_run_compliance /
+  catc_compare_device_configs.
+- Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
+  commands) -> catc_run_show_commands; catc_path_trace; catc_list_events.
 Asynchronous operations return a task id; check it with catc_get_task.
 Anything not covered: catc_search_spec -> catc_get_definition -> catc_api_call.
 """.strip()
@@ -61,7 +73,12 @@ REGISTER = [
     swim.register,
     discovery.register,
     tags.register,
+    credentials.register,
+    archive.register,
+    ipam.register,
+    platform.register,
     site_writes.register,
+    settings_writes.register,
     template_writes.register,
     ops_writes.register,
     dangerous.register,

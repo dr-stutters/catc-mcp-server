@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -10,7 +11,7 @@ from pydantic import Field
 from stutters_mcp_core import ToolRegistrar, get_client, object_result
 
 from catc_mcp.client import CatcApp
-from catc_mcp.common import ensure_list, resolve_device
+from catc_mcp.common import ensure_list, pick, resolve_device
 
 STATUSES = ["COMPLIANT", "NON_COMPLIANT", "IN_PROGRESS", "NOT_AVAILABLE", "NOT_APPLICABLE", "ERROR"]
 CATEGORIES = Literal["INTENT", "RUNNING_CONFIG", "IMAGE", "PSIRT", "DESIGN_OOD", "EOX", "NETWORK_SETTINGS"]
@@ -71,8 +72,10 @@ def register(reg: ToolRegistrar) -> None:
         ] = False,
     ) -> ToolResult:
         """Compliance report for one device per category (startup vs running config, image, PSIRT,
-        EoX, network settings, network profile, fabric): status, last check time and, with
-        include_diff, what differs."""
+        EoX, network settings, network profile, fabric): status, message, last check time, whether
+        Catalyst Center can remediate it and, with include_diff, what differs. Non-compliant items come
+        first. For RUNNING_CONFIG (unsaved changes) see the actual lines with
+        catc_compare_device_configs(compare='startup'). Re-check with catc_run_compliance."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
         params: dict[str, Any] = {}
@@ -81,4 +84,19 @@ def register(reg: ToolRegistrar) -> None:
         if include_diff:
             params["diffList"] = "true"
         detail = await app.get_response(f"/dna/intent/api/v1/compliance/{dev['id']}/detail", params)
-        return object_result({"device": dev.get("hostname"), "deviceUuid": dev["id"], "compliance": detail})
+        rows = []
+        for d in ensure_list(detail):
+            if not isinstance(d, dict):
+                continue
+            row = pick(
+                d, ["complianceType", "status", "state", "message", "severity", "remediationSupported"]
+            )
+            if isinstance(d.get("lastUpdateTime"), int | float):
+                row["checked"] = datetime.fromtimestamp(d["lastUpdateTime"] / 1000, tz=UTC).strftime(
+                    "%Y-%m-%d %H:%M UTC"
+                )
+            if d.get("sourceInfoList"):
+                row["differences"] = d["sourceInfoList"]
+            rows.append(row)
+        rows.sort(key=lambda r: (r.get("status") == "COMPLIANT", str(r.get("complianceType"))))
+        return object_result({"device": dev.get("hostname"), "deviceUuid": dev["id"], "compliance": rows})

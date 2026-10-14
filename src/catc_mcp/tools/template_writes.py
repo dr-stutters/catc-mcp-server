@@ -2,6 +2,8 @@
 template to devices is in the dangerous tier (tools/dangerous.py)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import contextlib
+import json
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -30,6 +32,23 @@ FAMILIES = Literal[
     "Cisco Interfaces and Modules",
 ]
 TP = "/dna/intent/api/v1/template-programmer"
+
+
+def template_task_result(data: Any) -> tuple[Any, list[str]]:
+    """(template id, warnings) from a template create/update task's `data`. It is the bare id, or,
+    when Catalyst Center has remarks about the content, a JSON string
+    {"templateId", "templateErrors": [{"type", "message", "lineNumber"}]}."""
+    if isinstance(data, str) and data.startswith("{"):
+        with contextlib.suppress(ValueError):
+            data = json.loads(data)
+    if not isinstance(data, dict):
+        return data, []
+    warnings = [
+        f"line {e.get('lineNumber')}: {e.get('type')}: {e.get('message')}"
+        for e in data.get("templateErrors") or []
+        if isinstance(e, dict)
+    ]
+    return data.get("templateId"), warnings
 
 
 async def project_by_name(app: CatcApp, name: str) -> dict[str, Any] | None:
@@ -132,7 +151,11 @@ def register(reg: ToolRegistrar) -> None:
             job = await app.run_job(
                 "POST", f"{TP}/project/{proj['id']}/template", body, ctx=ctx, what="create template"
             )
-            return {"template_id": job.get("data"), "name": f"{proj['name']}/{name}", "committed": False}
+            tid, warnings = template_task_result(job.get("data"))
+            out: dict[str, Any] = {"template_id": tid, "name": f"{proj['name']}/{name}", "committed": False}
+            if warnings:
+                out["template_warnings"] = warnings
+            return out
 
         return await preview_or_apply(
             ctx, tool="catc_create_template", args=args, confirm=confirm, plan=plan, apply=apply
@@ -169,7 +192,11 @@ def register(reg: ToolRegistrar) -> None:
 
         async def apply() -> Any:
             job = await app.run_job("PUT", f"{TP}/template", body, ctx=ctx, what="update template")
-            return {"template_id": tid, "progress": job.get("progress"), "committed": False}
+            _, warnings = template_task_result(job.get("data"))
+            out: dict[str, Any] = {"template_id": tid, "progress": job.get("progress"), "committed": False}
+            if warnings:
+                out["template_warnings"] = warnings
+            return out
 
         return await preview_or_apply(
             ctx,

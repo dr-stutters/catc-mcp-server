@@ -1,6 +1,7 @@
 """Inventory reads: devices, interfaces, running config, modules."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import asyncio
 import re
 from typing import Annotated, Any, Literal
 
@@ -10,6 +11,7 @@ from pydantic import Field
 from stutters_mcp_core import (
     ResponseFormat,
     ToolRegistrar,
+    UpstreamError,
     get_client,
     list_result,
     object_result,
@@ -204,7 +206,7 @@ def register(reg: ToolRegistrar) -> None:
         match: Annotated[
             str | None,
             Field(
-                description="Only return config sections whose first line contains this text, "
+                description="Only return top-level config sections whose first line starts with this text, "
                 "e.g. 'interface Vlan'"
             ),
         ] = None,
@@ -228,8 +230,11 @@ def register(reg: ToolRegistrar) -> None:
                     current.append(line)
             if current:
                 sections.append("\n".join(current))
-            hits = [s for s in sections if match.lower() in s.splitlines()[0].lower()]
-            text = "\n!\n".join(hits) if hits else f"(no config section starts with text matching {match!r})"
+            want = " ".join(match.lower().split())
+            heads = [(" ".join(s.splitlines()[0].lower().split()), s) for s in sections]
+            # An exact header wins ('interface Gi1/0/2' shouldn't also return Gi1/0/20-24).
+            hits = [s for h, s in heads if h == want] or [s for h, s in heads if h.startswith(want)]
+            text = "\n!\n".join(hits) if hits else f"(no config section starts with {match!r})"
         return text_result(
             f"! {dev.get('hostname')} ({dev.get('managementIpAddress')}) running config\n{text}"
         )
@@ -263,6 +268,111 @@ def register(reg: ToolRegistrar) -> None:
         ]
         page.items = [pick(m, fields) for m in page.items if isinstance(m, dict)]
         return list_result(page, fmt=response_format, extra={"device": dev.get("hostname")})
+
+    @reg.read(title="Device hardware and licences")
+    async def catc_get_device_hardware(ctx: Context, device: DeviceRef) -> ToolResult:
+        """Hardware and licensing of one device in one call: stack members (role, state, priority,
+        serial, platform, software) and StackWise Virtual links, PoE budget (allocated / consumed /
+        remaining watts) and the PoE ports drawing power, module count, and smart-licensing state with
+        the licences in use. Use catc_list_device_modules for the full module list."""
+        app: CatcApp = get_client(ctx)
+        dev = await resolve_device(app, device)
+        did = str(dev["id"])
+        results: tuple[Any, ...] = await asyncio.gather(
+            app.get_response(f"/dna/intent/api/v1/network-device/{did}/stack"),
+            app.get_response(f"/dna/intent/api/v1/network-device/{did}/poe"),
+            app.get_response(f"/dna/intent/api/v1/network-device/{did}/interface/poe-detail"),
+            app.get_response("/dna/intent/api/v1/network-device/module/count", {"deviceId": did}),
+            fetch_all(app.pager, app.api, "/dna/intent/api/v1/networkDeviceLicenses", cap=5000),
+            return_exceptions=True,
+        )
+        stack, poe, poe_ports, modules, licences = results
+        out: dict[str, Any] = {"device": f"{dev.get('hostname')} ({dev.get('managementIpAddress')})"}
+        unavailable: dict[str, str] = {}
+
+        def failed(key: str, v: Any) -> bool:
+            if isinstance(v, BaseException):
+                if not isinstance(v, UpstreamError):
+                    raise v
+                unavailable[key] = str(v)[:200]
+                return True
+            return False
+
+        if not failed("stack", stack) and isinstance(stack, dict):
+            members = [
+                pick(
+                    m,
+                    [
+                        "stackMemberNumber",
+                        "role",
+                        "state",
+                        "switchPriority",
+                        "serialNumber",
+                        "platformId",
+                        "softwareImage",
+                        "macAddress",
+                    ],
+                )
+                for m in ensure_list(stack.get("stackSwitchInfo"))
+                if isinstance(m, dict)
+            ]
+            out["stack"] = members or "not a stack"
+            if stack.get("svlSwitchInfo"):
+                out["stackwise_virtual"] = stack["svlSwitchInfo"]
+        if not failed("poe", poe) and isinstance(poe, dict):
+            budget = {k: v for k, v in poe.items() if v is not None}
+            out["poe"] = budget or "no PoE"
+        if not failed("poe_ports", poe_ports):
+            ports = [
+                pick(
+                    p,
+                    [
+                        "interfaceName",
+                        "operStatus",
+                        "adminStatus",
+                        "allocatedPower",
+                        "maxPortPower",
+                        "portPowerDrawn",
+                        "pdClassSignal",
+                        "pdDeviceType",
+                    ],
+                )
+                for p in ensure_list(poe_ports)
+                if isinstance(p, dict)
+            ]
+            if ports:
+                out["poe_ports"] = [p for p in ports if str(p.get("operStatus", "")).lower() == "on"][
+                    :100
+                ] or (f"{len(ports)} PoE ports, none drawing power")
+        if not failed("modules", modules):
+            out["module_count"] = modules.get("count") if isinstance(modules, dict) else modules
+        if not failed("licences", licences):
+            # Licence records carry their own ids; match on the management address.
+            mine = [
+                lic
+                for lic in licences.items
+                if isinstance(lic, dict) and lic.get("managementAddress") == dev.get("managementIpAddress")
+            ]
+            if mine:
+                lic = mine[0]
+                out["licensing"] = pick(
+                    lic,
+                    [
+                        "licenseMode",
+                        "registrationStatus",
+                        "authorizationStatus",
+                        "authCodeStatus",
+                        "throughputValue",
+                    ],
+                )
+                out["licensing"]["licenses"] = [
+                    pick(x, ["name", "type", "status", "count"]) for x in ensure_list(lic.get("licenses"))
+                ]
+            else:
+                out["licensing"] = "no licence record yet (collected with inventory)"
+        if unavailable:
+            out["unavailable"] = unavailable
+        return object_result(out)
 
 
 def _matches(dev: dict[str, Any], params: dict[str, Any]) -> bool:

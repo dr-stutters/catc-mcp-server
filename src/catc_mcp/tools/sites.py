@@ -20,6 +20,7 @@ from stutters_mcp_core.http import fetch_all
 
 from catc_mcp.client import CatcApp
 from catc_mcp.common import resolve_site
+from catc_mcp.tools.credentials import all_credentials
 
 SITE_DETAIL_PATHS = {
     "area": "/dna/intent/api/v1/areas/{id}",
@@ -36,6 +37,7 @@ SETTINGS = {
     "telemetry": "telemetrySettings",
     "timezone": "timeZoneSettings",
     "image_distribution": "imageDistributionSettings",
+    "credentials": "deviceCredentials",
 }
 
 SiteRef = Annotated[
@@ -134,7 +136,17 @@ def register(reg: ToolRegistrar) -> None:
         site: SiteRef,
         categories: Annotated[
             list[
-                Literal["aaa", "banner", "dhcp", "dns", "ntp", "telemetry", "timezone", "image_distribution"]
+                Literal[
+                    "aaa",
+                    "banner",
+                    "dhcp",
+                    "dns",
+                    "ntp",
+                    "telemetry",
+                    "timezone",
+                    "image_distribution",
+                    "credentials",
+                ]
             ]
             | None,
             Field(description="Settings to fetch (default: all)"),
@@ -144,8 +156,10 @@ def register(reg: ToolRegistrar) -> None:
         ] = True,
     ) -> ToolResult:
         """Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS,
-        NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone and image distribution servers.
-        With inherited=true, values set on parent sites are included."""
+        NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the
+        device credentials the site uses (shown as 'TYPE:description', never secrets). With
+        inherited=true, values set on parent sites are included. Change them with
+        catc_update_site_settings and catc_assign_site_credentials."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         cats: list[str] = list(categories) if categories else list(SETTINGS)
@@ -167,4 +181,12 @@ def register(reg: ToolRegistrar) -> None:
                 raise r
             else:
                 out["settings"][c] = r
+        creds = out["settings"].get("credentials")
+        if isinstance(creds, dict):
+            known = {str(x.get("id")): x for x in await all_credentials(app)}
+            for v in creds.values():
+                cid = v.get("credentialsId") if isinstance(v, dict) else None
+                if cid and str(cid) in known:
+                    k = known[str(cid)]
+                    v["credential"] = f"{k.get('type')}:{k.get('description')}"
         return object_result(out, shape=True)

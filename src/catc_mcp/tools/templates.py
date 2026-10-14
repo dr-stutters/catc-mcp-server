@@ -9,7 +9,7 @@ from pydantic import Field
 from stutters_mcp_core import ResponseFormat, ToolRegistrar, get_client, list_result, object_result
 from stutters_mcp_core.http import page_of
 
-from catc_mcp.client import CatcApp
+from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import list_all_templates, pick, resolve_device, resolve_template
 from catc_mcp.tools.inventory import redact_config
 
@@ -39,7 +39,9 @@ TEMPLATE_KEEP = [
 
 
 def param_summary(p: dict[str, Any]) -> dict[str, Any]:
-    out = pick(p, ["parameterName", "dataType", "required", "defaultValue", "description", "displayName"])
+    out: dict[str, Any] = pick(
+        p, ["parameterName", "dataType", "required", "defaultValue", "description", "displayName"]
+    )
     sel = p.get("selection") or {}
     if isinstance(sel, dict) and sel.get("selectionValues"):
         out["choices"] = list(sel["selectionValues"].values())
@@ -166,3 +168,63 @@ def register(reg: ToolRegistrar) -> None:
         if isinstance(result, dict) and isinstance(result.get("cliPreview"), str):
             result["cliPreview"] = redact_config(result["cliPreview"])
         return object_result(result, shape=False)
+
+    register_deployments(reg)
+
+
+DEPLOY_DEVICE_FIELDS = [
+    "name",
+    "ipAddress",
+    "status",
+    "detailedStatusMessage",
+    "startTime",
+    "endTime",
+    "deviceId",
+]
+
+
+def deployment_summary(d: Any) -> dict[str, Any]:
+    """The useful part of a template deployment status (per-device result and message)."""
+    if not isinstance(d, dict):
+        return {"raw": d}
+    out = pick(
+        d,
+        [
+            "deploymentId",
+            "templateName",
+            "projectName",
+            "templateVersion",
+            "status",
+            "statusMessage",
+            "startTime",
+            "endTime",
+            "duration",
+        ],
+    )
+    out = {k: redact_config(v) if isinstance(v, str) else v for k, v in out.items()}
+    out["devices"] = [
+        {k: redact_config(v) if isinstance(v, str) else v for k, v in pick(x, DEPLOY_DEVICE_FIELDS).items()}
+        for x in d.get("devices") or []
+        if isinstance(x, dict)
+    ]
+    return out
+
+
+def register_deployments(reg: ToolRegistrar) -> None:
+    @reg.read(title="Get template deployment")
+    async def catc_get_template_deployment(
+        ctx: Context,
+        deployment_id: Annotated[
+            str,
+            Field(
+                description="Deployment id returned by catc_deploy_template (or seen in its task progress)"
+            ),
+        ],
+    ) -> ToolResult:
+        """Status of one template deployment: overall status and, per device, whether the push
+        succeeded and Catalyst Center's detailed message (e.g. the CLI line the device rejected). Use it
+        after catc_deploy_template with wait=false, or to re-check an earlier deployment."""
+        app: CatcApp = get_client(ctx)
+        dep = safe_id(deployment_id, "deployment id")
+        d = await app.api.get(f"/dna/intent/api/v1/template-programmer/template/deploy/status/{dep}")
+        return object_result(deployment_summary(d))

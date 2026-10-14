@@ -1,9 +1,11 @@
 # catc-mcp-server
 
 An [MCP](https://modelcontextprotocol.io) server for **Cisco Catalyst Center** (formerly DNA Center).
-It gives an AI assistant curated, task-oriented tools for inventory, sites, assurance health and issues,
-topology, compliance, configuration templates, software images, discovery, path trace and read-only CLI,
-plus a spec-driven escape hatch for the rest of the Intent API. Built on
+It gives an AI assistant curated, task-oriented tools for the operator workflows: onboarding (credentials,
+discovery, sites, network settings, IP pools, provisioning), day-N changes (templates, deploy, compliance
+and config drift) and troubleshooting (device/client 360, issues with suggested commands, events, path
+trace, read-only CLI), plus SWIM, topology and appliance health, and a spec-driven escape hatch for the
+rest of the Intent API. `docs/GAP-ANALYSIS.md` maps the whole 3.2.2 API to the tools. Built on
 [stutters-mcp-core](https://github.com/dr-stutters/stutters-mcp-core).
 
 > Not affiliated with, endorsed by or supported by Cisco Systems, Inc. "Cisco" and "Catalyst Center"
@@ -101,9 +103,10 @@ Create a dedicated local user (System > Users & Roles > User Management) instead
 - **Read + troubleshooting:** a custom role (System > Users & Roles > Role Based Access Control) with
   Read on everything, plus Write on *Assurance > Path Trace* and *Network Analytics > Data Access /
   Command Runner*.
-- **Writes:** add Write on *Network Design* (sites, network settings), *Network Provisioning >
-  Inventory Management* (tags, discovery, device site assignment, resync, compliance) and *Network
-  Provisioning > Templates*.
+- **Writes:** add Write on *Network Design* (sites, network settings, IP pools, credentials),
+  *Network Provisioning > Inventory Management* (tags, discovery, device site assignment, resync,
+  compliance), *Network Provisioning > Templates* and *Network Provisioning > Image Update* (golden
+  tagging).
 - **Dangerous tier:** additionally *Network Provisioning > Provision* and *Image Update*; or use
   NETWORK-ADMIN-ROLE. Keep this on a separate token/instance with `MCP_ENABLE_DANGEROUS=true`.
 
@@ -114,48 +117,77 @@ token (`catc-mcp-server token alice`).
 
 Start with `catc_status`, then `catc_list_devices` / `catc_get_site_hierarchy`. The smart tools do the
 most work per call: `catc_device_360`, `catc_client_360`, `catc_path_trace`, `catc_run_show_commands`.
-Names, IPs, serial numbers and site paths are accepted wherever an id is expected.
+Names, IPs, serial numbers, site paths and credential descriptions are accepted wherever an id is
+expected.
+
+Typical flows:
+
+- **Onboard:** `catc_create_global_credential` → `catc_create_discovery` (wait=true) →
+  `catc_create_site` → `catc_update_site_settings` / `catc_assign_site_credentials` →
+  `catc_assign_devices_to_site` → `catc_provision_devices`.
+- **Day-N change:** `catc_create_template` → `catc_commit_template` → `catc_preview_template` →
+  `catc_deploy_template` → verify with `catc_run_show_commands` → `catc_run_compliance` /
+  `catc_compare_device_configs` (template deploys don't `write memory`, so running-vs-startup
+  compliance goes non-compliant until the config is saved).
+- **Troubleshoot:** `catc_device_360` / `catc_client_360` → `catc_list_issues` → `catc_get_issue`
+  (Catalyst Center's suggested commands) → `catc_run_show_commands`; `catc_path_trace` (needs CDP or
+  LLDP between devices); `catc_list_events`.
 
 - `catc_run_show_commands` is **read tier** but only accepts `show ...` commands; after a `|` only
-  include/exclude/begin/section/count filters are allowed (no redirects, no `;`, `&`, `<`, `>`).
+  include/exclude/begin/section/count filters are allowed (regex alternatives such as
+  `| include up|down` are fine; no redirect/tee/append, no `;`, `&`, `<`, `>`).
+- Global credential secrets (passwords, communities, SNMPv3 keys) are write-only: they are masked in
+  previews and never returned.
 - Running configs, template bodies and command output have passwords, secrets, keys and SNMP
   communities masked.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (38)
+### Read (50)
 
 | Tool | What it does |
 |---|---|
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
-| `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), active issues (last 24h), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
+| `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
+| `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
-| `catc_get_compliance_detail` | Compliance report for one device per category (startup vs running config, image, PSIRT, EoX, network settings, network profile, fabric): status, last check time and, with include_diff, what differs. |
+| `catc_get_compliance_detail` | Compliance report for one device per category (startup vs running config, image, PSIRT, EoX, network settings, network profile, fabric): status, message, last check time, whether Catalyst Center can remediate it and, with include_diff, what differs. |
 | `catc_get_compliance_summary` | Fleet compliance at a glance: how many devices are compliant, non-compliant, in progress, not available or in error, and which devices are non-compliant (with hostname). |
 | `catc_get_definition` | Describe a Cisco Catalyst Center API operation (parameters, request fields, required fields) or a schema (fields with types and enums). |
 | `catc_get_device` | Full inventory record for one network device: platform, serial, software, role, uptime, reachability and collection status (with failure reason), management IP, MAC, location. |
 | `catc_get_device_config` | The device's running configuration as last collected by Catalyst Center (not live: run catc_run_show_commands for that). |
-| `catc_get_issue` | One assurance issue in full: description, affected device/client/site, timeline, additional attributes and Catalyst Center's suggested actions (troubleshooting steps). |
+| `catc_get_device_hardware` | Hardware and licensing of one device in one call: stack members (role, state, priority, serial, platform, software) and StackWise Virtual links, PoE budget (allocated / consumed / remaining watts) and the PoE ports drawing power, module count, and smart-licensing state with the licences in use. |
+| `catc_get_issue` | One assurance issue in full: description, affected device/client/site, timeline, additional attributes and Catalyst Center's suggested actions with the show commands it proposes (run them with catc_run_show_commands). |
 | `catc_get_l3_topology` | Layer 3 topology for one routing protocol: routers and the adjacencies between them with interface names and addresses. |
 | `catc_get_network_health` | Overall network health score and the healthy/unhealthy device counts per category (access, distribution, core, router, wireless), plus a per-site health summary. |
 | `catc_get_physical_topology` | Physical (CDP/LLDP-derived) topology: devices and the links between them with port names, link status and addresses. |
+| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge) and border settings, layer 3 virtual networks and anycast gateways (VN, IP pool, VLAN). |
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
-| `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone and image distribution servers. |
+| `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the device credentials the site uses (shown as 'TYPE:description', never secrets). |
+| `catc_get_system_health` | Health of the Catalyst Center appliance itself: service health events (counts by state and the ones that are not healthy), last backups and the backup target, system licence (registration/evaluation), ISE/AAA server integration status, and release version. |
 | `catc_get_task` | Status of an asynchronous Catalyst Center operation: progress, whether it finished or failed, the failure reason and any result data. |
 | `catc_get_template` | One template in full: content (CLI body), language, variables (name, type, required, default, choices), target device families/software, project and version history. |
+| `catc_get_template_deployment` | Status of one template deployment: overall status and, per device, whether the push succeeded and Catalyst Center's detailed message (e.g. the CLI line the device rejected). |
 | `catc_get_vlan_topology` | Without `vlan`: the VLAN names Catalyst Center knows about. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls), with category and severity. |
+| `catc_list_config_archive` | Configuration versions Catalyst Center has archived for a device (running and startup config, VLAN database), newest first, with when and why each was taken (first collection, scheduled, config-change syslog, user request) and the file ids. |
 | `catc_list_device_health` | Assurance health per network device: overall score, CPU/memory, interface/link errors, reachability, and the issue count. |
+| `catc_list_device_images` | Software image status per network device: the image it runs, whether that matches the golden image for its site and role (COMPLIANT / NON_COMPLIANT / UNKNOWN when no golden image is set), compatibility, and the status of the last image update. |
 | `catc_list_device_interfaces` | Interfaces of one device with oper/admin status, description, IPv4 address, VLAN, port mode, speed/duplex and MAC. |
 | `catc_list_device_modules` | Hardware modules of one device (line cards, supervisors, power supplies, fans, transceivers) with part number, serial number and operational state. |
 | `catc_list_devices` | List network devices in the Catalyst Center inventory with hostname, management IP, platform, software version, role, reachability and serial. |
 | `catc_list_discoveries` | Discovery jobs with their type (range/CDP/LLDP/single), IP ranges, status, condition and number of devices found. |
 | `catc_list_discovery_devices` | Devices found by one discovery with reachability, the failure reason when unreachable, and CLI/SNMP/NETCONF credential status: the place to look when a discovery 'found nothing'. |
 | `catc_list_events` | Assurance events (syslog, SNMP traps, client onboarding events) for network devices or clients, newest first. |
+| `catc_list_global_credentials` | Global device credentials (CLI, SNMPv2c read/write, SNMPv3, NETCONF port, HTTP(S)) that discovery and sites use: description, type, username/port and id. |
 | `catc_list_images` | Software images known to Catalyst Center (imported into the repository, or suggested from cisco.com): name, version, product families, golden tag, integrity status and id. |
+| `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, severity, status, category, affected entity and site, newest first. |
+| `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
+| `catc_list_pnp_devices` | Plug and Play (PnP) devices waiting for or going through zero-touch onboarding: serial, platform, state, the site and workflow they're claimed to, first/last contact, and any error. |
+| `catc_list_ssids` | Wireless SSIDs defined at a site (Design > Network Settings > Wireless): name, security (auth type), radio bands, whether it's enabled and broadcast, AAA servers and id. |
 | `catc_list_tag_members` | Members of one tag: network devices (hostname, IP, platform) or interfaces, whether added statically or by a dynamic rule. |
 | `catc_list_tags` | Tags used to group devices and interfaces (for templates, provisioning and filtering): name, description, whether it is a system tag, dynamic membership rules and id. |
 | `catc_list_template_projects` | Template projects (folders of templates) with description, id and template count. |
@@ -166,24 +198,31 @@ Names, IPs, serial numbers and site paths are accepted wherever an id is expecte
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 
-### Write (16)
+### Write (23)
 
 | Tool | What it does |
 |---|---|
 | `catc_assign_devices_to_site` | Assign (or move) unprovisioned network devices to a building or floor. |
+| `catc_assign_site_credentials` | Set which global credentials (CLI, SNMPv2c read/write, SNMPv3, HTTP read/write) a site uses (Design > Network Settings > Device Credentials). |
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
-| `catc_create_discovery` | Start a device discovery (IP range, CIDR, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
+| `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
+| `catc_create_global_credential` | Create a global device credential that discovery and site assignment can use. |
+| `catc_create_ip_pool` | Create a global IP pool, or reserve a subpool of one for a site (pass site + global_pool). |
 | `catc_create_site` | Create an area, building or floor in the site hierarchy. |
 | `catc_create_tag` | Create a (static) tag for grouping devices or interfaces. |
 | `catc_create_template` | Create a (not yet committed) configuration template in a project. |
 | `catc_create_template_project` | Create a template project (a folder for configuration templates). |
-| `catc_delete_tag` | Delete a user-defined tag (its members are untagged, not deleted). |
+| `catc_delete_global_credential` | Delete a global device credential. |
+| `catc_delete_ip_pool` | Release a site's reserved subpool, or delete a global pool (refused while it still has reservations). |
+| `catc_delete_tag` | Delete a user-defined tag. |
 | `catc_delete_template` | Delete a configuration template and all its versions. |
 | `catc_delete_template_project` | Delete a template project together with every template in it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
+| `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |
+| `catc_update_site_settings` | Change a site's network settings (Design > Network Settings): DNS servers and domain, NTP, DHCP servers, banner, time zone, and telemetry (external syslog/SNMP trap servers, Catalyst Center as collector, wired client data collection). |
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
@@ -193,12 +232,12 @@ Names, IPs, serial numbers and site paths are accepted wherever an id is expecte
 |---|---|
 | `catc_activate_image` | Install and activate a software image on a device (distributing it first if needed). |
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
-| `catc_delete_device` | Remove a (non-provisioned) device from the Catalyst Center inventory; with clean_config also remove the settings Catalyst Center configured on it. |
+| `catc_delete_device` | Remove a device from the Catalyst Center inventory. |
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices. |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
-| `catc_provision_devices` | Provision wired network devices to a site: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, syslog/SNMP/telemetry, etc.) to them. |
+| `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |
 
 ## API spec
 
@@ -228,11 +267,13 @@ and the dangerous tier is off. `CORE_READ_TOKEN` is only needed while stutters-m
 uv run ruff check && uv run ruff format --check && uv run mypy && uv run pytest   # unit (respx)
 uv run pytest tests/live -m live     # against the lab in .env; creates and removes mcp-test-* objects
 uv run python scripts/tool_table.py  # regenerate the tool tables above
+uv run python scripts/gap_report.py  # API coverage per area (docs/GAP-ANALYSIS.md)
 ```
 
-Live tests skip themselves when `CATC_URL` is unset or unreachable. With an empty inventory the
-device/client tools are only checked for clean empty or not-found answers; deploy, provisioning and
-SWIM are covered by mocked unit tests.
+Live tests skip themselves when `CATC_URL` is unset or unreachable. The device workflow tests in
+`tests/live/test_live_phase2.py` need the two CML routers of the cml-mcp-server `catc-routers`
+recipe (198.18.128.152/.153) discovered and reachable, and skip otherwise. SWIM distribute/activate
+are covered by mocked unit tests only (no importable image in the lab).
 
 ## License
 
