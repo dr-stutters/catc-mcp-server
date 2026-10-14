@@ -37,21 +37,39 @@ INTERFACE_FIELDS = [
     "id",
 ]
 
-# Lines of a running config whose secret part is masked before it reaches the model.
-_SECRET_LINE = re.compile(
-    r"^(?P<keep>\s*(?:\S+\s+)*?(?:password|secret|key-string|key|community|pre-shared-key|"
-    r"pre-shared|authentication-key|server-key|tacacs-server key|md5|psk|passphrase|ascii)"
-    r"(?:\s+\d)?)\s+\S.*$",
-    re.IGNORECASE,
-)
+# Patterns for IOS-style lines that carry secrets. Each has a `keep` group; everything after it on
+# the line is masked.
+_SECRET_PATTERNS = [
+    # SNMP: host community strings and v3 user auth/priv keys.
+    re.compile(
+        r"^(?P<keep>\s*snmp-server\s+host\s+\S+(?:\s+(?:informs|traps))?"
+        r"(?:\s+version\s+(?:1|2c|3(?:\s+(?:auth|noauth|priv))?))?)\s+\S.*$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^(?P<keep>\s*snmp-server\s+user\s+.*?\bauth\s+\S+)\s+\S.*$", re.IGNORECASE),
+    # `key` alone is a common word (key chain, crypto key): only mask "key [0-9] <value>" or a value at
+    # the end of a server/tacacs/radius key line.
+    re.compile(r"^(?P<keep>\s*(?:\S+\s+)*?key\s+[0-9])\s+\S.*$", re.IGNORECASE),
+    re.compile(r"^(?P<keep>\s+key)\s+(?!\d+\s*$)\S.*$", re.IGNORECASE),  # " key RKEY" under radius server
+    re.compile(r"^(?P<keep>\s*(?:tacacs|radius|server|ntp|aaa)\S*\s+(?:\S+\s+)*?key)\s+\S.*$", re.IGNORECASE),
+    re.compile(
+        r"^(?P<keep>\s*(?:\S+\s+)*?(?:password|secret|key-string|key-hash|community|pre-shared-key|"
+        r"authentication-key|server-key|md5|psk|passphrase|encrypted|wpa-psk|ascii)(?:\s+[0-9])?)\s+\S.*$",
+        re.IGNORECASE,
+    ),
+]
 
 
 def redact_config(text: str) -> str:
     """Mask passwords, secrets, keys and SNMP communities in IOS-style configuration text."""
     out = []
     for line in text.splitlines():
-        m = _SECRET_LINE.match(line)
-        out.append(f"{m.group('keep')} ********" if m else line)
+        for pat in _SECRET_PATTERNS:
+            m = pat.match(line)
+            if m:
+                line = f"{m.group('keep')} ********"
+                break
+        out.append(line)
     return "\n".join(out)
 
 
@@ -251,6 +269,8 @@ def _matches(dev: dict[str, Any], params: dict[str, Any]) -> bool:
     """Client-side version of the network-device filters (values may use '.*' wildcards)."""
     for key, pattern in params.items():
         value = str(dev.get(key, ""))
-        if not re.fullmatch(str(pattern), value, re.IGNORECASE):
+        # Only '.*' is a wildcard; everything else matches literally.
+        rx = ".*".join(re.escape(part) for part in str(pattern).split(".*"))
+        if not re.fullmatch(rx, value, re.IGNORECASE):
             return False
     return True

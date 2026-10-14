@@ -11,6 +11,7 @@ from stutters_mcp_core.http import page_of
 
 from catc_mcp.client import CatcApp
 from catc_mcp.common import list_all_templates, pick, resolve_device, resolve_template
+from catc_mcp.tools.inventory import redact_config
 
 TemplateRef = Annotated[
     str, Field(description="Template id, 'Project/Template name', or a unique template name")
@@ -128,6 +129,8 @@ def register(reg: ToolRegistrar) -> None:
         tid = ref.get("templateId") or ref.get("id")
         full = await app.api.get(f"/dna/intent/api/v1/template-programmer/template/{tid}")
         out = pick(full, TEMPLATE_KEEP) if isinstance(full, dict) else {"raw": full}
+        if isinstance(out.get("templateContent"), str):
+            out["templateContent"] = redact_config(out["templateContent"])
         if isinstance(out.get("templateParams"), list):
             out["templateParams"] = [param_summary(p) for p in out["templateParams"] if isinstance(p, dict)]
         versions = ref.get("versionsInfo") or []
@@ -160,4 +163,6 @@ def register(reg: ToolRegistrar) -> None:
         if device:
             body["deviceId"] = (await resolve_device(app, device))["id"]
         result = await app.api.put("/dna/intent/api/v1/template-programmer/template/preview", body)
+        if isinstance(result, dict) and isinstance(result.get("cliPreview"), str):
+            result["cliPreview"] = redact_config(result["cliPreview"])
         return object_result(result, shape=False)

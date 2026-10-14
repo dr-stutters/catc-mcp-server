@@ -467,3 +467,25 @@ async def test_spec_tools_use_bundled_spec(api: respx.MockRouter) -> None:
     assert d["operations"][0]["method"] == "POST"
     status = await call("catc_status")
     assert status["server"]["spec_sources"] == ["intent"]
+
+
+def test_redact_more_forms() -> None:
+    cfg = (
+        "snmp-server host 10.1.1.1 version 2c c0mm\n"
+        "snmp-server user u1 g1 v3 auth sha AUTHK priv aes 128 PRIVK\n"
+        "key chain KC\n key 1\n  key-string 7 KS123\n"
+        "radius server R1\n key RKEY\n"
+        "tacacs-server key T4c\n"
+        "crypto key generate rsa modulus 2048\n"
+    )
+    out = redact_config(cfg)
+    for secret in ("c0mm", "AUTHK", "PRIVK", "KS123", "RKEY", "T4c"):
+        assert secret not in out, secret
+    assert "key chain KC" in out and " key 1" in out and "crypto key generate rsa" in out
+
+
+def test_show_refuses_control_chars() -> None:
+    from stutters_mcp_core import InvalidRequest
+
+    with pytest.raises(InvalidRequest):
+        check_show_command("show ver\x1a")

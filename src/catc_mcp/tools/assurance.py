@@ -99,6 +99,8 @@ def register(reg: ToolRegistrar) -> None:
             out["sites"] = [pick(s, keep) for s in sites if isinstance(s, dict)]
         elif isinstance(sites, UpstreamError):
             out["sites"] = {"unavailable": str(sites)[:200]}
+        elif isinstance(sites, BaseException):
+            raise sites
         return object_result(out)
 
     @reg.read(title="List device health")

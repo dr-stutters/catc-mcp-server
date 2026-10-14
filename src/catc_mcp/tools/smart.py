@@ -63,7 +63,7 @@ _FORBIDDEN = re.compile(r"[\n\r;`&<>]|\$\(")
 def check_show_command(cmd: str) -> str:
     """Return the normalised command or raise InvalidRequest if it isn't a plain `show` command."""
     c = " ".join(cmd.split())
-    if not c or _FORBIDDEN.search(cmd) or not _SHOW.match(c):
+    if not c or not c.isascii() or not c.isprintable() or _FORBIDDEN.search(cmd) or not _SHOW.match(c):
         raise InvalidRequest(
             f"Refused {cmd!r}: only 'show ...' commands are allowed here (no ;, &, <, >, newlines)."
         )
@@ -420,8 +420,10 @@ def register(reg: ToolRegistrar) -> None:
             ok = resp.get("SUCCESS") or {}
             entry["output"] = {c: redact_config(str(t)) for c, t in ok.items()}
             if resp.get("FAILURE"):
-                entry["failed"] = resp["FAILURE"]
+                entry["failed"] = {c: redact_config(str(t)) for c, t in resp["FAILURE"].items()}
             if resp.get("BLACKLISTED"):
-                entry["blocked_by_catalyst_center"] = resp["BLACKLISTED"]
+                entry["blocked_by_catalyst_center"] = {
+                    c: redact_config(str(t)) for c, t in resp["BLACKLISTED"].items()
+                }
             out.append(entry)
         return object_result({"results": compact(out, mask_secrets=False)}, shape=False)

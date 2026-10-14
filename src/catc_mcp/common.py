@@ -58,7 +58,10 @@ def norm_mac(mac: str) -> str:
 
 def seg(value: str) -> str:
     """Quote a free-text value for use as one URL path segment."""
-    return quote(value.strip(), safe="")
+    value = value.strip()
+    if value in ("", ".", ".."):
+        raise InvalidRequest(f"Invalid value {value!r}.")
+    return quote(value, safe="")
 
 
 def window(hours: float) -> dict[str, int]:
@@ -126,7 +129,7 @@ async def resolve_site(app: CatcApp, ref: str) -> dict[str, Any]:
             return one
         raise NotFound(f"No site with id {ref}. Use catc_get_site_hierarchy to list sites.")
     if "/" in ref or ref.lower() == "global":
-        if not ref.lower().startswith("global"):
+        if ref.lower() != "global" and not ref.lower().startswith("global/"):
             ref = "Global/" + ref
         found = ensure_list(await app.get_response("/dna/intent/api/v1/sites", {"nameHierarchy": ref}))
         found = [s for s in found if str(s.get("nameHierarchy", "")).lower() == ref.lower()]
@@ -155,7 +158,7 @@ async def resolve_template(app: CatcApp, ref: str) -> dict[str, Any]:
     found = [
         t
         for t in await list_all_templates(app)
-        if t.get("name", "").lower() == name.lower()
+        if str(t.get("name") or "").lower() == name.lower()
         and (not project or str(t.get("projectName", "")).lower() == project.lower())
     ]
     if len(found) == 1:
