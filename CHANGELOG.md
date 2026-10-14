@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 (2026-10-15)
+
+- Core pinned to stutters-mcp-core v0.1.1: nested secrets masked in the audit log, flag-like values
+  ("true"/"false"/...) under secret-looking keys no longer masked, server starts even when the
+  status probe fails with a configuration error.
+- Removed the local missing-credentials workaround (core's `require_credentials` raises `AuthError`).
+- `.dockerignore` follows the core template (keeps `.env` out of the build context).
+
 ## 0.1.0 (2026-10-15)
 
 First release, built on stutters-mcp-core 0.1.0 and tested against Catalyst Center 3.2.2-75131.
