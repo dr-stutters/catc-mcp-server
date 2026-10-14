@@ -11,7 +11,6 @@ from pydantic import Field
 from stutters_mcp_core import (
     Confirm,
     InvalidRequest,
-    NotFound,
     Plan,
     ToolRegistrar,
     UpstreamError,
@@ -20,15 +19,15 @@ from stutters_mcp_core import (
     poll_until,
     preview_or_apply,
 )
-from stutters_mcp_core.http import fetch_all
 
-from catc_mcp.client import CatcApp, job_ref
-from catc_mcp.common import ensure_list, is_uuid, resolve_device, resolve_site, resolve_template
+from catc_mcp.client import CatcApp, job_ref, safe_id
+from catc_mcp.common import ensure_list, resolve_device, resolve_site, resolve_template
 from catc_mcp.tools.discovery import resolve_discovery
 from catc_mcp.tools.inventory import redact_config
 from catc_mcp.tools.ops_writes import Devices, brief, resolve_devices
 from catc_mcp.tools.sites import SITE_DETAIL_PATHS, all_sites
-from catc_mcp.tools.templates import TemplateRef
+from catc_mcp.tools.swim import resolve_image
+from catc_mcp.tools.templates import TemplateRef, deployment_summary
 
 TP = "/dna/intent/api/v1/template-programmer"
 DeviceRef = Annotated[str, Field(description="Device hostname, management IP, serial number or id")]
@@ -36,21 +35,17 @@ ImageRef = Annotated[str, Field(description="Software image id or exact name (fr
 Wait = Annotated[bool, Field(description="Wait for the operation to finish (default true)")]
 
 
-async def resolve_image(app: CatcApp, ref: str) -> dict[str, Any]:
-    ref = ref.strip()
-    params = {"imported": "true"}
-    found = ensure_list(await app.get_response("/dna/intent/api/v1/images", {**params, "name": ref}))
-    for img in found:
-        if isinstance(img, dict) and (
-            img.get("id") == ref or str(img.get("name", "")).lower() == ref.lower()
-        ):
-            return img
-    if is_uuid(ref):
-        page = await fetch_all(app.pager, app.api, "/dna/intent/api/v1/images", params, cap=2000)
-        for img in page.items:
-            if isinstance(img, dict) and img.get("id") == ref:
-                return img
-    raise NotFound(f"No imported software image {ref!r}. Use catc_list_images(imported=true).")
+async def provisioned_records(app: CatcApp, device_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """{device id: provisioning record ({"id", "siteId", "networkDeviceId"})} for provisioned devices."""
+    out: dict[str, dict[str, Any]] = {}
+    for did in device_ids:
+        recs = ensure_list(
+            await app.get_response("/dna/intent/api/v1/sda/provisionDevices", {"networkDeviceId": did})
+        )
+        for r in recs:
+            if isinstance(r, dict) and r.get("networkDeviceId") == did:
+                out[did] = r
+    return out
 
 
 def deploy_outcome(progress: Any) -> dict[str, Any]:
@@ -141,7 +136,11 @@ def register(reg: ToolRegistrar) -> None:
         async def apply() -> Any:
             started = await app.api.post("/dna/intent/api/v2/template-programmer/template/deploy", body)
             if not wait:
-                return {"started": started, "check_with": "catc_get_task"}
+                return {
+                    "started": started,
+                    "check_with": "catc_get_task (its progress names the deployment id), then "
+                    "catc_get_template_deployment",
+                }
             job = await app.wait_job(started, ctx=ctx, what="template deploy")
             out = {"task_id": job.get("task_id"), **deploy_outcome(job.get("progress"))}
             if dep := out.get("deployment_id"):
@@ -154,7 +153,7 @@ def register(reg: ToolRegistrar) -> None:
                     ctx=ctx,
                     what="template deployment",
                 )
-                out["deployment"] = status
+                out["deployment"] = deployment_summary(status)
             return out
 
         return await preview_or_apply(
@@ -180,39 +179,123 @@ def register(reg: ToolRegistrar) -> None:
         wait: Wait = True,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Provision wired network devices to a site: Catalyst Center pushes the site's network
-        settings (AAA, DNS, NTP, syslog/SNMP/telemetry, etc.) to them. This changes device
-        configuration. Preview-first."""
+        """Provision wired network devices to the site they are assigned to: Catalyst Center pushes
+        the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them.
+        Devices already provisioned at that site are re-provisioned (pushes changed settings). This
+        changes device configuration. Preview-first. Assign devices first with
+        catc_assign_devices_to_site."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         devs = await resolve_devices(app, devices)
         blockers = []
         if s.get("type") not in ("building", "floor"):
             blockers.append(f"Provision to a building or floor, not a {s.get('type')}.")
-        body = [{"networkDeviceId": str(d["id"]), "siteId": s["id"]} for d in devs]
+        existing = await provisioned_records(app, [str(d["id"]) for d in devs])
+        new_devs = [d for d in devs if str(d["id"]) not in existing]
+        again = [d for d in devs if str(d["id"]) in existing]
+        moved = [d for d in again if existing[str(d["id"])].get("siteId") != s["id"]]
+        if moved:
+            blockers.append(
+                "Already provisioned to another site: "
+                + ", ".join(brief(moved))
+                + ". Un-provision them first (catc_unprovision_devices), then assign and provision."
+            )
+        path = "/dna/intent/api/v1/sda/provisionDevices"
         plan = Plan(
-            f"Provision {len(devs)} device(s) to {s.get('nameHierarchy')}",
+            f"Provision {len(new_devs)} and re-provision {len(again)} device(s) at {s.get('nameHierarchy')}",
             details={
-                "devices": brief(devs),
+                "provision": brief(new_devs),
+                "re_provision": brief(again),
                 "site": {"nameHierarchy": s.get("nameHierarchy"), "id": s.get("id")},
-                "method": "POST",
-                "path": "/dna/intent/api/v1/sda/provisionDevices",
+                "requests": ([f"POST {path}"] if new_devs else []) + ([f"PUT {path}"] if again else []),
             },
-            side_effects=["Pushes the site's network settings to each device."],
-            fingerprint={"site": s["id"], "devices": sorted(str(d["id"]) for d in devs)},
+            side_effects=["Pushes the site's network settings (and profile templates) to each device."],
+            fingerprint={"site": s["id"], "existing": existing},
             blockers=blockers,
         )
 
         async def apply() -> Any:
-            started = await app.api.post("/dna/intent/api/v1/sda/provisionDevices", body)
-            if not wait:
-                return {"started": started, "check_with": "catc_get_task"}
-            return await app.wait_job(started, ctx=ctx, what="provisioning")
+            out: dict[str, Any] = {}
+            for method, group, body in (
+                ("POST", new_devs, [{"networkDeviceId": str(d["id"]), "siteId": s["id"]} for d in new_devs]),
+                (
+                    "PUT",
+                    again,
+                    [
+                        {
+                            "id": existing[str(d["id"])]["id"],
+                            "networkDeviceId": str(d["id"]),
+                            "siteId": s["id"],
+                        }
+                        for d in again
+                    ],
+                ),
+            ):
+                if not group:
+                    continue
+                key = "provisioned" if method == "POST" else "re_provisioned"
+                started = await app.api.request(method, path, json=body)
+                if not wait:
+                    out[key] = {"started": started, "check_with": "catc_get_task"}
+                else:
+                    out[key] = await app.wait_job(started, ctx=ctx, what="provisioning")
+            return out
 
         return await preview_or_apply(
             ctx,
             tool="catc_provision_devices",
             args={"devices": devices, "site": site, "wait": wait},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
+    @reg.dangerous(title="Un-provision devices")
+    async def catc_unprovision_devices(
+        ctx: Context,
+        devices: Devices,
+        wait: Wait = True,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Remove the provisioning of wired devices (they stay in the inventory and keep their
+        configuration, but Catalyst Center no longer manages their site settings). Needed before a
+        provisioned device can move to another site or be deleted. Preview-first."""
+        app: CatcApp = get_client(ctx)
+        devs = await resolve_devices(app, devices)
+        existing = await provisioned_records(app, [str(d["id"]) for d in devs])
+        targets = [d for d in devs if str(d["id"]) in existing]
+        blockers = [] if targets else ["None of these devices is provisioned."]
+        plan = Plan(
+            f"Un-provision {len(targets)} device(s)",
+            details={
+                "devices": brief(targets),
+                "not_provisioned": brief([d for d in devs if d not in targets]),
+                "method": "DELETE",
+                "path": "/dna/intent/api/v1/sda/provisionDevices/{id}",
+            },
+            fingerprint=existing,
+            blockers=blockers,
+        )
+
+        async def apply() -> Any:
+            done: dict[str, Any] = {}
+            for d in targets:
+                rid = safe_id(str(existing[str(d["id"])]["id"]), "provisioning id")
+                started = await app.api.delete(f"/dna/intent/api/v1/sda/provisionDevices/{rid}")
+                name = brief([d])[0]
+                try:
+                    done[name] = (
+                        await app.wait_job(started, ctx=ctx, what="un-provision") if wait else started
+                    )
+                except UpstreamError as e:
+                    done[name] = f"failed: {str(e)[:300]}"
+                    break
+            return done
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_unprovision_devices",
+            args={"devices": devices, "wait": wait},
             confirm=confirm,
             plan=plan,
             apply=apply,
@@ -365,9 +448,7 @@ def register(reg: ToolRegistrar) -> None:
         except UpstreamError:
             prov = []
         if prov:
-            blockers.append(
-                "The device is provisioned; un-provision it first (Catalyst Center refuses otherwise)."
-            )
+            blockers.append("The device is provisioned; un-provision it first with catc_unprovision_devices.")
         plan = Plan(
             f"Delete device {dev.get('hostname')} ({dev.get('managementIpAddress')}) from inventory",
             details={

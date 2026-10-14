@@ -94,6 +94,7 @@ async def test_deploy_template_applies_and_polls_deployment(api: respx.MockRoute
 async def test_provision_devices(api: respx.MockRouter) -> None:
     mock_sites(api, [GLOBAL, AREA, BLDG])
     mock_device_lookup(api)
+    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(json={"response": []})
     post = api.post("/dna/intent/api/v1/sda/provisionDevices").respond(
         202, json={"response": {"taskId": "tp"}}
     )

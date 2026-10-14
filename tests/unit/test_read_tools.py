@@ -103,7 +103,14 @@ def test_redact_config() -> None:
 
 @pytest.mark.parametrize(
     "cmd",
-    ["show ip int brief", "sh run | sec bgp", "show logging | include %LINK", "show version | count Gi"],
+    [
+        "show ip int brief",
+        "sh run | sec bgp",
+        "show logging | include %LINK",
+        "show version | count Gi",
+        "show version | include image|Version",
+        "show ip int brief | exclude unassigned|down",
+    ],
 )
 def test_show_allowed(cmd: str) -> None:
     assert check_show_command(cmd)
@@ -119,6 +126,11 @@ def test_show_allowed(cmd: str) -> None:
         "show run ; reload",
         "show ver\nreload",
         "show tech | tee flash:t",
+        "show run | include x |redirect flash:y",
+        "show run | include x|red flash:y",
+        "show run | include x|te flash:y",
+        "show run || include x",
+        "show run |",
         "more flash:config.text",
         "ping 1.1.1.1",
         "show",
@@ -251,7 +263,16 @@ async def test_device_config_sections_and_redaction(api: respx.MockRouter) -> No
 async def test_device_360_tolerates_missing_sections(api: respx.MockRouter) -> None:
     mock_device_lookup(api)
     api.get(f"/dna/data/api/v1/networkDevices/{DEV_ID}").respond(
-        json={"response": {"siteHierarchy": "Global/AU/SYD-1", "overallHealthScore": 8, "cpuUtilization": 12}}
+        json={
+            "response": {
+                "siteHierarchy": "Global/AU/SYD-1",
+                "tagNames": ["core"],
+                "metricsDetails": {"overallHealthScore": 8, "cpuUtilization": 12, "discardScore": -1},
+            }
+        }
+    )
+    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(
+        json={"response": [{"id": "p1", "networkDeviceId": DEV_ID, "siteId": "s1"}]}
     )
     api.get("/dna/data/api/v1/assuranceIssues").respond(
         json={"response": [{"id": "i1", "name": "switch_cpu_high", "priority": "P2"}], "page": {"count": 1}}
@@ -270,8 +291,8 @@ async def test_device_360_tolerates_missing_sections(api: respx.MockRouter) -> N
     )
     api.get(f"/dna/intent/api/v1/eox-status/device/{DEV_ID}").respond(500, text="Http Error Code:500")
     out = await call("catc_device_360", {"device": "edge-sw1"})
-    assert out["site"] == "Global/AU/SYD-1"
-    assert out["health"]["overallHealthScore"] == 8
+    assert out["site"] == "Global/AU/SYD-1" and out["tags"] == ["core"] and out["provisioned"] is True
+    assert out["health"]["overallHealthScore"] == 8 and "discardScore" not in out["health"]
     assert out["active_issues"][0]["name"] == "switch_cpu_high"
     assert out["interfaces"] == {
         "total": 3,

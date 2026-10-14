@@ -57,6 +57,8 @@ _PIPE_FILTERS = {
     "c",
     "cou",
 }
+# Pipe keywords that write or reformat output; never accepted, even glued to a regex.
+_PIPE_WRITERS = ("redirect", "tee", "append", "format", "save", "file")
 _FORBIDDEN = re.compile(r"[\n\r;`&<>]|\$\(")
 
 
@@ -67,13 +69,35 @@ def check_show_command(cmd: str) -> str:
         raise InvalidRequest(
             f"Refused {cmd!r}: only 'show ...' commands are allowed here (no ;, &, <, >, newlines)."
         )
-    for part in c.split("|")[1:]:
+    for i, part in enumerate(c.split("|")[1:]):
         words = part.strip().split()
-        if not words or words[0].lower() not in _PIPE_FILTERS:
+        refused = False
+        if i == 0 or part[:1].isspace() or not part:
+            # A new pipe: only output filters.
+            refused = not words or words[0].lower() not in _PIPE_FILTERS
+        else:
+            # Glued to the previous text ('include up|down'): a regex alternative, unless it could be
+            # read as a pipe keyword (IOS accepts abbreviations, so refuse any prefix of one).
+            refused = not words or any(k.startswith(words[0].lower()) for k in _PIPE_WRITERS)
+        if refused:
             raise InvalidRequest(
-                f"Refused {cmd!r}: after '|' only include/exclude/begin/section/count filters are allowed."
+                f"Refused {cmd!r}: after '|' only include/exclude/begin/section/count filters are allowed "
+                "('a|b' regex alternatives are fine)."
             )
     return c
+
+
+_PROMPT = re.compile(r"^[\w.\-/()]+[#>]\s*$")
+
+
+def clean_output(command: str, text: str) -> str:
+    """Drop the echoed command and the trailing device prompt the command runner includes."""
+    lines = text.splitlines()
+    if lines and " ".join(lines[0].split()) == " ".join(command.split()):
+        lines = lines[1:]
+    if lines and _PROMPT.match(lines[-1].strip()):
+        lines = lines[:-1]
+    return "\n".join(lines).strip("\n")
 
 
 # --- path trace -------------------------------------------------------------------------------
@@ -148,8 +172,9 @@ def register(reg: ToolRegistrar) -> None:
         device: Annotated[str, Field(description="Device hostname, management IP, serial number or id")],
     ) -> ToolResult:
         """Everything about one network device in one call: inventory record, site, assurance health
-        (overall, CPU, memory), active issues (last 24h), interface counts and the ports that are down
-        while admin-up, compliance status and end-of-life (EoX) alerts. Start device troubleshooting
+        (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h), interface
+        counts and the ports that are down while admin-up, compliance status and end-of-life (EoX)
+        alerts. Start device troubleshooting
         here; follow up with catc_get_issue, catc_get_device_config or catc_run_show_commands."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
@@ -164,6 +189,9 @@ def register(reg: ToolRegistrar) -> None:
                 "interfaces": app.get_response(f"/dna/intent/api/v1/interface/network-device/{did}"),
                 "compliance": app.get_response("/dna/intent/api/v1/compliance", {"deviceUuid": did}),
                 "eox": app.get_response(f"/dna/intent/api/v1/eox-status/device/{did}"),
+                "provisioned": app.get_response(
+                    "/dna/intent/api/v1/sda/provisionDevices", {"networkDeviceId": did}
+                ),
             }
         )
         out: dict[str, Any] = {"device": pick(dev, [*DEVICE_FIELDS, "series", "macAddress", "lastUpdated"])}
@@ -172,11 +200,22 @@ def register(reg: ToolRegistrar) -> None:
         health = data.get("health")
         if isinstance(health, dict):
             out["site"] = health.get("siteHierarchy")
+            if health.get("tagNames"):
+                out["tags"] = health["tagNames"]
+            m = health.get("metricsDetails")
+            metrics: dict[str, Any] = m if isinstance(m, dict) else {}
+            # -1 / null mean "not computed" for this platform.
             out["health"] = {
                 k: v
-                for k, v in health.items()
-                if any(w in k.lower() for w in ("health", "score", "utilization", "issue", "reach"))
+                for k, v in {**health, **metrics}.items()
+                if v not in (None, -1, "")
+                and not isinstance(v, dict | list)
+                and any(
+                    w in k.lower() for w in ("health", "score", "utilization", "temperature", "communication")
+                )
             }
+            if not out["health"]:
+                out["health"] = "not computed yet (Assurance needs ~15 minutes after a device is added)"
         issues = data.get("issues")
         if isinstance(issues, dict):
             out["active_issues"] = [pick(i, ISSUE_FIELDS) for i in ensure_list(issues.get("response"))]
@@ -199,6 +238,12 @@ def register(reg: ToolRegistrar) -> None:
             out["compliance"] = pick(comp[0], ["complianceStatus", "lastUpdateTime", "message"])
         if "eox" in data:
             out["eox"] = data["eox"]
+        elif "eox" in errors and "404" in errors["eox"]:
+            del errors["eox"]
+            out["eox"] = "no EoX data for this device (not scanned yet, or no announcements)"
+        if "provisioned" in data:
+            prov = [p for p in ensure_list(data["provisioned"]) if isinstance(p, dict)]
+            out["provisioned"] = bool(prov)
         if errors:
             out["unavailable"] = errors
         return object_result(out)
@@ -418,7 +463,7 @@ def register(reg: ToolRegistrar) -> None:
             resp = r.get("commandResponses") or {}
             entry: dict[str, Any] = {"device": names.get(str(r.get("deviceUuid")), r.get("deviceUuid"))}
             ok = resp.get("SUCCESS") or {}
-            entry["output"] = {c: redact_config(str(t)) for c, t in ok.items()}
+            entry["output"] = {c: redact_config(clean_output(c, str(t))) for c, t in ok.items()}
             if resp.get("FAILURE"):
                 entry["failed"] = {c: redact_config(str(t)) for c, t in resp["FAILURE"].items()}
             if resp.get("BLACKLISTED"):
