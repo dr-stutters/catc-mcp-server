@@ -138,8 +138,8 @@ async def test_tag_members_add_and_remove(api: respx.MockRouter) -> None:
 
 
 async def test_discovery_masks_secrets(api: respx.MockRouter) -> None:
-    api.get("/dna/intent/api/v2/global-credential").respond(
-        json={"response": {"cliCredential": [{"id": "c1"}]}}
+    api.get("/dna/intent/api/v1/globalCredentials").respond(
+        json={"response": [{"id": "c1", "type": "CLI", "description": "lab", "username": "u"}]}
     )
     api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
     post = api.post("/dna/intent/api/v1/discovery").respond(202, json={"response": {"taskId": "t5"}})
@@ -155,6 +155,9 @@ async def test_discovery_masks_secrets(api: respx.MockRouter) -> None:
 async def test_assign_to_site_needs_building_or_floor(api: respx.MockRouter) -> None:
     mock_sites(api, [GLOBAL, AREA, BLDG])
     mock_device_lookup(api)
+    api.get(f"/dna/intent/api/v1/networkDevices/{DEV_ID}/assignedToSite").respond(
+        json={"response": {"deviceId": DEV_ID, "siteNameHierarchy": "Global"}}
+    )
     preview, _ = await preview_then_apply(
         "catc_assign_devices_to_site", {"devices": ["edge-sw1"], "site": "Global/AU"}
     )
@@ -168,6 +171,14 @@ async def test_assign_to_site_needs_building_or_floor(api: respx.MockRouter) -> 
     )
     assert done["status"] == "applied"
     assert json.loads(post.calls.last.request.content) == {"deviceIds": [DEV_ID], "siteId": BLDG["id"]}
+    # Already there: nothing to do.
+    api.get(f"/dna/intent/api/v1/networkDevices/{DEV_ID}/assignedToSite").respond(
+        json={"response": {"deviceId": DEV_ID, "siteNameHierarchy": BLDG["nameHierarchy"]}}
+    )
+    preview, _ = await preview_then_apply(
+        "catc_assign_devices_to_site", {"devices": ["10.0.0.11"], "site": "SYD-1"}
+    )
+    assert preview["status"] == "blocked" and "already" in preview["blockers"][0]
 
 
 async def test_task_failure_surfaces(api: respx.MockRouter) -> None:
@@ -238,7 +249,7 @@ async def test_issue_status_looks_up_issues(api: respx.MockRouter) -> None:
 
 
 async def test_discovery_password_needs_username(api: respx.MockRouter) -> None:
-    api.get("/dna/intent/api/v2/global-credential").respond(json={"response": {}})
+    api.get("/dna/intent/api/v1/globalCredentials").respond(json={"response": []})
     api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
     preview, _ = await preview_then_apply(
         "catc_create_discovery", {"name": "d", "ip_ranges": ["10.0.0.1"], "cli_password": "x"}

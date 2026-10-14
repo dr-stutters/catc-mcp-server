@@ -24,7 +24,9 @@ from stutters_mcp_core.formatting import MASK
 from stutters_mcp_core.http import fetch_all
 
 from catc_mcp.client import CatcApp, job_ref, safe_id
-from catc_mcp.common import ensure_list, resolve_device, resolve_site, resolve_tag
+from catc_mcp.common import ensure_list, is_ip, pick, resolve_device, resolve_site, resolve_tag
+from catc_mcp.tools.credentials import all_credentials, resolve_credential
+from catc_mcp.tools.discovery import DEVICE_FIELDS as DISCOVERED_FIELDS
 from catc_mcp.tools.discovery import all_discoveries
 
 Devices = Annotated[
@@ -40,8 +42,17 @@ async def resolve_devices(app: CatcApp, refs: list[str]) -> list[dict[str, Any]]
     return list(out.values())
 
 
+async def device_site(app: CatcApp, device_id: str) -> str | None:
+    """The name hierarchy of the site a device is assigned to (None when unassigned)."""
+    try:
+        a = await app.get_response(f"/dna/intent/api/v1/networkDevices/{safe_id(device_id)}/assignedToSite")
+    except NotFound:
+        return None
+    return str(a.get("siteNameHierarchy")) if isinstance(a, dict) and a.get("siteNameHierarchy") else None
+
+
 def brief(devs: list[dict[str, Any]]) -> list[str]:
-    return [f"{d.get('hostname')} ({d.get('managementIpAddress')})" for d in devs]
+    return [f"{d.get('hostname') or '(not collected yet)'} ({d.get('managementIpAddress')})" for d in devs]
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -152,33 +163,65 @@ def register(reg: ToolRegistrar) -> None:
     async def catc_delete_tag(
         ctx: Context,
         tag: Annotated[str, Field(description="Tag name or id")],
+        remove_members: Annotated[
+            bool,
+            Field(
+                description="Untag its member devices first (Catalyst Center refuses to delete a tag in use)"
+            ),
+        ] = False,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Delete a user-defined tag (its members are untagged, not deleted). System tags are refused.
-        Preview-first."""
+        """Delete a user-defined tag. Catalyst Center refuses while devices are tagged with it: pass
+        remove_members=true to untag them first (the devices themselves are untouched). System tags
+        are refused. Preview-first: shows the member count."""
         app: CatcApp = get_client(ctx)
         t = await resolve_tag(app, tag)
-        count = await app.get_response(
-            f"/dna/intent/api/v1/tag/{t['id']}/member/count", {"memberType": "networkdevice"}
+        members = await fetch_all(
+            app.pager, app.api, f"/dna/intent/api/v1/tag/{t['id']}/member", {"memberType": "networkdevice"}
         )
+        member_ids = sorted(
+            str(m.get("id") or m.get("instanceUuid"))
+            for m in members.items
+            if isinstance(m, dict) and (m.get("id") or m.get("instanceUuid"))
+        )
+        blockers = []
+        if t.get("systemTag"):
+            blockers.append("System tags can't be deleted.")
+        if member_ids and not remove_members:
+            blockers.append(
+                f"{len(member_ids)} device(s) carry this tag; pass remove_members=true to untag them first."
+            )
         plan = Plan(
-            f"Delete tag {t.get('name')}",
+            f"Delete tag {t.get('name')}"
+            + (f" after untagging {len(member_ids)} device(s)" if member_ids else ""),
             details={
                 "method": "DELETE",
                 "path": f"/dna/intent/api/v1/tag/{t['id']}",
-                "device_members": count,
+                "device_members": len(member_ids),
             },
-            fingerprint={"id": t.get("id"), "members": count},
-            blockers=["System tags can't be deleted."] if t.get("systemTag") else [],
+            fingerprint={"id": t.get("id"), "members": member_ids},
+            blockers=blockers,
         )
 
         async def apply() -> Any:
+            for mid in member_ids:
+                await app.run_job(
+                    "DELETE",
+                    f"/dna/intent/api/v1/tag/{t['id']}/member/{safe_id(mid, 'member id')}",
+                    ctx=ctx,
+                    what="untag device",
+                )
             return await app.run_job(
                 "DELETE", f"/dna/intent/api/v1/tag/{t['id']}", ctx=ctx, what="delete tag"
             )
 
         return await preview_or_apply(
-            ctx, tool="catc_delete_tag", args={"tag": tag}, confirm=confirm, plan=plan, apply=apply
+            ctx,
+            tool="catc_delete_tag",
+            args={"tag": tag, "remove_members": remove_members},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
         )
 
     # --- discovery -------------------------------------------------------------------------------
@@ -210,9 +253,22 @@ def register(reg: ToolRegistrar) -> None:
         snmp_ro_community: Annotated[
             SecretStr | None, Field(description="SNMPv2c read community (never echoed back)")
         ] = None,
+        snmp_rw_community: Annotated[
+            SecretStr | None, Field(description="SNMPv2c write community (never echoed back)")
+        ] = None,
+        netconf_port: Annotated[
+            int | None, Field(ge=1, le=65535, description="NETCONF port to collect over (e.g. 830)")
+        ] = None,
         use_global_credentials: Annotated[
-            bool, Field(description="Also try every global credential (Design > Network Settings)")
+            bool, Field(description="Also try global credentials (Design > Network Settings)")
         ] = True,
+        global_credentials: Annotated[
+            list[str] | None,
+            Field(
+                description="Only these global credentials (id, description or 'TYPE:description'); "
+                "default: every global credential"
+            ),
+        ] = None,
         hop_count: Annotated[int, Field(ge=1, le=16, description="CDP/LLDP: neighbor hops to follow")] = 1,
         timeout_seconds: Annotated[int, Field(ge=1, le=60, description="Per-device connection timeout")] = 5,
         wait: Annotated[
@@ -220,19 +276,35 @@ def register(reg: ToolRegistrar) -> None:
         ] = False,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Start a device discovery (IP range, CIDR, or CDP/LLDP from a seed) that adds what it finds
-        to the inventory. Preview-first; credentials given here are masked in the preview. Returns the
-        discovery id; follow it with catc_list_discoveries / catc_list_discovery_devices."""
+        """Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds
+        what it finds to the inventory. Uses the global credentials you name (or all of them) plus any
+        given inline; create them first with catc_create_global_credential. Preview-first; secrets are
+        masked in the preview. A discovery takes several minutes: with wait=true the result lists each
+        device found with its reachability and CLI/SNMP/NETCONF status; otherwise follow it with
+        catc_list_discoveries / catc_list_discovery_devices."""
         app: CatcApp = get_client(ctx)
         cred_ids: list[str] = []
+        cred_names: list[str] = []
         if use_global_credentials:
-            creds = await app.get_response("/dna/intent/api/v2/global-credential")
-            for items in (creds or {}).values() if isinstance(creds, dict) else []:
-                cred_ids += [str(c["id"]) for c in ensure_list(items) if isinstance(c, dict) and c.get("id")]
+            creds = await all_credentials(app)
+            if global_credentials:
+                creds = [await resolve_credential(app, r, creds=creds) for r in global_credentials]
+            cred_ids = [str(c["id"]) for c in creds if c.get("id")]
+            cred_names = [f"{c.get('type')}:{c.get('description')}" for c in creds]
+        elif global_credentials:
+            raise InvalidRequest("global_credentials needs use_global_credentials=true.")
+        ips = ",".join(r.strip() for r in ip_ranges)
+        sent_type: str = discovery_type
+        if discovery_type == "Single":
+            # 3.2.2 finishes a "Single" discovery in seconds without finding anything; a one-address
+            # Range works.
+            if len(ip_ranges) != 1 or not is_ip(ip_ranges[0]):
+                raise InvalidRequest("A Single discovery takes exactly one IP address.")
+            sent_type, ips = "Range", f"{ip_ranges[0].strip()}-{ip_ranges[0].strip()}"
         body: dict[str, Any] = {
             "name": name,
-            "discoveryType": discovery_type,
-            "ipAddressList": ",".join(r.strip() for r in ip_ranges),
+            "discoveryType": sent_type,
+            "ipAddressList": ips,
             "protocolOrder": "ssh",
             "timeout": timeout_seconds,
             "retry": 1,
@@ -253,20 +325,28 @@ def register(reg: ToolRegistrar) -> None:
             secrets["enablePasswordList"] = [enable_password.get_secret_value()]
         if snmp_ro_community:
             secrets["snmpROCommunity"] = snmp_ro_community.get_secret_value()
+        if snmp_rw_community:
+            secrets["snmpRWCommunity"] = snmp_rw_community.get_secret_value()
+        if netconf_port:
+            body["netconfPort"] = str(netconf_port)
         blockers = []
         if (cli_password or enable_password) and not cli_username:
             blockers.append("cli_password/enable_password need cli_username too.")
-        if not cred_ids and not (cli_username and cli_password):
+        if not any(n.startswith("CLI:") for n in cred_names) and not (cli_username and cli_password):
             blockers.append(
-                "No CLI credentials: give cli_username/cli_password or define global credentials."
+                "No CLI credentials: give cli_username/cli_password or create a global CLI credential "
+                "(catc_create_global_credential)."
             )
         if any(str(d.get("name", "")).lower() == name.lower() for d in await all_discoveries(app)):
             blockers.append(f"A discovery named {name!r} already exists.")
         shown = {**body, **{k: MASK for k in secrets}}
+        if cred_names:
+            shown["globalCredentialIdList"] = cred_names
         plan = Plan(
             f"Start {discovery_type} discovery {name} on {body['ipAddressList']}",
             details={"method": "POST", "path": "/dna/intent/api/v1/discovery", "body": shown},
             side_effects=["Devices that answer are added to the inventory and collected."],
+            fingerprint=sorted(cred_ids),
             blockers=blockers,
         )
         args = {
@@ -276,7 +356,9 @@ def register(reg: ToolRegistrar) -> None:
             "cli_username": cli_username,
             # Secrets aren't stored or echoed; a digest makes the token refuse changed values.
             "secrets": hashlib.sha256(json.dumps(secrets, sort_keys=True).encode()).hexdigest(),
+            "netconf_port": netconf_port,
             "use_global_credentials": use_global_credentials,
+            "global_credentials": global_credentials,
             "hop_count": hop_count,
             "timeout_seconds": timeout_seconds,
             "wait": wait,
@@ -306,13 +388,22 @@ def register(reg: ToolRegistrar) -> None:
                 with contextlib.suppress(ValueError):
                     data = json.loads(data)
             disc_id = data.get("discoveryId") if isinstance(data, dict) else data
-            return {
+            out: dict[str, Any] = {
                 "discovery": name,
                 "discovery_id": disc_id,
                 "task_id": ref[1],
                 "status": "finished" if wait else "running (check catc_list_discoveries)",
-                "result": data if isinstance(data, dict) else None,
             }
+            if wait and disc_id:
+                # What it found, so "it finished" also says whether the devices are usable.
+                with contextlib.suppress(UpstreamError):
+                    found = ensure_list(
+                        await app.get_response(
+                            f"/dna/intent/api/v1/discovery/{safe_id(str(disc_id))}/network-device"
+                        )
+                    )
+                    out["devices"] = [pick(d, DISCOVERED_FIELDS) for d in found[:100] if isinstance(d, dict)]
+            return out
 
         return await preview_or_apply(
             ctx, tool="catc_create_discovery", args=args, confirm=confirm, plan=plan, apply=apply
@@ -328,22 +419,29 @@ def register(reg: ToolRegistrar) -> None:
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Assign (or move) unprovisioned network devices to a building or floor. Access points and
-        sensors go on floors. Preview-first. Provisioning is separate (catc_provision_devices)."""
+        sensors go on floors. Preview-first: shows each device's current site; devices already there are
+        skipped. Provisioning is separate (catc_provision_devices)."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         devs = await resolve_devices(app, devices)
-        body = {"deviceIds": [str(d["id"]) for d in devs], "siteId": s["id"]}
         blockers = []
         if s.get("type") not in ("building", "floor"):
             blockers.append(f"Devices go on a building or floor, not a {s.get('type')}.")
+        current = {str(d["id"]): await device_site(app, str(d["id"])) for d in devs}
+        moving = [d for d in devs if current[str(d["id"])] != s.get("nameHierarchy")]
+        if not moving and not blockers:
+            blockers.append(f"Nothing to change: the devices are already in {s.get('nameHierarchy')}.")
+        body = {"deviceIds": [str(d["id"]) for d in moving], "siteId": s["id"]}
         plan = Plan(
-            f"Assign {len(devs)} device(s) to {s.get('nameHierarchy')}",
+            f"Assign {len(moving)} device(s) to {s.get('nameHierarchy')}",
             details={
-                "devices": brief(devs),
+                "devices": [
+                    {"device": brief([d])[0], "from": current[str(d["id"])] or "(unassigned)"} for d in moving
+                ],
                 "method": "POST",
                 "path": "/dna/intent/api/v1/networkDevices/assignToSite/apply",
             },
-            fingerprint={"site": s["id"], "devices": sorted(str(d["id"]) for d in devs)},
+            fingerprint={"site": s["id"], "current": current},
             blockers=blockers,
         )
 
