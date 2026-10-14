@@ -267,7 +267,7 @@ def register(reg: ToolRegistrar) -> None:
             else ["Copies the image to the device's flash (no reload)."]
         )
         plan = Plan(
-            f"{action.title()} image {img.get('name')} ({img.get('version')}) on {dev.get('hostname')}",
+            f"{action.title()} image {img.get('name')} ({img.get('version')}) on {brief([dev])[0]}",
             details={
                 "device": brief([dev])[0],
                 "current_version": dev.get("softwareVersion"),
@@ -399,8 +399,7 @@ def register(reg: ToolRegistrar) -> None:
             path = f"/dna/intent/api/v1/network-device/{did}"
             params = {"cleanConfig": str(clean_config).lower()}
         plan = Plan(
-            f"{'Un-provision and delete' if prov else 'Delete'} device {dev.get('hostname')} "
-            f"({dev.get('managementIpAddress')}) from inventory",
+            f"{'Un-provision and delete' if prov else 'Delete'} device {brief([dev])[0]} from inventory",
             details={
                 "device": brief([dev])[0],
                 "provisioned": bool(prov),

@@ -52,7 +52,7 @@ async def device_site(app: CatcApp, device_id: str) -> str | None:
 
 
 def brief(devs: list[dict[str, Any]]) -> list[str]:
-    return [f"{d.get('hostname')} ({d.get('managementIpAddress')})" for d in devs]
+    return [f"{d.get('hostname') or '(not collected yet)'} ({d.get('managementIpAddress')})" for d in devs]
 
 
 def register(reg: ToolRegistrar) -> None:

@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.2.0 (2026-10-15)
+
+Phase 2: gap analysis against the full 3.2.2 API (`docs/GAP-ANALYSIS.md`) and the first live tests
+against real devices (CML cat8000v routers and a cat9000v switch with a client).
+
+### Added
+- Credentials: `catc_list_global_credentials`, `catc_create_global_credential` (CLI, SNMPv2c RO/RW,
+  SNMPv3, NETCONF, HTTP(S); secrets never echoed), `catc_delete_global_credential`,
+  `catc_assign_site_credentials`; `catc_get_site_settings` shows the site's credentials by name.
+- Network settings writes: `catc_update_site_settings` (DNS, NTP, DHCP, banner, time zone, syslog/SNMP
+  trap collectors, wired data collection) with a current-vs-new preview.
+- IP pools: `catc_list_ip_pools`, `catc_create_ip_pool` (global pool or site reservation, overlap and
+  containment checks), `catc_delete_ip_pool`.
+- Config archive and drift: `catc_list_config_archive`, `catc_compare_device_configs` (vs previous
+  version, running vs startup, or any two files; masked unified diff).
+- `catc_get_device_hardware` (stack, PoE budget and ports, module count, smart-licensing state).
+- `catc_get_template_deployment` (per-device deployment result).
+- SWIM: `catc_list_device_images` (running image and golden-image compliance per device),
+  `catc_tag_golden_image` (tag/untag).
+- Platform reads: `catc_get_system_health` (service health, backups, licence, AAA/ISE servers),
+  `catc_list_network_profiles`, `catc_list_pnp_devices`, `catc_get_sda_fabric`, `catc_list_ssids`.
+- `scripts/gap_report.py` (API coverage per area); live tests against the CML routers
+  (`tests/live/test_live_phase2.py`).
+
+### Changed
+- `catc_create_discovery`: pick global credentials by name, SNMP RW community, NETCONF port; with
+  `wait=true` the result lists what was found; `Single` is sent as a one-address Range.
+- `catc_provision_devices` re-provisions devices already provisioned at the site and refuses moves.
+- `catc_delete_device` deletes provisioned devices through the provisioning API (Catalyst Center
+  un-provisions and deletes in one step) instead of refusing them.
+- `catc_delete_tag` refuses tags in use unless `remove_members=true`.
+- `catc_assign_devices_to_site` shows each device's current site and skips devices already there.
+- `catc_device_360`: health from `metricsDetails`, tags, provisioning state; `catc_client_360`:
+  wired/wireless-specific fields, health per type, onboarding root causes.
+- `catc_get_network_health`, `catc_list_events` (family inferred from the device; readable rows),
+  `catc_list_issues` (readable times, compact columns) and `catc_get_compliance_detail`
+  (non-compliant first) return compact, useful output.
+- `catc_run_show_commands` accepts regex alternation (`| include up|down`), strips the echoed
+  command and prompt, and shows empty output as "(no output)".
+
+### Fixed
+- Issue ids were missing from issue lists (the API calls them `issueId`), so issues couldn't be
+  opened or resolved; `catc_get_issue` failed on every call (invalid `view`) and now includes the
+  suggested actions and their commands.
+- `catc_create_template` returned a JSON string as the template id when Catalyst Center had remarks;
+  warnings are now reported separately.
+- `catc_get_device_config(match=...)` matched anywhere in a section header.
+
 ## 0.1.1 (2026-10-15)
 
 - Core pinned to stutters-mcp-core v0.1.1: nested secrets masked in the audit log, flag-like values
