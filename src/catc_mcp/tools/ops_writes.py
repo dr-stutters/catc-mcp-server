@@ -15,6 +15,7 @@ from stutters_mcp_core import (
     NotFound,
     Plan,
     ToolRegistrar,
+    UpstreamError,
     get_client,
     poll_until,
     preview_or_apply,
@@ -121,14 +122,21 @@ def register(reg: ToolRegistrar) -> None:
                 done["added"] = await app.run_job(
                     "POST", f"/dna/intent/api/v1/tag/{t['id']}/member", body, ctx=ctx, what="add tag members"
                 )
+            removed: list[str] = []
             for d in to_remove:
-                await app.run_job(
-                    "DELETE",
-                    f"/dna/intent/api/v1/tag/{t['id']}/member/{d['id']}",
-                    ctx=ctx,
-                    what="remove tag member",
-                )
-            done["removed"] = brief(to_remove)
+                try:
+                    await app.run_job(
+                        "DELETE",
+                        f"/dna/intent/api/v1/tag/{t['id']}/member/{d['id']}",
+                        ctx=ctx,
+                        what="remove tag member",
+                    )
+                except UpstreamError as e:
+                    done["removed"] = removed
+                    done["remove_failed"] = {"device": brief([d])[0], "error": str(e)[:300]}
+                    return done
+                removed += brief([d])
+            done["removed"] = removed
             return done
 
         return await preview_or_apply(
@@ -150,10 +158,17 @@ def register(reg: ToolRegistrar) -> None:
         Preview-first."""
         app: CatcApp = get_client(ctx)
         t = await resolve_tag(app, tag)
+        count = await app.get_response(
+            f"/dna/intent/api/v1/tag/{t['id']}/member/count", {"memberType": "networkdevice"}
+        )
         plan = Plan(
             f"Delete tag {t.get('name')}",
-            details={"method": "DELETE", "path": f"/dna/intent/api/v1/tag/{t['id']}"},
-            fingerprint=t.get("id"),
+            details={
+                "method": "DELETE",
+                "path": f"/dna/intent/api/v1/tag/{t['id']}",
+                "device_members": count,
+            },
+            fingerprint={"id": t.get("id"), "members": count},
             blockers=["System tags can't be deleted."] if t.get("systemTag") else [],
         )
 
@@ -239,6 +254,8 @@ def register(reg: ToolRegistrar) -> None:
         if snmp_ro_community:
             secrets["snmpROCommunity"] = snmp_ro_community.get_secret_value()
         blockers = []
+        if (cli_password or enable_password) and not cli_username:
+            blockers.append("cli_password/enable_password need cli_username too.")
         if not cred_ids and not (cli_username and cli_password):
             blockers.append(
                 "No CLI credentials: give cli_username/cli_password or define global credentials."
@@ -269,7 +286,7 @@ def register(reg: ToolRegistrar) -> None:
             started = await app.api.post("/dna/intent/api/v1/discovery", {**body, **secrets})
             ref = job_ref(started)
             if ref is None:
-                return {"discovery": name, "result": started}
+                return {"discovery": name, "note": "No task id returned; check catc_list_discoveries."}
             if wait:
                 job = await app.wait_job(started, ctx=ctx, what="discovery")
             else:
@@ -326,6 +343,7 @@ def register(reg: ToolRegistrar) -> None:
                 "method": "POST",
                 "path": "/dna/intent/api/v1/networkDevices/assignToSite/apply",
             },
+            fingerprint={"site": s["id"], "devices": sorted(str(d["id"]) for d in devs)},
             blockers=blockers,
         )
 
@@ -365,6 +383,7 @@ def register(reg: ToolRegistrar) -> None:
                 "method": "PUT",
                 "path": "/dna/intent/api/v1/network-device/sync",
             },
+            fingerprint=sorted(str(d["id"]) for d in devs),
         )
 
         async def apply() -> Any:
@@ -404,7 +423,9 @@ def register(reg: ToolRegistrar) -> None:
         if categories:
             body["categories"] = categories
         plan = Plan(
-            f"Run compliance on {len(devs)} device(s)", details={"devices": brief(devs), "body": body}
+            f"Run compliance on {len(devs)} device(s)",
+            details={"devices": brief(devs), "body": body},
+            fingerprint=sorted(str(d["id"]) for d in devs),
         )
 
         async def apply() -> Any:
@@ -443,8 +464,22 @@ def register(reg: ToolRegistrar) -> None:
         if action == "ignore":
             body["ignoreHours"] = ignore_hours
         path = f"/dna/intent/api/v1/assuranceIssues/{action}"
+        issues: list[dict[str, Any]] = []
+        blockers: list[str] = []
+        for i in ids:
+            try:
+                issue = await app.get_response(f"/dna/data/api/v1/assuranceIssues/{i}")
+            except NotFound:
+                blockers.append(f"No issue with id {i}.")
+                continue
+            issue = issue[0] if isinstance(issue, list) and issue else issue
+            if isinstance(issue, dict):
+                issues.append({k: issue.get(k) for k in ("id", "name", "summary", "status", "priority")})
         plan = Plan(
-            f"{action.title()} {len(ids)} issue(s)", details={"method": "POST", "path": path, "body": body}
+            f"{action.title()} {len(ids)} issue(s)",
+            details={"issues": issues, "method": "POST", "path": path, "body": body},
+            fingerprint=[(x.get("id"), x.get("status")) for x in issues],
+            blockers=blockers,
         )
 
         async def apply() -> Any:

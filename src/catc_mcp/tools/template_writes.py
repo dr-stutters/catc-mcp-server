@@ -96,7 +96,15 @@ def register(reg: ToolRegistrar) -> None:
         from the content by Catalyst Center. Preview-first; refuses a duplicate name in the project.
         Commit it with catc_commit_template before it can be deployed."""
         app: CatcApp = get_client(ctx)
-        args = {k: v for k, v in locals().items() if k not in ("ctx", "confirm", "app")}
+        args = {
+            "project": project,
+            "name": name,
+            "content": content,
+            "language": language,
+            "software_type": software_type,
+            "device_families": device_families,
+            "description": description,
+        }
         proj = await resolve_project(app, project)
         families = device_families or ["Switches and Hubs"]
         body: dict[str, Any] = {

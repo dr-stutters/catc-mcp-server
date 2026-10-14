@@ -95,7 +95,21 @@ def register(reg: ToolRegistrar) -> None:
         confirm to create it. Buildings need a country plus an address or latitude/longitude; floors
         need a parent building. Returns the new site id."""
         app: CatcApp = get_client(ctx)
-        args = {k: v for k, v in locals().items() if k not in ("ctx", "confirm", "app")}
+        args = {
+            "site_type": site_type,
+            "name": name,
+            "parent": parent,
+            "country": country,
+            "address": address,
+            "latitude": latitude,
+            "longitude": longitude,
+            "floor_number": floor_number,
+            "rf_model": rf_model,
+            "width": width,
+            "length": length,
+            "height": height,
+            "units": units,
+        }
         par = await resolve_site(app, parent)
         blockers: list[str] = []
         if par.get("type") not in ALLOWED_PARENTS[site_type]:
@@ -175,7 +189,19 @@ def register(reg: ToolRegistrar) -> None:
         dimensions. Preview-first: the preview lists field-by-field changes; repeat with confirm to
         apply. Moving a site to another parent isn't supported here."""
         app: CatcApp = get_client(ctx)
-        args = {k: v for k, v in locals().items() if k not in ("ctx", "confirm", "app")}
+        args = {
+            "site": site,
+            "name": name,
+            "country": country,
+            "address": address,
+            "latitude": latitude,
+            "longitude": longitude,
+            "floor_number": floor_number,
+            "rf_model": rf_model,
+            "width": width,
+            "length": length,
+            "height": height,
+        }
         s = await resolve_site(app, site)
         stype = str(s.get("type"))
         if stype not in EDITABLE:

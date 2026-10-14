@@ -205,3 +205,42 @@ async def test_device_write_tools_hidden_when_read_only() -> None:
 
 def test_device_fixture_shape() -> None:
     assert DEVICE["id"] == DEV_ID
+
+
+async def test_confirm_refused_when_device_resolution_changes(api: respx.MockRouter) -> None:
+    """The token binds the resolved device ids: if the name now points at another device, refuse."""
+    other = {**DEVICE, "id": "99999999-2222-3333-4444-555555555555"}
+    api.get("/dna/intent/api/v1/network-device").mock(
+        side_effect=[
+            httpx.Response(200, json={"response": [DEVICE]}),
+            httpx.Response(200, json={"response": [other]}),
+        ]
+    )
+    sync = api.put("/dna/intent/api/v1/network-device/sync").respond(202, json={"response": {"taskId": "t9"}})
+    with pytest.raises(ToolError, match="changed since the preview"):
+        await preview_then_apply("catc_resync_devices", {"devices": ["10.0.0.11"]})
+    assert sync.call_count == 0
+
+
+async def test_issue_status_looks_up_issues(api: respx.MockRouter) -> None:
+    iid = "cccccccc-1111-2222-3333-444444444444"
+    api.get(f"/dna/data/api/v1/assuranceIssues/{iid}").respond(
+        json={"response": [{"id": iid, "name": "ap_down", "status": "active"}]}
+    )
+    post = api.post("/dna/intent/api/v1/assuranceIssues/resolve").respond(
+        json={"response": {"successfulIssueIds": [iid]}}
+    )
+    preview, done = await preview_then_apply(
+        "catc_update_issue_status", {"issue_ids": [iid], "action": "resolve"}
+    )
+    assert preview["preview"]["issues"][0]["name"] == "ap_down"
+    assert done["status"] == "applied" and json.loads(post.calls.last.request.content) == {"issueIds": [iid]}
+
+
+async def test_discovery_password_needs_username(api: respx.MockRouter) -> None:
+    api.get("/dna/intent/api/v2/global-credential").respond(json={"response": {}})
+    api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
+    preview, _ = await preview_then_apply(
+        "catc_create_discovery", {"name": "d", "ip_ranges": ["10.0.0.1"], "cli_password": "x"}
+    )
+    assert preview["status"] == "blocked"
