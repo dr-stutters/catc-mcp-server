@@ -1,0 +1,19 @@
+{
+    "response": {
+        "request": {
+            "sourceIP": "10.1.1.1",
+            "destIP": "10.2.2.2",
+            "periodicRefresh": false,
+            "id": "aeb4c1b6-0c13-4dba-9210-6a4627d81a3b",
+            "status": "FAILED",
+            "createTime": 1791980758656,
+            "lastUpdateTime": 0,
+            "failureReason": "Not able to locate interface or host based on source ip address 10.1.1.1",
+            "controlPath": false
+        },
+        "lastUpdate": "Wed Oct 14 12:31:08 GMT 2026",
+        "networkElements": [],
+        "networkElementsInfo": []
+    },
+    "version": "1.0"
+}

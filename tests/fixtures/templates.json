@@ -1,0 +1,66 @@
+[
+ {
+  "name": "AAA-Configuration",
+  "projectName": "Reference Templates",
+  "projectId": "5d96754b-60e7-4159-880e-ad8e8425786d",
+  "templateId": "72a0afc4-0b5c-4c69-b47f-f647eb34d71b",
+  "versionsInfo": [],
+  "composite": false,
+  "tags": [],
+  "softwareType": "IOS-XE",
+  "deviceTypes": [
+   {
+    "productFamily": "Switches and Hubs",
+    "productSeries": "Cisco Catalyst 9300 Series Switches"
+   }
+  ]
+ },
+ {
+  "name": "ACL-Configuration",
+  "projectName": "Reference Templates",
+  "projectId": "5d96754b-60e7-4159-880e-ad8e8425786d",
+  "templateId": "fb2b4081-dbb4-4270-9256-75967e094561",
+  "versionsInfo": [],
+  "composite": false,
+  "tags": [],
+  "softwareType": "IOS-XE",
+  "deviceTypes": [
+   {
+    "productFamily": "Switches and Hubs",
+    "productSeries": "Cisco Catalyst 9300 Series Switches"
+   }
+  ]
+ },
+ {
+  "name": "APP-Hosting-Configuration",
+  "projectName": "Reference Templates",
+  "projectId": "5d96754b-60e7-4159-880e-ad8e8425786d",
+  "templateId": "cba8276c-2d78-483a-be1a-5bd4197a8724",
+  "versionsInfo": [],
+  "composite": false,
+  "tags": [],
+  "softwareType": "IOS-XE",
+  "deviceTypes": [
+   {
+    "productFamily": "Switches and Hubs",
+    "productSeries": "Cisco Catalyst 9300 Series Switches"
+   }
+  ]
+ },
+ {
+  "name": "AutoConf-Configuration",
+  "projectName": "Reference Templates",
+  "projectId": "5d96754b-60e7-4159-880e-ad8e8425786d",
+  "templateId": "67189b6f-58e8-4b0f-a08d-10f3c864d325",
+  "versionsInfo": [],
+  "composite": false,
+  "tags": [],
+  "softwareType": "IOS-XE",
+  "deviceTypes": [
+   {
+    "productFamily": "Switches and Hubs",
+    "productSeries": "Cisco Catalyst 9300 Series Switches"
+   }
+  ]
+ }
+]
