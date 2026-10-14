@@ -13,6 +13,7 @@ from catc_mcp.config import Settings
 from catc_mcp.tools import (
     assurance,
     compliance,
+    dangerous,
     discovery,
     inventory,
     ops_writes,
@@ -63,6 +64,7 @@ REGISTER = [
     site_writes.register,
     template_writes.register,
     ops_writes.register,
+    dangerous.register,
 ]
 
 # The appliance doesn't serve its OpenAPI document over the API, so a copy ships in the wheel

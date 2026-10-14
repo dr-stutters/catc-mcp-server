@@ -150,6 +150,10 @@ async def resolve_template(app: CatcApp, ref: str) -> dict[str, Any]:
     unique template name."""
     ref = ref.strip()
     if is_uuid(ref):
+        # The list carries versionsInfo (commit history), the single GET doesn't.
+        for t in await list_all_templates(app):
+            if t.get("templateId") == ref:
+                return t
         tpl = await app.get_response(f"/dna/intent/api/v1/template-programmer/template/{ref}")
         if isinstance(tpl, dict) and tpl.get("id"):
             return {"templateId": tpl["id"], **tpl}
