@@ -115,3 +115,25 @@ async def test_wait_execution_and_timeout(api: respx.MockRouter) -> None:
     with pytest.raises(UpstreamTimeout, match="catc_get_task"):
         await app.wait_job({"response": {"taskId": "slow"}}, timeout=0.01)
     await app.aclose()
+
+
+async def test_bad_ids_refused(api: respx.MockRouter) -> None:
+    from stutters_mcp_core import InvalidRequest
+
+    app = CatcApp(make_settings())
+    with pytest.raises(InvalidRequest):
+        await app.get_task("../../network-device")
+    await app.aclose()
+
+
+async def test_get_task_auto_falls_back_to_execution(api: respx.MockRouter) -> None:
+    from stutters_mcp_core.testing import call_tool
+
+    from catc_mcp.server import create_server
+
+    api.get("/dna/intent/api/v1/task/e9").respond(404, json={"response": {"errorCode": "INVALID_TASK"}})
+    api.get("/dna/platform/management/business-api/v1/execution-status/e9").respond(
+        json={"status": "SUCCESS"}
+    )
+    out = await call_tool(create_server(make_settings()), "catc_get_task", {"task_id": "e9"})
+    assert out["execution_id"] == "e9" and out["status"] == "SUCCESS"

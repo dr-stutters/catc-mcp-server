@@ -6,9 +6,9 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import NotFound, ToolRegistrar, get_client, object_result
+from stutters_mcp_core import NotFound, ToolRegistrar, ValidationFailed, get_client, object_result
 
-from catc_mcp.client import CatcApp, exec_summary, task_summary
+from catc_mcp.client import CatcApp, exec_summary, safe_id, task_summary
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -39,10 +39,10 @@ def register(reg: ToolRegistrar) -> None:
                 if t.get("failureReason"):
                     out["failureReason"] = t["failureReason"]
                 if include_children:
-                    kids = await app.get_response(f"/dna/intent/api/v1/task/{task_id}/tree")
+                    kids = await app.get_response(f"/dna/intent/api/v1/task/{safe_id(task_id)}/tree")
                     out["tree"] = kids
                 return object_result(out)
-            except NotFound:
+            except (NotFound, ValidationFailed):
                 if kind == "task":
                     raise
         e = await app.get_execution(task_id)

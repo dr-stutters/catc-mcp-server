@@ -38,4 +38,10 @@ def rw_settings() -> Settings:
 def api() -> Iterator[respx.MockRouter]:
     with respx.mock(base_url=BASE, assert_all_called=False) as router:
         router.post("/dna/system/api/v1/auth/token").respond(json={"Token": "tok-123"})
+        # Startup status check (server lifespan) - routes added by tests come after these.
+        router.get("/dna/intent/api/v1/dnac-release").respond(
+            json={"response": {"installedVersion": "3.2.2-75131"}}
+        )
+        router.get("/dna/intent/api/v1/network-device/count").respond(json={"response": 0})
+        router.get("/dna/intent/api/v1/sites/count").respond(json={"response": {"count": 1}})
         yield router

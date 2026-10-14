@@ -25,9 +25,6 @@ async def test_no_write_tools_when_read_only() -> None:
 
 
 async def test_status_does_not_leak_secrets(api) -> None:  # type: ignore[no-untyped-def]
-    api.get("/dna/intent/api/v1/dnac-release").respond(json={"response": {"installedVersion": "3.2.2-75131"}})
-    api.get("/dna/intent/api/v1/network-device/count").respond(json={"response": 0})
-    api.get("/dna/intent/api/v1/sites/count").respond(json={"response": {"count": 1}})
     out = await call_tool(create_server(make_settings()), "catc_status")
     text = str(out)
     assert "3.2.2-75131" in text

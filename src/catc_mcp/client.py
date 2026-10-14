@@ -13,11 +13,12 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
 from fastmcp import Context
-from stutters_mcp_core import TaskFailed, UpstreamError, poll_until
+from stutters_mcp_core import InvalidRequest, TaskFailed, UpstreamError, UpstreamTimeout, poll_until
 from stutters_mcp_core.http import (
     ApiClient,
     LoginTokenAuth,
@@ -37,6 +38,17 @@ LOGIN_PATH = "/dna/system/api/v1/auth/token"
 TOKEN_LIFETIME = 55 * 60  # tokens last 60 minutes; renew a little early
 TASK_PATH = "/dna/intent/api/v1/task/{id}"
 EXECUTION_PATH = "/dna/platform/management/business-api/v1/execution-status/{id}"
+
+
+_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+
+
+def safe_id(value: str, what: str = "id") -> str:
+    """An id that is safe to put in a URL path segment (UUIDs and similar); refuses anything else."""
+    value = value.strip()
+    if not _ID_RE.match(value):
+        raise InvalidRequest(f"Invalid {what} {value!r}: expected a UUID-like identifier.")
+    return value
 
 
 def _text(v: Any) -> str | None:
@@ -108,7 +120,7 @@ class CatcApp:
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.settings = settings
         limiter = RateLimiter(settings.rate_limit, settings.max_concurrency or 8)
-        if settings.token is not None:
+        if settings.token_value():
             auth: Any = StaticHeaderAuth("X-Auth-Token", settings.token_value())
         else:
             auth = LoginTokenAuth(self._login)
@@ -140,6 +152,8 @@ class CatcApp:
             token = resp.json()["Token"]
         except (ValueError, KeyError, TypeError) as e:
             raise UpstreamError(f"{PRODUCT} login returned no Token (HTTP {resp.status_code})") from e
+        if not isinstance(token, str) or not token:
+            raise UpstreamError(f"{PRODUCT} login returned an empty or malformed Token")
         return Token({"X-Auth-Token": token}, Token.expiring_in(TOKEN_LIFETIME))
 
     async def aclose(self) -> None:
@@ -157,9 +171,8 @@ class CatcApp:
     async def version(self) -> str:
         if self._version is None:
             rel = await self.get_response("/dna/intent/api/v1/dnac-release")
-            self._version = str(
-                (rel or {}).get("installedVersion") or (rel or {}).get("displayVersion") or "unknown"
-            )
+            rel = rel if isinstance(rel, dict) else {}
+            self._version = str(rel.get("installedVersion") or rel.get("displayVersion") or "unknown")
         return self._version
 
     async def status(self) -> dict[str, Any]:
@@ -184,11 +197,11 @@ class CatcApp:
     # --- asynchronous jobs -----------------------------------------------------------------
 
     async def get_task(self, task_id: str) -> dict[str, Any]:
-        t = await self.get_response(TASK_PATH.format(id=task_id))
+        t = await self.get_response(TASK_PATH.format(id=safe_id(task_id, "task id")))
         return t if isinstance(t, dict) else {"raw": t}
 
     async def get_execution(self, execution_id: str) -> dict[str, Any]:
-        e = await self.api.get(EXECUTION_PATH.format(id=execution_id))
+        e = await self.api.get(EXECUTION_PATH.format(id=safe_id(execution_id, "execution id")))
         return e if isinstance(e, dict) else {"raw": e}
 
     async def wait_job(
@@ -233,10 +246,8 @@ class CatcApp:
             return {"execution_id": job_id, "status": e.get("status"), **exec_summary(e)}
         except TaskFailed as err:
             raise TaskFailed(f"{err} ({kind} id {job_id}; inspect with catc_get_task)") from err
-        except UpstreamError as err:
-            if "still running" in str(err):
-                raise type(err)(f"{err} Check it with catc_get_task(task_id='{job_id}').") from err
-            raise
+        except UpstreamTimeout as err:
+            raise UpstreamTimeout(f"{err} Check it with catc_get_task(task_id='{job_id}').") from err
 
 
 def task_summary(t: dict[str, Any]) -> dict[str, Any]:

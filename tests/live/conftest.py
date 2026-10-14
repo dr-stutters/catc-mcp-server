@@ -18,7 +18,9 @@ def lab_settings() -> Settings:
 
 @pytest.fixture
 def lab_rw_settings() -> Settings:
-    return live_settings(Settings, "CATC_", mcp_cache_dir="", mcp_enable_writes=True, mcp_enable_dangerous=True)
+    return live_settings(
+        Settings, "CATC_", mcp_cache_dir="", mcp_enable_writes=True, mcp_enable_dangerous=True
+    )
 
 
 @pytest.fixture
