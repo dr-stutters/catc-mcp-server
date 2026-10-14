@@ -137,3 +137,10 @@ async def test_get_task_auto_falls_back_to_execution(api: respx.MockRouter) -> N
     )
     out = await call_tool(create_server(make_settings()), "catc_get_task", {"task_id": "e9"})
     assert out["execution_id"] == "e9" and out["status"] == "SUCCESS"
+
+
+async def test_missing_credentials_is_auth_error() -> None:
+    app = CatcApp(make_settings(username=None, password=None))
+    with pytest.raises(AuthError, match="CATC_USERNAME"):
+        await app._login(app.api)
+    await app.aclose()
