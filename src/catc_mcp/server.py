@@ -15,11 +15,14 @@ from catc_mcp.tools import (
     compliance,
     discovery,
     inventory,
+    ops_writes,
+    site_writes,
     sites,
     smart,
     swim,
     system,
     tags,
+    template_writes,
     templates,
     topology,
 )
@@ -57,6 +60,9 @@ REGISTER = [
     swim.register,
     discovery.register,
     tags.register,
+    site_writes.register,
+    template_writes.register,
+    ops_writes.register,
 ]
 
 # The appliance doesn't serve its OpenAPI document over the API, so a copy ships in the wheel
