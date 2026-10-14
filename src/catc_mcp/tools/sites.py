@@ -113,7 +113,7 @@ def register(reg: ToolRegistrar) -> None:
         )
         detail, count = await asyncio.gather(*tasks, return_exceptions=True)
         if isinstance(detail, dict):
-            out["detail"] = {k: v for k, v in detail.items() if k not in out}
+            out.update(detail)
         if isinstance(count, dict):
             count = count.get("count")
         if isinstance(count, int):

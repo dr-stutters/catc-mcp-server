@@ -204,6 +204,21 @@ class CatcApp:
         e = await self.api.get(EXECUTION_PATH.format(id=safe_id(execution_id, "execution id")))
         return e if isinstance(e, dict) else {"raw": e}
 
+    async def run_job(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        *,
+        ctx: Context | None = None,
+        what: str = "task",
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,  # noqa: ASYNC109 - overall polling deadline
+    ) -> dict[str, Any]:
+        """Send a write and wait for the task/execution it starts (if any)."""
+        result = await self.api.request(method, path, params=params, json=body)
+        return await self.wait_job(result, ctx=ctx, timeout=timeout, what=what)
+
     async def wait_job(
         self,
         result: Any,

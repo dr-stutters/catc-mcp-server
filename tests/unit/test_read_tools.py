@@ -173,7 +173,7 @@ async def test_resolve_site_short_name_and_ambiguity(api: respx.MockRouter) -> N
     )
     api.get("/dna/intent/api/v1/networkDevices/assignedToSite/count").respond(json={"response": {"count": 2}})
     out = await call("catc_get_site", {"site": "SYD-1"})
-    assert out["detail"]["address"] == "1 George St" and out["assigned_devices"] == 2
+    assert out["address"] == "1 George St" and out["assigned_devices"] == 2
     out = await call("catc_get_site", {"site": "AU/SYD-1"})  # 'Global/' prefix is added
     assert out["id"] == BLDG["id"]
     with pytest.raises(ToolError, match="ambiguous"):
