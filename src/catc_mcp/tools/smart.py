@@ -25,7 +25,7 @@ from stutters_mcp_core import (
 
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import DEVICE_FIELDS, ensure_list, is_ip, norm_mac, pick, resolve_device, window
-from catc_mcp.tools.assurance import ISSUE_FIELDS
+from catc_mcp.tools.assurance import issue_row
 from catc_mcp.tools.inventory import redact_config
 
 # --- command runner allow-list ---------------------------------------------------------------
@@ -218,7 +218,9 @@ def register(reg: ToolRegistrar) -> None:
                 out["health"] = "not computed yet (Assurance needs ~15 minutes after a device is added)"
         issues = data.get("issues")
         if isinstance(issues, dict):
-            out["active_issues"] = [pick(i, ISSUE_FIELDS) for i in ensure_list(issues.get("response"))]
+            out["active_issues"] = [
+                issue_row(i) for i in ensure_list(issues.get("response")) if isinstance(i, dict)
+            ]
         ifaces = [i for i in ensure_list(data.get("interfaces")) if isinstance(i, dict)]
         if "interfaces" in data:
             down = [
@@ -315,7 +317,7 @@ def register(reg: ToolRegistrar) -> None:
                 ]
         issues = data.get("issues")
         if isinstance(issues, dict):
-            out["issues"] = [pick(i, ISSUE_FIELDS) for i in ensure_list(issues.get("response"))]
+            out["issues"] = [issue_row(i) for i in ensure_list(issues.get("response")) if isinstance(i, dict)]
         family = "Wireless Client" if host_type.upper() == "WIRELESS" else "Wired Client"
         try:
             ev = await app.api.get(
@@ -463,7 +465,9 @@ def register(reg: ToolRegistrar) -> None:
             resp = r.get("commandResponses") or {}
             entry: dict[str, Any] = {"device": names.get(str(r.get("deviceUuid")), r.get("deviceUuid"))}
             ok = resp.get("SUCCESS") or {}
-            entry["output"] = {c: redact_config(clean_output(c, str(t))) for c, t in ok.items()}
+            entry["output"] = {
+                c: redact_config(clean_output(c, str(t))) or "(no output)" for c, t in ok.items()
+            }
             if resp.get("FAILURE"):
                 entry["failed"] = {c: redact_config(str(t)) for c, t in resp["FAILURE"].items()}
             if resp.get("BLACKLISTED"):

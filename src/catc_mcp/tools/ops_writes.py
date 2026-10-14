@@ -163,33 +163,63 @@ def register(reg: ToolRegistrar) -> None:
     async def catc_delete_tag(
         ctx: Context,
         tag: Annotated[str, Field(description="Tag name or id")],
+        remove_members: Annotated[
+            bool,
+            Field(
+                description="Untag its member devices first (Catalyst Center refuses to delete a tag in use)"
+            ),
+        ] = False,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Delete a user-defined tag (its members are untagged, not deleted). System tags are refused.
-        Preview-first."""
+        """Delete a user-defined tag. Catalyst Center refuses while devices are tagged with it: pass
+        remove_members=true to untag them first (the devices themselves are untouched). System tags
+        are refused. Preview-first: shows the member count."""
         app: CatcApp = get_client(ctx)
         t = await resolve_tag(app, tag)
-        count = await app.get_response(
-            f"/dna/intent/api/v1/tag/{t['id']}/member/count", {"memberType": "networkdevice"}
+        members = await fetch_all(
+            app.pager, app.api, f"/dna/intent/api/v1/tag/{t['id']}/member", {"memberType": "networkdevice"}
         )
+        member_ids = sorted(
+            str(m.get("id") or m.get("instanceUuid")) for m in members.items if isinstance(m, dict)
+        )
+        blockers = []
+        if t.get("systemTag"):
+            blockers.append("System tags can't be deleted.")
+        if member_ids and not remove_members:
+            blockers.append(
+                f"{len(member_ids)} device(s) carry this tag; pass remove_members=true to untag them first."
+            )
         plan = Plan(
-            f"Delete tag {t.get('name')}",
+            f"Delete tag {t.get('name')}"
+            + (f" after untagging {len(member_ids)} device(s)" if member_ids else ""),
             details={
                 "method": "DELETE",
                 "path": f"/dna/intent/api/v1/tag/{t['id']}",
-                "device_members": count,
+                "device_members": len(member_ids),
             },
-            fingerprint={"id": t.get("id"), "members": count},
-            blockers=["System tags can't be deleted."] if t.get("systemTag") else [],
+            fingerprint={"id": t.get("id"), "members": member_ids},
+            blockers=blockers,
         )
 
         async def apply() -> Any:
+            for mid in member_ids:
+                await app.run_job(
+                    "DELETE",
+                    f"/dna/intent/api/v1/tag/{t['id']}/member/{safe_id(mid, 'member id')}",
+                    ctx=ctx,
+                    what="untag device",
+                )
             return await app.run_job(
                 "DELETE", f"/dna/intent/api/v1/tag/{t['id']}", ctx=ctx, what="delete tag"
             )
 
         return await preview_or_apply(
-            ctx, tool="catc_delete_tag", args={"tag": tag}, confirm=confirm, plan=plan, apply=apply
+            ctx,
+            tool="catc_delete_tag",
+            args={"tag": tag, "remove_members": remove_members},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
         )
 
     # --- discovery -------------------------------------------------------------------------------

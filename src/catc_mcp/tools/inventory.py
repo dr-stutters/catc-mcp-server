@@ -231,7 +231,9 @@ def register(reg: ToolRegistrar) -> None:
             if current:
                 sections.append("\n".join(current))
             want = " ".join(match.lower().split())
-            hits = [s for s in sections if " ".join(s.splitlines()[0].lower().split()).startswith(want)]
+            heads = [(" ".join(s.splitlines()[0].lower().split()), s) for s in sections]
+            # An exact header wins ('interface Gi1/0/2' shouldn't also return Gi1/0/20-24).
+            hits = [s for h, s in heads if h == want] or [s for h, s in heads if h.startswith(want)]
             text = "\n!\n".join(hits) if hits else f"(no config section starts with {match!r})"
         return text_result(
             f"! {dev.get('hostname')} ({dev.get('managementIpAddress')}) running config\n{text}"

@@ -45,6 +45,16 @@ ISSUE_FIELDS = [
     "occurrenceCount",
 ]
 
+
+def issue_row(i: dict[str, Any]) -> dict[str, Any]:
+    """An issue with its id under `id` (the data API calls it `issueId`) and readable UTC times."""
+    row = pick({**i, "id": i.get("issueId") or i.get("id")}, ISSUE_FIELDS)
+    for key in ("firstOccurredTime", "mostRecentOccurredTime"):
+        if isinstance(row.get(key), int | float):
+            row[key] = datetime.fromtimestamp(row[key] / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
+    return row
+
+
 EVENT_FAMILIES = Literal[
     "Switches and Hubs",
     "Routers",
@@ -294,8 +304,20 @@ def register(reg: ToolRegistrar) -> None:
         if mac:
             params["macAddress"] = norm_mac(mac)
         page = await issues_page(app, params, limit=limit, offset=offset)
-        page.items = [pick(i, ISSUE_FIELDS) for i in page.items if isinstance(i, dict)]
-        return list_result(page, fmt=response_format)
+        page.items = [issue_row(i) for i in page.items if isinstance(i, dict)]
+        return list_result(
+            page,
+            fmt=response_format,
+            columns=[
+                "priority",
+                "name",
+                "summary",
+                "status",
+                "siteHierarchy",
+                "mostRecentOccurredTime",
+                "id",
+            ],
+        )
 
     @reg.read(title="Get assurance issue")
     async def catc_get_issue(
@@ -303,12 +325,39 @@ def register(reg: ToolRegistrar) -> None:
         issue_id: Annotated[str, Field(description="Issue id from catc_list_issues")],
     ) -> ToolResult:
         """One assurance issue in full: description, affected device/client/site, timeline,
-        additional attributes and Catalyst Center's suggested actions (troubleshooting steps)."""
+        additional attributes and Catalyst Center's suggested actions with the show commands it proposes
+        (run them with catc_run_show_commands). Mark it resolved or ignored with
+        catc_update_issue_status."""
         app: CatcApp = get_client(ctx)
-        data = await app.get_response(
-            f"/dna/data/api/v1/assuranceIssues/{safe_id(issue_id, 'issue id')}", {"view": "impactedHosts"}
-        )
-        return object_result(data)
+        # No `view`: the default view is the one that carries suggestedActions.
+        data = await app.get_response(f"/dna/data/api/v1/assuranceIssues/{safe_id(issue_id, 'issue id')}")
+        data = data[0] if isinstance(data, list) and data else data
+        if not isinstance(data, dict):
+            return object_result(data)
+        out = issue_row(data)
+        for key in ("description", "deviceFamily", "siteName", "notes", "updatedBy", "isGlobal"):
+            if data.get(key) not in (None, ""):
+                out[key] = data[key]
+        # Suggested actions: what to check, and the command-runner commands Catalyst Center proposes.
+        out["suggested_actions"] = [
+            {
+                "action": a.get("message"),
+                "commands": [
+                    st.get("command")
+                    for st in a.get("steps") or []
+                    if isinstance(st, dict) and st.get("command")
+                ],
+            }
+            for a in data.get("suggestedActions") or []
+            if isinstance(a, dict)
+        ]
+        if data.get("additionalAttributes"):
+            out["attributes"] = {
+                str(a.get("key")): a.get("value")
+                for a in data["additionalAttributes"]
+                if isinstance(a, dict) and a.get("value") not in (None, "", "null")
+            }
+        return object_result(out)
 
     @reg.read(title="List assurance events")
     async def catc_list_events(
