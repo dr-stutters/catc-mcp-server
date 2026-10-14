@@ -19,7 +19,6 @@ from typing import Any
 import httpx
 from fastmcp import Context
 from stutters_mcp_core import (
-    AuthError,
     InvalidRequest,
     TaskFailed,
     UpstreamError,
@@ -149,10 +148,7 @@ class CatcApp:
         self._version: str | None = None
 
     async def _login(self, client: ApiClient) -> Token:
-        try:
-            user, password = self.settings.require_credentials("CATC_")
-        except ValueError as e:
-            raise AuthError(f"{e} (or CATC_TOKEN) to log in to {PRODUCT}.") from e
+        user, password = self.settings.require_credentials("CATC_")  # AuthError if unset
         resp = await client.send_raw(
             "POST", LOGIN_PATH, headers={"Authorization": basic_header(user, password)}
         )

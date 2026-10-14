@@ -489,3 +489,21 @@ def test_show_refuses_control_chars() -> None:
 
     with pytest.raises(InvalidRequest):
         check_show_command("show ver\x1a")
+
+
+def test_core_masking_of_catc_fields() -> None:
+    """core 0.1.1 leaves flag-like values unmasked; real CatC secrets must still be masked."""
+    from stutters_mcp_core import compact
+
+    out = compact(
+        {
+            "passwordList": "NO!$DATA!$",
+            "snmpRoCommunity": "public",
+            "sharedSecret": "s3cr3t",
+            "httpReadCredential": {"password": "pw", "secure": "true"},
+            "enablePasswordList": "true",
+        }
+    )
+    assert out["passwordList"] == out["snmpRoCommunity"] == out["sharedSecret"] == "********"
+    assert out["httpReadCredential"]["password"] == "********"
+    assert out["enablePasswordList"] == "true"  # flag-like value: shown, carries no secret
