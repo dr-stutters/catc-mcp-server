@@ -139,15 +139,24 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest(f"subnet {subnet!r}: {e}") from e
         if net.version != 4:
             raise InvalidRequest("Only IPv4 pools are supported here; use catc_api_call for IPv6.")
-        gw = gateway or str(next(net.hosts(), net.network_address))
+        try:
+            gw = (
+                str(ipaddress.ip_address(gateway.strip()))
+                if gateway
+                else str(next(net.hosts(), net.network_address))
+            )
+            dhcp = [str(ipaddress.ip_address(x.strip())) for x in dhcp_servers or []]
+            dns = [str(ipaddress.ip_address(x.strip())) for x in dns_servers or []]
+        except ValueError as e:
+            raise InvalidRequest(f"Not an IP address: {e}") from e
         if ipaddress.ip_address(gw) not in net:
             raise InvalidRequest(f"Gateway {gw} is outside {net}.")
         space: dict[str, Any] = {
             "subnet": str(net.network_address),
             "prefixLength": net.prefixlen,
             "gatewayIpAddress": gw,
-            "dhcpServers": dhcp_servers or [],
-            "dnsServers": dns_servers or [],
+            "dhcpServers": dhcp,
+            "dnsServers": dns,
         }
         blockers: list[str] = []
         globals_ = await _all(app, GLOBAL)
@@ -163,13 +172,15 @@ def register(reg: ToolRegistrar) -> None:
             s = await resolve_site(app, site)
             gp = await resolve_pool(app, global_pool, reserved=False)
             gspace = gp.get("addressSpace") or {}
+            if not gspace.get("subnet"):
+                raise InvalidRequest(f"Global pool {gp.get('name')} has no IPv4 address space.")
             gnet = ipaddress.ip_network(f"{gspace.get('subnet')}/{gspace.get('prefixLength')}", strict=False)
             if not net.subnet_of(gnet):  # type: ignore[arg-type]
                 blockers.append(f"{net} is not inside global pool {gp.get('name')} ({gnet}).")
             clash = [
                 p
                 for p in reserved
-                if p.get("ipV4AddressSpace", {}).get("subnet")
+                if (p.get("ipV4AddressSpace") or {}).get("subnet")
                 and net.overlaps(
                     ipaddress.ip_network(
                         f"{p['ipV4AddressSpace']['subnet']}/{p['ipV4AddressSpace']['prefixLength']}",
@@ -258,7 +269,7 @@ def register(reg: ToolRegistrar) -> None:
             subs = [
                 r
                 for r in await _all(app, RESERVED)
-                if r.get("ipV4AddressSpace", {}).get("globalPoolId") == p["id"]
+                if (r.get("ipV4AddressSpace") or {}).get("globalPoolId") == p["id"]
             ]
             if subs:
                 blockers.append(

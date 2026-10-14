@@ -211,7 +211,11 @@ def register(reg: ToolRegistrar) -> None:
                 "requests": ([f"POST {path}"] if new_devs else []) + ([f"PUT {path}"] if again else []),
             },
             side_effects=["Pushes the site's network settings (and profile templates) to each device."],
-            fingerprint={"site": s["id"], "existing": existing},
+            fingerprint={
+                "site": s["id"],
+                "devices": sorted(str(d["id"]) for d in devs),
+                "existing": existing,
+            },
             blockers=blockers,
         )
 

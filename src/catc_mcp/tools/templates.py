@@ -39,7 +39,9 @@ TEMPLATE_KEEP = [
 
 
 def param_summary(p: dict[str, Any]) -> dict[str, Any]:
-    out = pick(p, ["parameterName", "dataType", "required", "defaultValue", "description", "displayName"])
+    out: dict[str, Any] = pick(
+        p, ["parameterName", "dataType", "required", "defaultValue", "description", "displayName"]
+    )
     sel = p.get("selection") or {}
     if isinstance(sel, dict) and sel.get("selectionValues"):
         out["choices"] = list(sel["selectionValues"].values())
@@ -199,11 +201,9 @@ def deployment_summary(d: Any) -> dict[str, Any]:
             "duration",
         ],
     )
+    out = {k: redact_config(v) if isinstance(v, str) else v for k, v in out.items()}
     out["devices"] = [
-        {
-            k: redact_config(v) if isinstance(v, str) and k == "detailedStatusMessage" else v
-            for k, v in pick(x, DEPLOY_DEVICE_FIELDS).items()
-        }
+        {k: redact_config(v) if isinstance(v, str) else v for k, v in pick(x, DEPLOY_DEVICE_FIELDS).items()}
         for x in d.get("devices") or []
         if isinstance(x, dict)
     ]

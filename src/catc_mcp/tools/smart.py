@@ -244,7 +244,11 @@ def register(reg: ToolRegistrar) -> None:
             del errors["eox"]
             out["eox"] = "no EoX data for this device (not scanned yet, or no announcements)"
         if "provisioned" in data:
-            prov = [p for p in ensure_list(data["provisioned"]) if isinstance(p, dict)]
+            prov = [
+                p
+                for p in ensure_list(data["provisioned"])
+                if isinstance(p, dict) and p.get("networkDeviceId") == did
+            ]
             out["provisioned"] = bool(prov)
         if errors:
             out["unavailable"] = errors

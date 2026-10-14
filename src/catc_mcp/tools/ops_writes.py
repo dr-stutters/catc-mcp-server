@@ -180,7 +180,9 @@ def register(reg: ToolRegistrar) -> None:
             app.pager, app.api, f"/dna/intent/api/v1/tag/{t['id']}/member", {"memberType": "networkdevice"}
         )
         member_ids = sorted(
-            str(m.get("id") or m.get("instanceUuid")) for m in members.items if isinstance(m, dict)
+            str(m.get("id") or m.get("instanceUuid"))
+            for m in members.items
+            if isinstance(m, dict) and (m.get("id") or m.get("instanceUuid"))
         )
         blockers = []
         if t.get("systemTag"):
@@ -344,6 +346,7 @@ def register(reg: ToolRegistrar) -> None:
             f"Start {discovery_type} discovery {name} on {body['ipAddressList']}",
             details={"method": "POST", "path": "/dna/intent/api/v1/discovery", "body": shown},
             side_effects=["Devices that answer are added to the inventory and collected."],
+            fingerprint=sorted(cred_ids),
             blockers=blockers,
         )
         args = {

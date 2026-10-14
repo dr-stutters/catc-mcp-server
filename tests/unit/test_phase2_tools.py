@@ -793,3 +793,32 @@ async def test_config_match_is_a_prefix(api: respx.MockRouter) -> None:
     )
     out = await call("catc_get_device_config", {"device": "edge-sw1", "match": "interface loopback"})
     assert "interface Loopback0" in out and "ip domain lookup" not in out
+
+
+async def test_credential_description_with_colon(api: respx.MockRouter) -> None:
+    mock_creds(api, [{**CREDS[0], "description": "site:prod"}])
+    delete = api.delete(f"/dna/intent/api/v1/globalCredentials/{CREDS[0]['id']}").respond(
+        202, json={"response": {"taskId": "tdc"}}
+    )
+    task_ok(api, "tdc")
+    _, done = await preview_then_apply("catc_delete_global_credential", {"credential": "site:prod"})
+    assert done["status"] == "applied" and delete.called
+
+
+async def test_settings_bad_timezone_and_local_base(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL, AREA])
+    base = f"/dna/intent/api/v1/sites/{AREA['id']}/dnsSettings"
+
+    def dns(request: httpx.Request) -> httpx.Response:
+        inherited = request.url.params.get("_inherited") == "true"
+        body = {"dns": {"domainName": "g.lab", "dnsServers": ["1.1.1.1"]}} if inherited else {}
+        return httpx.Response(200, json={"response": body})
+
+    api.get(base).mock(side_effect=dns)
+    put = api.put(base).respond(202, json={"response": {"taskId": "tz"}})
+    task_ok(api, "tz")
+    with pytest.raises(ToolError, match="Unknown time zone"):
+        await preview_then_apply("catc_update_site_settings", {"site": "Global/AU", "timezone": "Mars/Base"})
+    await preview_then_apply("catc_update_site_settings", {"site": "Global/AU", "domain_name": "au.lab"})
+    # The inherited DNS servers are not copied into the area as a local override.
+    assert json.loads(put.calls.last.request.content) == {"dns": {"domainName": "au.lab"}}

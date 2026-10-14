@@ -39,6 +39,16 @@ CredType = Literal[
     "HTTP_WRITE",
 ]
 
+CRED_TYPES = {
+    "CLI",
+    "SNMPV2_READ_COMMUNITY",
+    "SNMPV2_WRITE_COMMUNITY",
+    "SNMPV3",
+    "NETCONF",
+    "HTTP_READ",
+    "HTTP_WRITE",
+}
+
 # Site credential slots (PUT /sites/{id}/deviceCredentials) by credential type. NETCONF has no slot.
 SITE_SLOTS = {
     "CLI": "cliCredentialsId",
@@ -69,8 +79,11 @@ async def resolve_credential(
             if c.get("id") == ref:
                 return c
         raise NotFound(f"No global credential with id {ref}. Use catc_list_global_credentials.")
+    exact = [c for c in creds if str(c.get("description", "")).lower() == ref.lower()]
     ctype, _, desc = ref.rpartition(":")
-    found = [
+    if exact or ctype.upper() not in CRED_TYPES:
+        ctype, desc = "", ref
+    found = exact or [
         c
         for c in creds
         if str(c.get("description", "")).lower() == desc.lower()
@@ -310,7 +323,10 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Set device credentials of {s.get('nameHierarchy')}",
             details={"changes": changes, "method": "PUT", "path": path},
-            fingerprint={k: label(v) for k, v in current.items() if k.endswith("CredentialsId")},
+            fingerprint={
+                "current": {k: label(v) for k, v in current.items() if k.endswith("CredentialsId")},
+                "new": body,
+            },
             blockers=blockers,
         )
 

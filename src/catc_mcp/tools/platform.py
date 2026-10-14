@@ -162,7 +162,9 @@ def register(reg: ToolRegistrar) -> None:
         data = await app.api.get("/dna/intent/api/v1/onboarding/pnp-device", params)
         rows = []
         for d in ensure_list(data):
-            info = (d or {}).get("deviceInfo") or {}
+            if not isinstance(d, dict):
+                continue
+            info = d.get("deviceInfo") or {}
             rows.append(
                 {
                     "serial": info.get("serialNumber"),

@@ -4,6 +4,7 @@ telemetry (syslog / SNMP trap collectors, wired client data collection) for a si
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import ipaddress
 from typing import Annotated, Any
+from zoneinfo import available_timezones
 
 from fastmcp import Context
 from pydantic import Field
@@ -106,6 +107,10 @@ def register(reg: ToolRegistrar) -> None:
             desired["banner"] = {
                 "banner": {"type": "Custom", "message": banner} if banner else {"type": "Builtin"}
             }
+        if timezone is not None and timezone not in available_timezones() and timezone != "GMT":
+            raise InvalidRequest(
+                f"Unknown time zone {timezone!r}; use an IANA name such as 'Australia/Sydney'."
+            )
         if timezone is not None:
             desired["timezone"] = {"timeZone": {"identifier": timezone}}
         tele: dict[str, Any] = {}
@@ -138,18 +143,21 @@ def register(reg: ToolRegistrar) -> None:
             path = f"/dna/intent/api/v1/sites/{sid}/{SETTINGS[cat]}"
             try:
                 cur = await app.get_response(path, {"_inherited": "true"})
+                local = await app.get_response(path, {"_inherited": "false"})
             except UpstreamError as e:
                 blockers.append(f"Can't read the current {cat} settings: {str(e)[:200]}")
                 continue
             cur = _strip_inherited(cur if isinstance(cur, dict) else {})
-            current[cat] = cur
+            local = _strip_inherited(local if isinstance(local, dict) else {})
+            current[cat] = {"effective": cur, "local": local}
             diff = field_changes(cur, want)
             if diff:
                 changes[cat] = diff
-                # The PUT replaces the category's object, so start from the current values.
+                # The PUT replaces the category's object at this site, so start from the values set
+                # here (not inherited ones, which would turn into local overrides).
                 body: dict[str, Any] = {}
                 for key, part in want.items():
-                    base = cur.get(key) if isinstance(cur.get(key), dict) else {}
+                    base = local.get(key) if isinstance(local.get(key), dict) else {}
                     body[key] = {**base, **part} if isinstance(part, dict) else part
                 bodies[cat] = body
         if not blockers and not changes:
