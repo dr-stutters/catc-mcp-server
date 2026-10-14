@@ -15,6 +15,7 @@ from stutters_mcp_core import (
     Plan,
     ToolRegistrar,
     UpstreamError,
+    compact,
     get_client,
     poll_until,
     preview_or_apply,
@@ -106,9 +107,11 @@ def register(reg: ToolRegistrar) -> None:
             if isinstance(prev, dict):
                 rendered = redact_config(str(prev.get("cliPreview") or ""))
                 if prev.get("validationErrors"):
-                    blockers.append(f"Template validation errors: {prev['validationErrors']}")
+                    blockers.append(
+                        f"Template validation errors: {redact_config(str(prev['validationErrors']))}"
+                    )
         except UpstreamError as e:
-            rendered = f"(preview unavailable: {str(e)[:200]})"
+            rendered = f"(preview unavailable: {redact_config(str(e))[:200]})"
         body = {
             "templateId": tid,
             "forcePushTemplate": force_push,
@@ -118,9 +121,20 @@ def register(reg: ToolRegistrar) -> None:
         }
         plan = Plan(
             f"Deploy template {ref.get('projectName')}/{ref.get('name')} to {len(devs)} device(s)",
-            details={"devices": brief(devs), "rendered_cli_first_device": rendered, "params": params or {}},
+            details={
+                "devices": brief(devs),
+                "rendered_cli_first_device": rendered,
+                "note": "CLI rendered for the first device only; device-bound variables may differ.",
+                "params": compact(params or {}),
+            },
             side_effects=["Changes the running configuration of every listed device."],
-            fingerprint={"versions": len(ensure_list(ref.get("versionsInfo")))},
+            fingerprint={
+                "template": tid,
+                "devices": sorted(str(d["id"]) for d in devs),
+                "versions": [
+                    v.get("id") for v in ensure_list(ref.get("versionsInfo")) if isinstance(v, dict)
+                ],
+            },
             blockers=blockers,
         )
 
@@ -180,10 +194,12 @@ def register(reg: ToolRegistrar) -> None:
             f"Provision {len(devs)} device(s) to {s.get('nameHierarchy')}",
             details={
                 "devices": brief(devs),
+                "site": {"nameHierarchy": s.get("nameHierarchy"), "id": s.get("id")},
                 "method": "POST",
                 "path": "/dna/intent/api/v1/sda/provisionDevices",
             },
             side_effects=["Pushes the site's network settings to each device."],
+            fingerprint={"site": s["id"], "devices": sorted(str(d["id"]) for d in devs)},
             blockers=blockers,
         )
 
@@ -227,6 +243,7 @@ def register(reg: ToolRegistrar) -> None:
                 "path": path,
             },
             side_effects=effects,
+            fingerprint={"device": dev["id"], "image": img["id"], "action": action},
         )
 
         async def apply() -> Any:
@@ -278,11 +295,13 @@ def register(reg: ToolRegistrar) -> None:
         s = await resolve_site(app, site)
         if s.get("type") == "global":
             raise InvalidRequest("The Global site can't be deleted.")
-        sites, _ = await all_sites(app)
+        sites, complete = await all_sites(app)
         prefix = str(s["nameHierarchy"]) + "/"
         children = [c for c in sites if str(c.get("nameHierarchy", "")).startswith(prefix)]
         doomed = sorted([*children, s], key=lambda c: -str(c.get("nameHierarchy", "")).count("/"))
         blockers = []
+        if not complete:
+            blockers.append("The site list was truncated, so children can't be enumerated safely.")
         if children and not recursive:
             blockers.append(f"{len(children)} child site(s) exist; pass recursive=true to delete them too.")
         devices = 0
@@ -303,10 +322,13 @@ def register(reg: ToolRegistrar) -> None:
         )
 
         async def apply() -> Any:
-            deleted = []
+            deleted: list[Any] = []
             for c in doomed:
                 path = SITE_DETAIL_PATHS[str(c.get("type"))].format(id=c["id"])
-                await app.run_job("DELETE", path, ctx=ctx, what=f"delete {c.get('nameHierarchy')}")
+                try:
+                    await app.run_job("DELETE", path, ctx=ctx, what=f"delete {c.get('nameHierarchy')}")
+                except UpstreamError as e:
+                    return {"deleted": deleted, "failed": c.get("nameHierarchy"), "error": str(e)[:300]}
                 deleted.append(c.get("nameHierarchy"))
             return {"deleted": deleted}
 
@@ -333,6 +355,19 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
         path = f"/dna/intent/api/v1/network-device/{dev['id']}"
+        blockers = []
+        try:
+            prov = ensure_list(
+                await app.get_response(
+                    "/dna/intent/api/v1/sda/provisionDevices", {"networkDeviceId": dev["id"]}
+                )
+            )
+        except UpstreamError:
+            prov = []
+        if prov:
+            blockers.append(
+                "The device is provisioned; un-provision it first (Catalyst Center refuses otherwise)."
+            )
         plan = Plan(
             f"Delete device {dev.get('hostname')} ({dev.get('managementIpAddress')}) from inventory",
             details={
@@ -344,6 +379,7 @@ def register(reg: ToolRegistrar) -> None:
             side_effects=["Assurance history for the device is lost."]
             + (["Removes Catalyst Center-pushed config from the device."] if clean_config else []),
             fingerprint=dev.get("id"),
+            blockers=blockers,
         )
 
         async def apply() -> Any:
@@ -377,7 +413,13 @@ def register(reg: ToolRegistrar) -> None:
         path = f"/dna/intent/api/v1/discovery/{d['id']}"
         plan = Plan(
             f"Delete discovery {d.get('name')}",
-            details={"method": "DELETE", "path": path, "ip_ranges": d.get("ipAddressList")},
+            details={
+                "method": "DELETE",
+                "path": path,
+                "ip_ranges": d.get("ipAddressList"),
+                "devices_found": d.get("numDevices"),
+                "note": "Devices it added stay in the inventory.",
+            },
             fingerprint=d.get("id"),
         )
 

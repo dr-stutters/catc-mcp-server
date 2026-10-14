@@ -173,9 +173,48 @@ async def test_delete_site_blocked_by_devices(api: respx.MockRouter) -> None:
 
 async def test_delete_device(api: respx.MockRouter) -> None:
     mock_device_lookup(api)
+    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(json={"response": []})
     route = api.delete(f"/dna/intent/api/v1/network-device/{DEV_ID}").respond(
         202, json={"response": {"taskId": "tdd"}}
     )
     task_ok(api, "tdd")
     _, done = await flow("catc_delete_device", {"device": "edge-sw1", "clean_config": True})
     assert done["status"] == "applied" and route.calls.last.request.url.params["cleanConfig"] == "true"
+
+
+async def test_deploy_preview_masks_secret_params(api: respx.MockRouter) -> None:
+    tpl = {**fixture("templates.json")[0], "versionsInfo": [{"id": "v1", "version": "1"}]}
+    api.get("/dna/intent/api/v1/template-programmer/template").respond(json=[tpl])
+    mock_device_lookup(api)
+    api.put("/dna/intent/api/v1/template-programmer/template/preview").respond(json={"cliPreview": "x"})
+    api.post("/dna/intent/api/v2/template-programmer/template/deploy").respond(202, json={"response": {}})
+    preview, _ = await flow(
+        "catc_deploy_template",
+        {"template": TID, "devices": ["edge-sw1"], "params": {"enable_password": "Sup3r", "vlan": 5}},
+    )
+    assert "Sup3r" not in json.dumps(preview) and preview["preview"]["params"]["vlan"] == 5
+
+
+async def test_activate_refused_if_image_resolution_changes(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    a = {"id": "dddddddd-1111-2222-3333-444444444444", "name": "img.bin", "version": "17.12.4"}
+    b = {**a, "id": "eeeeeeee-1111-2222-3333-444444444444"}
+    api.get("/dna/intent/api/v1/images").mock(
+        side_effect=[httpx.Response(200, json={"response": [a]}), httpx.Response(200, json={"response": [b]})]
+    )
+    post = api.post(f"/dna/intent/api/v1/networkDeviceImages/{DEV_ID}/activate")
+    import pytest
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="changed since the preview"):
+        await flow("catc_activate_image", {"device": "edge-sw1", "image": "img.bin"})
+    assert post.call_count == 0
+
+
+async def test_delete_device_blocked_when_provisioned(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(
+        json={"response": [{"networkDeviceId": DEV_ID}]}
+    )
+    preview, _ = await flow("catc_delete_device", {"device": "edge-sw1"})
+    assert preview["status"] == "blocked"
