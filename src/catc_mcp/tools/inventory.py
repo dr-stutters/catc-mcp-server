@@ -1,0 +1,256 @@
+"""Inventory reads: devices, interfaces, running config, modules."""
+
+# No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import re
+from typing import Annotated, Any, Literal
+
+from fastmcp import Context
+from fastmcp.tools import ToolResult
+from pydantic import Field
+from stutters_mcp_core import (
+    ResponseFormat,
+    ToolRegistrar,
+    get_client,
+    list_result,
+    object_result,
+    text_result,
+)
+from stutters_mcp_core.http import fetch_all, page_of
+
+from catc_mcp.client import CatcApp
+from catc_mcp.common import DEVICE_FIELDS, ensure_list, pick, resolve_device, resolve_site
+
+DeviceRef = Annotated[str, Field(description="Device hostname, management IP, serial number or id")]
+
+INTERFACE_FIELDS = [
+    "portName",
+    "status",
+    "adminStatus",
+    "description",
+    "ipv4Address",
+    "vlanId",
+    "portMode",
+    "speed",
+    "duplex",
+    "macAddress",
+    "interfaceType",
+    "id",
+]
+
+# Lines of a running config whose secret part is masked before it reaches the model.
+_SECRET_LINE = re.compile(
+    r"^(?P<keep>\s*(?:\S+\s+)*?(?:password|secret|key-string|key|community|pre-shared-key|"
+    r"pre-shared|authentication-key|server-key|tacacs-server key|md5|psk|passphrase|ascii)"
+    r"(?:\s+\d)?)\s+\S.*$",
+    re.IGNORECASE,
+)
+
+
+def redact_config(text: str) -> str:
+    """Mask passwords, secrets, keys and SNMP communities in IOS-style configuration text."""
+    out = []
+    for line in text.splitlines():
+        m = _SECRET_LINE.match(line)
+        out.append(f"{m.group('keep')} ********" if m else line)
+    return "\n".join(out)
+
+
+def register(reg: ToolRegistrar) -> None:
+    @reg.read(title="List network devices")
+    async def catc_list_devices(
+        ctx: Context,
+        hostname: Annotated[
+            str | None, Field(description="Hostname filter; '.*' wildcards allowed (e.g. 'edge.*')")
+        ] = None,
+        ip: Annotated[str | None, Field(description="Management IP; '.*' wildcards allowed")] = None,
+        family: Annotated[
+            str | None, Field(description="Device family, e.g. 'Switches and Hubs', 'Routers', 'Unified AP'")
+        ] = None,
+        role: Annotated[
+            Literal["ACCESS", "DISTRIBUTION", "CORE", "BORDER ROUTER", "UNKNOWN"] | None,
+            Field(description="Device role"),
+        ] = None,
+        reachability: Annotated[
+            Literal["Reachable", "Unreachable", "Ping Reachable"] | None,
+            Field(description="Reachability status"),
+        ] = None,
+        platform: Annotated[str | None, Field(description="Platform id, e.g. 'C9300-24U'")] = None,
+        serial: Annotated[str | None, Field(description="Serial number")] = None,
+        software_version: Annotated[str | None, Field(description="Software version, e.g. '17.9.4'")] = None,
+        site: Annotated[
+            str | None, Field(description="Only devices assigned to this site (id or name hierarchy)")
+        ] = None,
+        limit: Annotated[int, Field(ge=1, le=500)] = 50,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        response_format: ResponseFormat = "markdown",
+    ) -> ToolResult:
+        """List network devices in the Catalyst Center inventory with hostname, management IP,
+        platform, software version, role, reachability and serial. Filters combine (AND). Use the
+        hostname/IP/id with catc_get_device or catc_device_360 for details."""
+        app: CatcApp = get_client(ctx)
+        params: dict[str, Any] = {
+            k: v
+            for k, v in {
+                "hostname": hostname,
+                "managementIpAddress": ip,
+                "family": family,
+                "role": role,
+                "reachabilityStatus": reachability,
+                "platformId": platform,
+                "serialNumber": serial,
+                "softwareVersion": software_version,
+            }.items()
+            if v
+        }
+        extra: dict[str, Any] = {}
+        if site:
+            s = await resolve_site(app, site)
+            extra["site"] = s.get("nameHierarchy")
+            if s.get("type") == "global":
+                pass
+            else:
+                assigned = await fetch_all(
+                    app.pager,
+                    app.api,
+                    "/dna/intent/api/v1/networkDevices/assignedToSite",
+                    {"siteId": s["id"]},
+                )
+                ids = [a["deviceId"] for a in assigned.items if isinstance(a, dict) and a.get("deviceId")]
+                if not ids:
+                    return list_result(
+                        page_of([], limit=limit, offset=offset), fmt=response_format, extra=extra
+                    )
+                # id= ignores other filters, so filter client-side when both are given.
+                devices = []
+                for i in range(0, len(ids), 100):
+                    chunk = ensure_list(
+                        await app.get_response(
+                            "/dna/intent/api/v1/network-device", {"id": ",".join(ids[i : i + 100])}
+                        )
+                    )
+                    devices += [d for d in chunk if isinstance(d, dict)]
+                devices = [d for d in devices if _matches(d, params)]
+                rows = [pick(d, DEVICE_FIELDS) for d in devices]
+                return list_result(
+                    page_of(rows, limit=limit, offset=offset), fmt=response_format, extra=extra
+                )
+        page = await app.pager.fetch_page(
+            app.api, "/dna/intent/api/v1/network-device", params, limit=limit, offset=offset
+        )
+        page.items = [pick(d, DEVICE_FIELDS) for d in page.items if isinstance(d, dict)]
+        return list_result(page, fmt=response_format, extra=extra or None)
+
+    @reg.read(title="Get network device")
+    async def catc_get_device(ctx: Context, device: DeviceRef) -> ToolResult:
+        """Full inventory record for one network device: platform, serial, software, role, uptime,
+        reachability and collection status (with failure reason), management IP, MAC, location.
+        Use catc_device_360 for health, issues, interfaces and compliance in one call."""
+        app: CatcApp = get_client(ctx)
+        return object_result(await resolve_device(app, device))
+
+    @reg.read(title="List device interfaces")
+    async def catc_list_device_interfaces(
+        ctx: Context,
+        device: DeviceRef,
+        status: Annotated[
+            Literal["up", "down"] | None, Field(description="Only interfaces in this oper status")
+        ] = None,
+        name: Annotated[
+            str | None, Field(description="Interface name contains, e.g. 'Gi1/0/' or 'Vlan'")
+        ] = None,
+        limit: Annotated[int, Field(ge=1, le=500)] = 100,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        response_format: ResponseFormat = "markdown",
+    ) -> ToolResult:
+        """Interfaces of one device with oper/admin status, description, IPv4 address, VLAN, port mode,
+        speed/duplex and MAC. Filter by status or name to find down ports or SVIs."""
+        app: CatcApp = get_client(ctx)
+        dev = await resolve_device(app, device)
+        data = ensure_list(await app.get_response(f"/dna/intent/api/v1/interface/network-device/{dev['id']}"))
+        rows = [pick(i, INTERFACE_FIELDS) for i in data if isinstance(i, dict)]
+        if status:
+            rows = [r for r in rows if str(r.get("status", "")).lower() == status]
+        if name:
+            rows = [r for r in rows if name.lower() in str(r.get("portName", "")).lower()]
+        rows.sort(key=lambda r: str(r.get("portName", "")))
+        return list_result(
+            page_of(rows, limit=limit, offset=offset),
+            fmt=response_format,
+            extra={"device": dev.get("hostname")},
+        )
+
+    @reg.read(title="Get device running config")
+    async def catc_get_device_config(
+        ctx: Context,
+        device: DeviceRef,
+        match: Annotated[
+            str | None,
+            Field(
+                description="Only return config sections whose first line contains this text, "
+                "e.g. 'interface Vlan'"
+            ),
+        ] = None,
+    ) -> ToolResult:
+        """The device's running configuration as last collected by Catalyst Center (not live: run
+        catc_run_show_commands for that). Passwords, secrets, keys and SNMP communities are masked.
+        Use `match` to return only matching top-level sections (e.g. 'router bgp', 'interface Gi1/0/1')."""
+        app: CatcApp = get_client(ctx)
+        dev = await resolve_device(app, device)
+        cfg = await app.get_response(f"/dna/intent/api/v1/network-device/{dev['id']}/config")
+        text = redact_config(cfg if isinstance(cfg, str) else str(cfg or ""))
+        if match:
+            sections: list[str] = []
+            current: list[str] = []
+            for line in text.splitlines():
+                if line and not line[0].isspace():
+                    if current:
+                        sections.append("\n".join(current))
+                    current = [line]
+                elif current:
+                    current.append(line)
+            if current:
+                sections.append("\n".join(current))
+            hits = [s for s in sections if match.lower() in s.splitlines()[0].lower()]
+            text = "\n!\n".join(hits) if hits else f"(no config section starts with text matching {match!r})"
+        return text_result(
+            f"! {dev.get('hostname')} ({dev.get('managementIpAddress')}) running config\n{text}"
+        )
+
+    @reg.read(title="List device modules")
+    async def catc_list_device_modules(
+        ctx: Context,
+        device: DeviceRef,
+        limit: Annotated[int, Field(ge=1, le=500)] = 100,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        response_format: ResponseFormat = "markdown",
+    ) -> ToolResult:
+        """Hardware modules of one device (line cards, supervisors, power supplies, fans, transceivers)
+        with part number, serial number and operational state."""
+        app: CatcApp = get_client(ctx)
+        dev = await resolve_device(app, device)
+        page = await app.pager.fetch_page(
+            app.api,
+            "/dna/intent/api/v1/network-device/module",
+            {"deviceId": dev["id"]},
+            limit=limit,
+            offset=offset,
+        )
+        fields = [
+            "name",
+            "partNumber",
+            "serialNumber",
+            "operationalStateCode",
+            "containmentEntity",
+            "description",
+        ]
+        page.items = [pick(m, fields) for m in page.items if isinstance(m, dict)]
+        return list_result(page, fmt=response_format, extra={"device": dev.get("hostname")})
+
+
+def _matches(dev: dict[str, Any], params: dict[str, Any]) -> bool:
+    """Client-side version of the network-device filters (values may use '.*' wildcards)."""
+    for key, pattern in params.items():
+        value = str(dev.get(key, ""))
+        if not re.fullmatch(str(pattern), value, re.IGNORECASE):
+            return False
+    return True
