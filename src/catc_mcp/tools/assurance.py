@@ -3,12 +3,14 @@
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
 import time
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
 from stutters_mcp_core import (
+    InvalidRequest,
     ResponseFormat,
     ToolRegistrar,
     UpstreamError,
@@ -53,6 +55,26 @@ EVENT_FAMILIES = Literal[
 ]
 
 
+def event_row(e: dict[str, Any]) -> dict[str, Any]:
+    """One event, most useful columns first, with a readable UTC time."""
+    ts = e.get("timestamp")
+    row: dict[str, Any] = {
+        "time": datetime.fromtimestamp(ts / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(ts, int | float)
+        else ts,
+        "name": e.get("name"),
+        "device": e.get("networkDeviceName"),
+        "client": e.get("clientMac") or e.get("hostName"),
+        "type": e.get("messageType"),
+        "severity": e.get("severity"),
+        "result": e.get("result"),
+        "failure": e.get("failureCategory") or e.get("subreasonDescription"),
+        "details": e.get("details"),
+        "id": e.get("id"),
+    }
+    return {k: v for k, v in row.items() if v not in (None, "")}
+
+
 async def issues_page(app: CatcApp, params: dict[str, Any], *, limit: int, offset: int) -> Any:
     return await DATA_PAGER.fetch_page(
         app.api, "/dna/data/api/v1/assuranceIssues", params, limit=limit, offset=offset
@@ -83,6 +105,36 @@ def register(reg: ToolRegistrar) -> None:
             }
         elif isinstance(net, BaseException):
             raise net
+        elif isinstance(net, dict):
+            out["network_health"] = {
+                k: net[k]
+                for k in (
+                    "latestHealthScore",
+                    "totalDevices",
+                    "monitoredDevices",
+                    "monitoredHealthyDevices",
+                    "monitoredUnHealthyDevices",
+                    "monitoredPoorHealthDevices",
+                    "monitoredFairHealthDevices",
+                    "noHealthDevices",
+                )
+                if k in net
+            }
+            # (sic) Catalyst Center spells it "healthDistirubution".
+            dist = net.get("healthDistirubution") or net.get("healthDistribution") or []
+            out["by_category"] = [
+                {
+                    "category": d.get("category"),
+                    "healthScore": d.get("healthScore"),
+                    "devices": d.get("totalCount"),
+                    "good": d.get("goodCount"),
+                    "fair": d.get("fairCount"),
+                    "bad": d.get("badCount"),
+                    "no_health": d.get("noHealthCount"),
+                }
+                for d in dist
+                if isinstance(d, dict)
+            ]
         else:
             out["network_health"] = net
         if isinstance(sites, list):
@@ -262,10 +314,12 @@ def register(reg: ToolRegistrar) -> None:
     async def catc_list_events(
         ctx: Context,
         device_family: Annotated[
-            EVENT_FAMILIES, Field(description="Event family (required by the API; one per call)")
-        ],
+            EVENT_FAMILIES | None,
+            Field(description="Event family (one per call); default: the device's family, or Wired Client"),
+        ] = None,
         device: Annotated[
-            str | None, Field(description="Network device name ('*' wildcard ok) for device events")
+            str | None,
+            Field(description="Network device (hostname, IP, serial or id; or a name with '*' wildcards)"),
         ] = None,
         client_mac: Annotated[str | None, Field(description="Client MAC for client events")] = None,
         ap_mac: Annotated[str | None, Field(description="AP MAC for AP or wireless client events")] = None,
@@ -284,16 +338,32 @@ def register(reg: ToolRegistrar) -> None:
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """Assurance events (syslog, SNMP traps, client onboarding events) for network devices or
-        clients, newest first. The API requires one device family per call."""
+        clients, newest first. The API takes one device family per call; it is worked out from
+        `device` (or Wired/Wireless Client for client_mac/ap_mac) when not given."""
         app: CatcApp = get_client(ctx)
+        family: str | None = device_family
+        name = device
+        if device and "*" not in device:
+            dev = await resolve_device(app, device)
+            name = str(dev.get("hostname"))
+            family = family or str(dev.get("family") or "") or None
+        if family is None:
+            if ap_mac:
+                family = "Wireless Client" if client_mac else "Unified AP"
+            elif client_mac:
+                family = "Wired Client"
+            else:
+                raise InvalidRequest(
+                    "Give device_family, or a device / client_mac / ap_mac to infer it from."
+                )
         params: dict[str, Any] = {
-            "deviceFamily": device_family,
+            "deviceFamily": family,
             **window(hours),
             "sortBy": "timestamp",
             "order": "desc",
         }
-        if device:
-            params["networkDeviceName"] = device
+        if name:
+            params["networkDeviceName"] = name
         if client_mac:
             params["clientMac"] = norm_mac(client_mac)
         if ap_mac:
@@ -305,4 +375,5 @@ def register(reg: ToolRegistrar) -> None:
         page = await EVENTS_PAGER.fetch_page(
             app.api, "/dna/data/api/v1/assuranceEvents", params, limit=limit, offset=offset
         )
+        page.items = [event_row(e) for e in page.items if isinstance(e, dict)]
         return list_result(page, fmt=response_format)

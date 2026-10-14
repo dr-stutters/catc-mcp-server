@@ -104,6 +104,9 @@ def register(reg: ToolRegistrar) -> None:
         context_lines: Annotated[
             int, Field(ge=0, le=20, description="Unchanged lines around each change")
         ] = 3,
+        max_lines: Annotated[
+            int, Field(ge=10, le=5000, description="Truncate the diff after this many lines (default 400)")
+        ] = 400,
     ) -> ToolResult:
         """Unified diff between two archived configurations of one device: what changed since the
         previous running config, what is unsaved (running vs startup), or any two archive files.
@@ -168,7 +171,12 @@ def register(reg: ToolRegistrar) -> None:
                 "identical": not diff,
                 "lines_added": added,
                 "lines_removed": removed,
-                "diff": "\n".join(diff),
+                "diff": "\n".join(diff[:max_lines]),
+                **(
+                    {"truncated": f"diff cut at {max_lines} of {len(diff)} lines; raise max_lines"}
+                    if len(diff) > max_lines
+                    else {}
+                ),
             },
             shape=False,
         )

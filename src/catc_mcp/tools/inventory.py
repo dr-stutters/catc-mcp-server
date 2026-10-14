@@ -206,7 +206,7 @@ def register(reg: ToolRegistrar) -> None:
         match: Annotated[
             str | None,
             Field(
-                description="Only return config sections whose first line contains this text, "
+                description="Only return top-level config sections whose first line starts with this text, "
                 "e.g. 'interface Vlan'"
             ),
         ] = None,
@@ -230,8 +230,9 @@ def register(reg: ToolRegistrar) -> None:
                     current.append(line)
             if current:
                 sections.append("\n".join(current))
-            hits = [s for s in sections if match.lower() in s.splitlines()[0].lower()]
-            text = "\n!\n".join(hits) if hits else f"(no config section starts with text matching {match!r})"
+            want = " ".join(match.lower().split())
+            hits = [s for s in sections if " ".join(s.splitlines()[0].lower().split()).startswith(want)]
+            text = "\n!\n".join(hits) if hits else f"(no config section starts with {match!r})"
         return text_result(
             f"! {dev.get('hostname')} ({dev.get('managementIpAddress')}) running config\n{text}"
         )
