@@ -198,7 +198,8 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(
                 "Already provisioned to another site: "
                 + ", ".join(brief(moved))
-                + ". Un-provision them first (catc_unprovision_devices), then assign and provision."
+                + ". Catalyst Center can't move a provisioned device: delete it (catc_delete_device), "
+                "rediscover it, then assign and provision it."
             )
         path = "/dna/intent/api/v1/sda/provisionDevices"
         plan = Plan(
@@ -245,57 +246,6 @@ def register(reg: ToolRegistrar) -> None:
             ctx,
             tool="catc_provision_devices",
             args={"devices": devices, "site": site, "wait": wait},
-            confirm=confirm,
-            plan=plan,
-            apply=apply,
-        )
-
-    @reg.dangerous(title="Un-provision devices")
-    async def catc_unprovision_devices(
-        ctx: Context,
-        devices: Devices,
-        wait: Wait = True,
-        confirm: Confirm = None,
-    ) -> dict[str, Any]:
-        """Remove the provisioning of wired devices (they stay in the inventory and keep their
-        configuration, but Catalyst Center no longer manages their site settings). Needed before a
-        provisioned device can move to another site or be deleted. Preview-first."""
-        app: CatcApp = get_client(ctx)
-        devs = await resolve_devices(app, devices)
-        existing = await provisioned_records(app, [str(d["id"]) for d in devs])
-        targets = [d for d in devs if str(d["id"]) in existing]
-        blockers = [] if targets else ["None of these devices is provisioned."]
-        plan = Plan(
-            f"Un-provision {len(targets)} device(s)",
-            details={
-                "devices": brief(targets),
-                "not_provisioned": brief([d for d in devs if d not in targets]),
-                "method": "DELETE",
-                "path": "/dna/intent/api/v1/sda/provisionDevices/{id}",
-            },
-            fingerprint=existing,
-            blockers=blockers,
-        )
-
-        async def apply() -> Any:
-            done: dict[str, Any] = {}
-            for d in targets:
-                rid = safe_id(str(existing[str(d["id"])]["id"]), "provisioning id")
-                started = await app.api.delete(f"/dna/intent/api/v1/sda/provisionDevices/{rid}")
-                name = brief([d])[0]
-                try:
-                    done[name] = (
-                        await app.wait_job(started, ctx=ctx, what="un-provision") if wait else started
-                    )
-                except UpstreamError as e:
-                    done[name] = f"failed: {str(e)[:300]}"
-                    break
-            return done
-
-        return await preview_or_apply(
-            ctx,
-            tool="catc_unprovision_devices",
-            args={"devices": devices, "wait": wait},
             confirm=confirm,
             plan=plan,
             apply=apply,
@@ -433,44 +383,39 @@ def register(reg: ToolRegistrar) -> None:
         ] = False,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Remove a (non-provisioned) device from the Catalyst Center inventory; with clean_config
-        also remove the settings Catalyst Center configured on it. Preview-first."""
+        """Remove a device from the Catalyst Center inventory. A provisioned device is un-provisioned
+        and deleted in one step (Catalyst Center has no separate un-provision API in 3.x); with
+        clean_config the settings Catalyst Center pushed (AAA, syslog/SNMP/telemetry, banners, ...) are
+        also removed from the device. Assurance history is lost; rediscover to bring it back.
+        Preview-first."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
-        path = f"/dna/intent/api/v1/network-device/{dev['id']}"
-        blockers = []
-        try:
-            prov = ensure_list(
-                await app.get_response(
-                    "/dna/intent/api/v1/sda/provisionDevices", {"networkDeviceId": dev["id"]}
-                )
-            )
-        except UpstreamError:
-            prov = []
+        did = str(dev["id"])
+        prov = (await provisioned_records(app, [did])).get(did)
         if prov:
-            blockers.append("The device is provisioned; un-provision it first with catc_unprovision_devices.")
+            path = f"/dna/intent/api/v1/sda/provisionDevices/{safe_id(str(prov['id']), 'provisioning id')}"
+            params = {"cleanUpConfig": str(clean_config).lower()}
+        else:
+            path = f"/dna/intent/api/v1/network-device/{did}"
+            params = {"cleanConfig": str(clean_config).lower()}
         plan = Plan(
-            f"Delete device {dev.get('hostname')} ({dev.get('managementIpAddress')}) from inventory",
+            f"{'Un-provision and delete' if prov else 'Delete'} device {dev.get('hostname')} "
+            f"({dev.get('managementIpAddress')}) from inventory",
             details={
                 "device": brief([dev])[0],
+                "provisioned": bool(prov),
                 "clean_config": clean_config,
                 "method": "DELETE",
                 "path": path,
+                "params": params,
             },
             side_effects=["Assurance history for the device is lost."]
             + (["Removes Catalyst Center-pushed config from the device."] if clean_config else []),
-            fingerprint=dev.get("id"),
-            blockers=blockers,
+            fingerprint={"id": did, "provisioning": prov},
         )
 
         async def apply() -> Any:
-            return await app.run_job(
-                "DELETE",
-                path,
-                params={"cleanConfig": str(clean_config).lower()},
-                ctx=ctx,
-                what="delete device",
-            )
+            return await app.run_job("DELETE", path, params=params, ctx=ctx, what="delete device")
 
         return await preview_or_apply(
             ctx,

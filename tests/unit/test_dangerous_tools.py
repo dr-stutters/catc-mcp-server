@@ -212,10 +212,17 @@ async def test_activate_refused_if_image_resolution_changes(api: respx.MockRoute
     assert post.call_count == 0
 
 
-async def test_delete_device_blocked_when_provisioned(api: respx.MockRouter) -> None:
+async def test_delete_provisioned_device_uses_provisioning_api(api: respx.MockRouter) -> None:
     mock_device_lookup(api)
     api.get("/dna/intent/api/v1/sda/provisionDevices").respond(
-        json={"response": [{"networkDeviceId": DEV_ID}]}
+        json={"response": [{"id": "prov-1", "networkDeviceId": DEV_ID, "siteId": "s"}]}
     )
-    preview, _ = await flow("catc_delete_device", {"device": "edge-sw1"})
-    assert preview["status"] == "blocked"
+    route = api.delete("/dna/intent/api/v1/sda/provisionDevices/prov-1").respond(
+        202, json={"response": {"taskId": "tdp"}}
+    )
+    task_ok(api, "tdp")
+    preview, done = await flow("catc_delete_device", {"device": "edge-sw1"})
+    assert preview["preview"]["provisioned"] is True and preview["action"].startswith(
+        "Un-provision and delete"
+    )
+    assert done["status"] == "applied" and route.calls.last.request.url.params["cleanUpConfig"] == "false"

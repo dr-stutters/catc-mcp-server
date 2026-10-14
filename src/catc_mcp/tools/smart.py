@@ -279,34 +279,49 @@ def register(reg: ToolRegistrar) -> None:
         if isinstance(detail, dict):
             d = detail.get("detail") or {}
             host_type = str(d.get("hostType", ""))
-            out["client"] = pick(
-                d,
-                [
-                    "hostName",
-                    "hostIpV4",
-                    "userId",
-                    "hostType",
-                    "hostOs",
-                    "deviceVendor",
-                    "connectionStatus",
-                    "healthScore",
-                    "ssid",
-                    "frequency",
-                    "channel",
-                    "rssi",
-                    "snr",
-                    "dataRate",
-                    "vlanId",
-                    "clientConnection",
-                    "port",
-                    "connectedDevice",
-                    "location",
-                    "onboarding",
-                    "issueCount",
-                    "lastUpdated",
-                ],
-            )
-            if detail.get("connectionInfo"):
+            wireless = host_type.upper() == "WIRELESS"
+            fields = [
+                "hostName",
+                "hostIpV4",
+                "userId",
+                "hostType",
+                "hostOs",
+                "deviceVendor",
+                "connectionStatus",
+                "vlanId",
+                "clientConnection",
+                "port",
+                "location",
+                "issueCount",
+                "lastUpdated",
+            ]
+            if wireless:
+                fields += ["ssid", "frequency", "channel", "rssi", "snr", "dataRate"]
+            out["client"] = pick(d, fields)
+            scores = {
+                str(h.get("healthType")).lower(): h.get("score")
+                for h in ensure_list(d.get("healthScore"))
+                if isinstance(h, dict) and h.get("healthType")
+            }
+            if scores:
+                out["client"]["health"] = scores
+            dev = [
+                pick(c, ["name", "type", "mgmtIp", "id"])
+                for c in ensure_list(d.get("connectedDevice"))
+                if isinstance(c, dict)
+            ]
+            if dev:
+                out["client"]["connected_device"] = dev[0] if len(dev) == 1 else dev
+            o = d.get("onboarding")
+            onb: dict[str, Any] = o if isinstance(o, dict) else {}
+            causes = {
+                k: onb[k]
+                for k in ("latestRootCauseList", "dhcpRootcauseList", "aaaRootcauseList")
+                if onb.get(k)
+            }
+            if causes:
+                out["client"]["onboarding"] = causes
+            if wireless and detail.get("connectionInfo"):
                 out["connection"] = detail["connectionInfo"]
             topo = detail.get("topology") or {}
             if isinstance(topo, dict) and topo.get("nodes"):

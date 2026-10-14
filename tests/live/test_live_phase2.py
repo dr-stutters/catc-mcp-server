@@ -267,10 +267,12 @@ async def test_tag_members_and_resync(lab_rw: Client, routers: dict[str, Any]) -
 
 
 async def test_provisioning_previews(lab_rw: Client, routers: dict[str, Any]) -> None:  # type: ignore[type-arg]
-    """Preview only: the routers stay as they are (provisioning was exercised by hand, see notes)."""
+    """Preview only: the routers stay as they are (provisioning and delete were exercised by hand)."""
     with pytest.raises(ToolError, match="No site"):
         await lab_rw.call_tool(
             "catc_provision_devices", {"devices": [R1], "site": f"Global/mcp-test-none-{RUN}"}
         )
-    prov = await call(lab_rw, "catc_unprovision_devices", {"devices": [R1, R2]})
-    assert prov["status"] in ("preview", "blocked")
+    prov = await call(lab_rw, "catc_provision_devices", {"devices": [R1], "site": "Global"})
+    assert prov["status"] == "blocked"
+    delete = await call(lab_rw, "catc_delete_device", {"device": R1})
+    assert delete["status"] == "preview"  # not confirmed: r1 stays

@@ -744,23 +744,7 @@ async def test_reprovision_and_moved_blocker(api: respx.MockRouter) -> None:
         json={"response": [{**rec, "siteId": "elsewhere"}]}
     )
     preview, _ = await flow("catc_provision_devices", {"devices": ["edge-sw1"], "site": "SYD-1"})
-    assert "catc_unprovision_devices" in preview["blockers"][0]
-
-
-async def test_unprovision(api: respx.MockRouter) -> None:
-    mock_device_lookup(api)
-    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(
-        json={"response": [{"id": "prov-1", "networkDeviceId": DEV_ID, "siteId": BLDG["id"]}]}
-    )
-    delete = api.delete("/dna/intent/api/v1/sda/provisionDevices/prov-1").respond(
-        202, json={"response": {"taskId": "tu"}}
-    )
-    task_ok(api, "tu")
-    preview, done = await flow("catc_unprovision_devices", {"devices": ["edge-sw1"]})
-    assert preview["status"] == "preview" and delete.called and done["status"] == "applied"
-    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(json={"response": []})
-    preview, _ = await flow("catc_unprovision_devices", {"devices": ["edge-sw1"]})
-    assert preview["status"] == "blocked"
+    assert "catc_delete_device" in preview["blockers"][0]
 
 
 # --- assurance, command runner, config ----------------------------------------------------------
