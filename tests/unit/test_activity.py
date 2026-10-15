@@ -4,10 +4,15 @@ import time
 from typing import Any
 
 import httpx
+import pytest
 import respx
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
-from catc_mcp.tools.activity import matches, merge
+from catc_mcp.server import create_server
+from catc_mcp.tools.activity import in_scope, merge
 
+from .conftest import make_settings
 from .test_read_tools import DEV_ID, DEVICE, call, mock_device_lookup
 
 NOW = int(time.time() * 1000)
@@ -31,14 +36,35 @@ def notif(
     }
 
 
-def test_matches_ip_boundary() -> None:
-    e = {"details": {"managementIpAddr": "10.0.0.110"}}
-    assert not matches(e, ["10.0.0.11"])
-    assert matches({"details": {"managementIpAddr": "10.0.0.11"}}, ["10.0.0.11"])
-    assert matches({"description": "drift on 10.0.0.11, ok"}, ["10.0.0.11"])
-    assert matches(
-        {"details": {"_key": "NetworkDevice:abc:edge-sw1.lab.local:Global"}}, ["edge-sw1.lab.local"]
-    )
+def test_device_matcher_boundaries() -> None:
+    dev = {"managementIpAddress": "10.0.0.11", "hostname": "r1", "id": "dev-1"}
+
+    def hit(text: str) -> bool:
+        return in_scope({"description": text}, dev, None)
+
+    assert hit("drift on 10.0.0.11, ok") and hit("Provisioning done for 10.0.0.11.")
+    assert hit("device [10.0.0.11]") and hit("NetworkDevice:x:r1:Global")
+    assert not hit("10.0.0.110") and not hit("110.0.0.11") and not hit("10.0.0.11.5")
+    assert not hit("r10 is down") and not hit("mirror1") and not hit("r1-b")
+
+
+def test_site_matcher_children_not_siblings() -> None:
+    site = {"nameHierarchy": "Global/A", "id": "site-a"}
+
+    def hit(text: str) -> bool:
+        return in_scope({"description": text}, None, site)
+
+    assert hit("The site Global/A was created.") and hit("key:Global/A/B:x") and hit("groupuuid = site-a")
+    assert not hit("Global/A2") and not hit("Global/AB/x")
+    assert in_scope({"description": "anything"}, None, {"nameHierarchy": "Global", "id": "g"})
+
+
+def test_device_and_site_are_and() -> None:
+    dev = {"managementIpAddress": "10.0.0.11", "hostname": "r1", "id": "dev-1"}
+    site = {"nameHierarchy": "Global/A", "id": "site-a"}
+    assert in_scope({"description": "r1 at Global/A"}, dev, site)
+    assert not in_scope({"description": "r1 at Global/B"}, dev, site)
+    assert not in_scope({"description": "r2 at Global/A"}, dev, site)
 
 
 def test_merge_newest_first_and_limit() -> None:
@@ -159,3 +185,35 @@ async def test_audit_logs_device_by_name_and_text(api: respx.MockRouter) -> None
     out = await call("catc_list_audit_logs", {"device": "10.0.0.11", "response_format": "json"})
     assert any(c.request.url.params.get("deviceId") == DEV_ID for c in route.calls)
     assert [r["instanceId"] for r in out["results"]] == ["a1", "a2"]
+
+
+async def test_recent_activity_all_sources_fail(api: respx.MockRouter) -> None:
+    api.get("/dna/intent/api/v1/event/event-series").respond(500, json={})
+    api.get("/dna/data/api/v1/event/event-series/audit-logs").respond(500, json={})
+    async with Client(create_server(make_settings())) as c:
+        with pytest.raises(ToolError, match="Every activity source failed"):
+            await c.call_tool("catc_recent_activity", {"sources": ["notification", "audit"]})
+
+
+async def test_audit_scoped_paging(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    rows = [
+        {"instanceId": f"a{i}", "description": f"job on 10.0.0.11 #{i}", "timestamp": NOW - i}
+        for i in range(7)
+    ]
+
+    def audit(request: httpx.Request) -> httpx.Response:
+        q = request.url.params
+        if q.get("deviceId"):
+            return httpx.Response(200, json=[])
+        off, n = int(q["offset"]), int(q["limit"])
+        return httpx.Response(200, json=rows[off : off + n])
+
+    api.get("/dna/data/api/v1/event/event-series/audit-logs").mock(side_effect=audit)
+    first = await call("catc_list_audit_logs", {"device": "10.0.0.11", "limit": 3, "response_format": "json"})
+    assert [r["instanceId"] for r in first["results"]] == ["a0", "a1", "a2"] and first["next_offset"] == 3
+    last = await call(
+        "catc_list_audit_logs", {"device": "10.0.0.11", "limit": 5, "offset": 5, "response_format": "json"}
+    )
+    assert [r["instanceId"] for r in last["results"]] == ["a5", "a6"] and "next_offset" not in last
+    assert "note" not in last

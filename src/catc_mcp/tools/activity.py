@@ -7,6 +7,7 @@ poller, buffer or subscription; the history available is what Catalyst Center ke
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -17,6 +18,7 @@ from pydantic import Field
 from stutters_mcp_core import (
     ResponseFormat,
     ToolRegistrar,
+    UpstreamError,
     get_client,
     list_result,
 )
@@ -110,32 +112,61 @@ def _haystack(e: dict[str, Any]) -> str:
     return " ".join(str(p) for p in parts if p).lower()
 
 
-def device_needles(dev: dict[str, Any]) -> list[str]:
-    host = str(dev.get("hostname") or "")
-    out = [str(dev.get("id") or ""), str(dev.get("managementIpAddress") or ""), host]
-    return [n.lower() for n in out if n]
+Matcher = list[re.Pattern[str]]
 
 
-def site_needles(site: dict[str, Any]) -> list[str]:
-    out = [str(site.get("id") or ""), str(site.get("nameHierarchy") or "")]
-    return [n.lower() for n in out if n]
+def _ip_pattern(ip: str) -> re.Pattern[str]:
+    # Not part of a longer address on either side (10.0.0.11 vs 110.0.0.11 / 10.0.0.110);
+    # a sentence-ending period is fine.
+    return re.compile(r"(?<![\d.])" + re.escape(ip) + r"(?!\d|\.\d)")
 
 
-def matches(e: dict[str, Any], needles: list[str]) -> bool:
+def _name_pattern(name: str) -> re.Pattern[str]:
+    # A whole hostname or id: r1 must not match r10 or mirror1.
+    return re.compile(r"(?<![\w.-])" + re.escape(name) + r"(?![\w-]|\.\w)")
+
+
+def _site_pattern(path: str) -> re.Pattern[str]:
+    # The site or a site below it: Global/A matches Global/A and Global/A/B, not Global/A2.
+    return re.compile(r"(?<![\w/-])" + re.escape(path) + r"(?![^/\s,;:\]\)\"'])")
+
+
+def device_matcher(dev: dict[str, Any]) -> Matcher:
+    out: Matcher = []
+    if dev.get("managementIpAddress"):
+        out.append(_ip_pattern(str(dev["managementIpAddress"]).lower()))
+    for key in ("hostname", "id"):
+        if dev.get(key):
+            out.append(_name_pattern(str(dev[key]).lower()))
+    return out
+
+
+def site_matcher(site: dict[str, Any]) -> Matcher | None:
+    """Patterns for a site; None for Global (everything is below it, so no text filter)."""
+    path = str(site.get("nameHierarchy") or "")
+    if path.lower() == "global":
+        return None
+    out: Matcher = []
+    if path:
+        out.append(_site_pattern(path.lower()))
+    if site.get("id"):
+        out.append(_name_pattern(str(site["id"]).lower()))
+    return out
+
+
+def matches(e: dict[str, Any], patterns: Matcher | None) -> bool:
+    """True when the record's text names one of the patterns (None: no filter)."""
+    if patterns is None:
+        return True
     hay = _haystack(e)
-    for n in needles:
-        if n and n in hay:
-            # An IP must not match a longer IP (198.18.128.15 vs .152).
-            if n[0].isdigit() and "." in n:
-                idx = hay.find(n)
-                while idx >= 0:
-                    after = hay[idx + len(n) : idx + len(n) + 1]
-                    if not (after.isdigit() or after == "."):
-                        return True
-                    idx = hay.find(n, idx + 1)
-                continue
-            return True
-    return False
+    return any(p.search(hay) for p in patterns)
+
+
+def in_scope(e: dict[str, Any], device: dict[str, Any] | None, site: dict[str, Any] | None) -> bool:
+    """Device and site filters both apply (AND), like the API's deviceId + siteId."""
+    if device is not None and not matches(e, device_matcher(device)):
+        return False
+    return site is None or matches(e, site_matcher(site))
 
 
 async def fetch_notifications(
@@ -167,19 +198,25 @@ async def fetch_notifications(
         rows = [e for e in rows if e.get("type") != "AUDIT_LOG"]
     if severity is not None:
         rows = [e for e in rows if isinstance(e.get("severity"), int) and e["severity"] <= severity]
-    if device is not None:
-        rows = [e for e in rows if matches(e, device_needles(device))]
-    if site is not None:
-        rows = [e for e in rows if matches(e, site_needles(site))]
-    rows.sort(key=lambda e: e.get("timestamp") or 0, reverse=True)
+    rows = [e for e in rows if in_scope(e, device, site)]
+    rows.sort(key=lambda e: _num(e.get("timestamp")), reverse=True)
     return rows, page.complete
 
 
 # --- catc_recent_activity sources --------------------------------------------------------------
 
 
+def _num(v: Any) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _row(source: str, ms: Any, what: Any, **kw: Any) -> dict[str, Any]:
-    return _clean({"time": ts_text(ms), "source": source, "what": _short(what, 200), **kw, "_ms": ms or 0})
+    row = _clean({"time": ts_text(ms), "source": source, "what": _short(what, 200), **kw})
+    row["_ms"] = _num(ms)
+    return row
 
 
 async def _issues(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: dict[str, Any] | None) -> Any:
@@ -202,7 +239,7 @@ async def _issues(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: 
         for i in page.items
         if isinstance(i, dict)
     ]
-    return rows, page.complete
+    return rows, None if page.complete else f"capped at {SOURCE_CAP} rows"
 
 
 async def _events(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: dict[str, Any] | None) -> Any:
@@ -211,35 +248,33 @@ async def _events(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: 
         families = [str(dev.get("family") or "Routers")]
     else:
         families = ["Routers", "Switches and Hubs", "Wireless Controller"]
-    rows: list[dict[str, Any]] = []
-    complete = True
-    for fam in families:
-        params: dict[str, Any] = {
-            "deviceFamily": fam,
-            **window(hours),
-            "sortBy": "timestamp",
-            "order": "desc",
-        }
+
+    async def one(fam: str) -> Any:
+        params: dict[str, Any] = {"deviceFamily": fam, **window(hours)}
+        params.update(sortBy="timestamp", order="desc")
         if dev:
             params["networkDeviceId"] = dev["id"]
         if site:
             params["siteId"] = site["id"]
-        page = await fetch_all(app.data_pager, app.api, EVENTS, params, cap=SOURCE_CAP, max_page=PAGE_EVENTS)
-        complete = complete and page.complete
-        rows.extend(
-            _row(
-                "event",
-                e.get("timestamp"),
-                e.get("details") or e.get("name"),
-                device=e.get("networkDeviceName"),
-                severity=e.get("severity"),
-                type=e.get("messageType"),
-                id=e.get("id"),
-            )
-            for e in page.items
-            if isinstance(e, dict)
+        return await fetch_all(app.data_pager, app.api, EVENTS, params, cap=SOURCE_CAP, max_page=PAGE_EVENTS)
+
+    pages = await asyncio.gather(*(one(f) for f in families))
+    rows = [
+        _row(
+            "event",
+            e.get("timestamp"),
+            e.get("details") or e.get("name"),
+            device=e.get("networkDeviceName"),
+            severity=e.get("severity"),
+            type=e.get("messageType"),
+            id=e.get("id"),
         )
-    return rows, complete
+        for page in pages
+        for e in page.items
+        if isinstance(e, dict)
+    ]
+    capped = [f for f, page in zip(families, pages, strict=True) if not page.complete]
+    return rows, f"capped at {SOURCE_CAP} rows for {', '.join(capped)}" if capped else None
 
 
 async def _notifications(
@@ -259,7 +294,9 @@ async def _notifications(
         )
         for e in found[:SOURCE_CAP]
     ]
-    return rows, complete and len(found) <= SOURCE_CAP
+    if not complete:
+        return rows, f"scan stopped at the newest {NOTIFICATION_SCAN_CAP} notifications"
+    return rows, f"capped at {SOURCE_CAP} rows" if len(found) > SOURCE_CAP else None
 
 
 async def fetch_audit(
@@ -269,8 +306,9 @@ async def fetch_audit(
     device: dict[str, Any] | None = None,
     site: dict[str, Any] | None = None,
     cap: int = SOURCE_CAP,
-) -> tuple[list[dict[str, Any]], bool]:
-    """Audit records for `params` (window, user, category...), newest first, and whether complete.
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    """Audit records for `params` (window, user, category...), newest first, plus `more` (records
+    beyond `cap` may exist) and `scan_truncated` (the text scan stopped at AUDIT_SCAN_CAP).
 
     Catalyst Center tags few audit records with deviceId/siteId (3.2.2: template deploys, site
     settings and command runs carry neither), so a device or site scope also scans the window and
@@ -281,20 +319,19 @@ async def fetch_audit(
 
     if device is None and site is None:
         page = await get(params, cap)
-        return [r for r in page.items if isinstance(r, dict)], page.complete
+        return [r for r in page.items if isinstance(r, dict)], not page.complete, False
     tagged_q = dict(params)
     if device is not None:
         tagged_q["deviceId"] = device["id"]
     if site is not None:
         tagged_q["siteId"] = site["id"]
     tagged, scan = await asyncio.gather(get(tagged_q, cap), get(params, AUDIT_SCAN_CAP))
-    needles = (device_needles(device) if device else []) + (site_needles(site) if site else [])
     rows: dict[str, dict[str, Any]] = {}
-    for r in [*tagged.items, *(e for e in scan.items if isinstance(e, dict) and matches(e, needles))]:
+    for r in [*tagged.items, *(e for e in scan.items if isinstance(e, dict) and in_scope(e, device, site))]:
         if isinstance(r, dict):
             rows.setdefault(str(r.get("instanceId") or id(r)), r)
-    out = sorted(rows.values(), key=lambda r: r.get("timestamp") or 0, reverse=True)
-    return out[:cap], tagged.complete and scan.complete and len(out) <= cap
+    out = sorted(rows.values(), key=lambda r: _num(r.get("timestamp")), reverse=True)
+    return out[:cap], (not tagged.complete) or len(out) > cap, not scan.complete
 
 
 async def _audit(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: dict[str, Any] | None) -> Any:
@@ -304,7 +341,7 @@ async def _audit(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: d
         "sortBy": "timestamp",
         "order": "desc",
     }
-    found, complete = await fetch_audit(app, params, device=dev, site=site)
+    found, more, truncated = await fetch_audit(app, params, device=dev, site=site)
     rows = [
         _row(
             "audit",
@@ -317,7 +354,9 @@ async def _audit(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: d
         )
         for r in found
     ]
-    return rows, complete
+    if truncated:
+        return rows, f"text scan stopped at the newest {AUDIT_SCAN_CAP} audit records"
+    return rows, f"capped at {SOURCE_CAP} rows" if more else None
 
 
 SOURCE_FETCHERS: dict[str, Callable[..., Awaitable[Any]]] = {
@@ -331,7 +370,7 @@ SOURCE_FETCHERS: dict[str, Callable[..., Awaitable[Any]]] = {
 def merge(rows_by_source: dict[str, list[dict[str, Any]]], limit: int) -> list[dict[str, Any]]:
     """All rows newest first (ties keep source order), trimmed to `limit`, without the sort key."""
     merged = [r for src in SOURCES for r in rows_by_source.get(src, [])]
-    merged.sort(key=lambda r: r.get("_ms") or 0, reverse=True)
+    merged.sort(key=lambda r: _num(r.get("_ms")), reverse=True)
     return [{k: v for k, v in r.items() if k != "_ms"} for r in merged[:limit]]
 
 
@@ -395,6 +434,8 @@ def register(reg: ToolRegistrar) -> None:
         page = page_of([notification_row(e) for e in rows], limit=limit, offset=offset)
         extra: dict[str, Any] = {}
         if not complete:
+            page.total = None
+            page.more = True
             extra["note"] = (
                 f"Scanned the newest {NOTIFICATION_SCAN_CAP} notifications in the window only; "
                 "narrow the window (hours) or add type/category/domain for older ones."
@@ -441,18 +482,20 @@ def register(reg: ToolRegistrar) -> None:
         rows_by_source: dict[str, list[dict[str, Any]]] = {}
         counts: dict[str, Any] = {}
         errors: dict[str, str] = {}
-        partial: list[str] = []
+        partial: dict[str, str] = {}
         for src, res in zip(wanted, results, strict=True):
             if isinstance(res, BaseException):
                 if not isinstance(res, Exception):
                     raise res
-                errors[src] = f"{type(res).__name__}: {res}"[:300]
+                errors[src] = _short(f"{type(res).__name__}: {res}", 300)
                 continue
-            rows, complete = res
+            rows, reason = res
             rows_by_source[src] = rows
             counts[src] = len(rows)
-            if not complete:
-                partial.append(src)
+            if reason:
+                partial[src] = reason
+        if errors and not rows_by_source:
+            raise UpstreamError(f"Every activity source failed: {errors}")
         merged = merge(rows_by_source, limit)
         scope = {
             "device": dev.get("hostname") if dev else None,
@@ -466,7 +509,7 @@ def register(reg: ToolRegistrar) -> None:
         if errors:
             out["errors"] = errors
         if partial:
-            out["partial"] = f"These sources hit the {SOURCE_CAP}-row cap: {', '.join(partial)}"
+            out["partial"] = partial
         total = sum(counts.values())
         if total > len(merged):
             out["note"] = (

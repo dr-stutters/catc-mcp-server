@@ -124,8 +124,10 @@ def register(reg: ToolRegistrar) -> None:
             params["category"] = category
         if text:
             params["description"] = text
-        ref = device or (safe_id(device_id, "device id") if device_id else None)
-        dev = await resolve_device(app, ref) if ref else None
+        dev = await resolve_device(app, device) if device else None
+        if device_id and not device:
+            # Deprecated: passed through as before (works for devices no longer in inventory).
+            params["deviceId"] = safe_id(device_id, "device id")
         st = await resolve_site(app, site) if site else None
         extra: dict[str, Any] | None = None
         if dev is None and st is None:
@@ -138,11 +140,15 @@ def register(reg: ToolRegistrar) -> None:
                 max_page=PAGE_AUDIT,
             )
         else:
-            rows, complete = await fetch_audit(app, params, device=dev, site=st, cap=offset + limit + 1)
+            rows, more, truncated = await fetch_audit(app, params, device=dev, site=st, cap=offset + limit)
             page = page_of(rows, limit=limit, offset=offset)
-            if not complete:
+            if more or truncated:
                 page.total = None
-                page.more = len(rows) > offset + limit
-                extra = {"note": f"Device/site matching scanned the newest {AUDIT_SCAN_CAP} records only."}
+                page.more = True
+            if truncated:
+                extra = {
+                    "note": f"Device/site text matching scanned the newest {AUDIT_SCAN_CAP} records "
+                    "only; narrow `hours` for older ones."
+                }
         page.items = [pick(r, AUDIT_FIELDS) for r in page.items if isinstance(r, dict)]
         return list_result(page, fmt=response_format, extra=extra)
