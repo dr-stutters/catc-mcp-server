@@ -373,3 +373,65 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
 9. Summary: switch onboarded (site, provisioning), AAA/ISE config on the switch, NAD in ISE,
    the port template, and the endpoint's authentication result in both products. In monitor mode
    remind the user that failures don't block traffic yet, and that "closed" mode enforces it."""
+
+    @reg.prompt(title="Decommission a device", uses=["catc", "ise"], tier=Tier.DANGEROUS)
+    def catc_decommission_device(
+        device: Annotated[str, Field(description="Device hostname, management IP or serial")],
+        clean_config: Annotated[
+            Literal["true", "false"],
+            Field(
+                description="true: also remove the configuration Catalyst Center pushed (AAA, syslog, "
+                "SNMP, telemetry, banner); false: leave the device's configuration as it is"
+            ),
+        ],
+        remove_ise_nad: Annotated[
+            Literal["true", "false"], Field(description="Also delete the device's network device in ISE")
+        ] = "true",
+    ) -> str:
+        """Take a device out of Catalyst Center cleanly: keep a copy of its configuration, show what
+        un-provisioning loses (it DELETES the device: unmanaged, assurance history and config archive
+        gone), untag it, delete it with an explicit clean_config, then remove the network device
+        Catalyst Center leaves behind in ISE. Every write is preview-first; needs the ise server for
+        the last step."""
+        if any(not ch.isprintable() or ch in '"`' for ch in device):
+            raise ValueError("device must be printable text without quotes or backticks.")
+        dev = device.strip()
+        if not dev:
+            raise ValueError("Give the device's hostname, management IP or serial.")
+        ise = (
+            f"""6. ISE: Catalyst Center does not delete the network device it created in ISE when it
+   provisioned this device (with AAA = ISE). Call {tool_ref("ise_get_nad")} with the device's
+   management IP (from step 1); if one exists and its name is the device's hostname (CatC names it
+   so, group DNAC#DNAC Devices), preview {tool_ref("ise_delete_nad")} for it, show the preview and
+   delete it once the user approves. If the NAD has another name or other IPs, show it and ask
+   first: it may be shared or hand-made. Afterwards {tool_ref("ise_list_nads")} filtered by the
+   name confirms it is gone."""
+            if remove_ise_nad == "true"
+            else "6. ISE: skipped (remove_ise_nad=false). Mention that ISE still has the device's NAD."
+        )
+        return f"""Decommission "{dev}" from Catalyst Center (clean_config={clean_config}). Show every
+preview to the user and confirm only after they approve. Stop if a step fails and report what was done.
+
+1. Identify: call {tool_ref("catc_device_360")} for "{dev}" and note hostname, management IP,
+   serial, site, provisioning state and health. If it isn't found, stop: nothing to decommission.
+2. Keep a copy: call {tool_ref("catc_get_device_config")} for "{dev}" (running config, secrets
+   masked) and {tool_ref("catc_list_config_archive")}; give the user the configuration or tell them
+   where the archive versions are, because deleting the device deletes its archive in Catalyst
+   Center.
+3. Impact: call {tool_ref("catc_delete_device")} with device "{dev}" and clean_config={clean_config}
+   WITHOUT confirm. Show the preview's side effects verbatim: un-provisioning in Catalyst Center 3.x
+   deletes the device (no longer managed: no assurance, compliance, templates or provisioning until
+   it is rediscovered), its archived configuration versions go, and with clean_config=true the
+   AAA/syslog/SNMP/telemetry/banner configuration Catalyst Center pushed is removed from the device
+   (it may lose RADIUS/TACACS+ logins that relied on it). If the user only wanted to stop managing
+   some settings, suggest re-provisioning instead and stop here.
+4. Tags: call {tool_ref("catc_list_tags")}; for any static tag that has the device
+   ({tool_ref("catc_list_tag_members")}), remove it with {tool_ref("catc_update_tag_members")}
+   (remove=["{dev}"]), so automation keyed on the tag doesn't target a ghost.
+5. Delete: repeat {tool_ref("catc_delete_device")} with the same arguments and the confirm token
+   from step 3 (after the user approved it). Then {tool_ref("catc_get_device")} for "{dev}" must say
+   no such device; {tool_ref("catc_get_task")} if it is still running.
+{ise}
+7. Summary: what was saved (config), what was removed (inventory entry, tags, ISE NAD), whether the
+   device's configuration was cleaned, and how to bring it back: the {tool_ref("catc_onboard_device")}
+   prompt (discovery, site, provisioning)."""

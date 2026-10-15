@@ -35,6 +35,7 @@ SAMPLES = {
         "params": '{"loopback_id": 77}',
         "rollback": "negation",
     },
+    "catc_decommission_device": {"device": "r2.mcp.lab", "clean_config": "false", "remove_ise_nad": "true"},
     "catc_onboard_switch_with_nac": {
         "switch_ip": "198.18.128.170",
         "site_path": "Global/mcp-test-lab/mcp-test-nac",
@@ -197,3 +198,19 @@ async def test_prompt_snapshots() -> None:
 async def test_other_servers_reference_existing_catc_tools() -> None:
     server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
     await assert_inbound_references(server, "catc", MANIFESTS)
+
+
+async def test_decommission_prompt_without_ise() -> None:
+    server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    async with Client(server) as c:
+        res = await c.get_prompt(
+            "catc_decommission_device", {"device": "r2", "clean_config": "true", "remove_ise_nad": "false"}
+        )
+    text = res.messages[0].content.text  # type: ignore[union-attr]
+    assert "clean_config=true" in text and "ise_delete_nad" not in text and "still has" in text
+
+
+async def test_decommission_prompt_hidden_below_dangerous() -> None:
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        names = {p.name for p in await c.list_prompts()}
+    assert "catc_decommission_device" not in names
