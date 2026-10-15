@@ -4,6 +4,7 @@
 import json
 import re
 import time
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -32,7 +33,7 @@ from catc_mcp.common import (
     resolve_device,
     window,
 )
-from catc_mcp.tools.assurance import issue_row
+from catc_mcp.tools.assurance import STALE_NOTE, group_issues, issue_row
 from catc_mcp.tools.inventory import redact_config
 
 # --- command runner allow-list ---------------------------------------------------------------
@@ -165,7 +166,8 @@ def register(reg: ToolRegistrar) -> None:
         device: Annotated[str, Field(description="Device hostname, management IP, serial number or id")],
     ) -> ToolResult:
         """Everything about one network device in one call: inventory record, site, assurance health
-        (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h), interface
+        (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped,
+        with how long ago each last occurred), interface
         counts and the ports that are down while admin-up, compliance status and end-of-life (EoX)
         alerts. Start device troubleshooting
         here; follow up with catc_get_issue, catc_get_device_config or catc_run_show_commands."""
@@ -211,9 +213,12 @@ def register(reg: ToolRegistrar) -> None:
                 out["health"] = "not computed yet (Assurance needs ~15 minutes after a device is added)"
         issues = data.get("issues")
         if isinstance(issues, dict):
-            out["active_issues"] = [
-                issue_row(i) for i in ensure_list(issues.get("response")) if isinstance(i, dict)
-            ]
+            rows = [issue_row(i) for i in ensure_list(issues.get("response")) if isinstance(i, dict)]
+            keep = ["name", "priority", "summary", "last_seen", "mostRecentOccurredTime", "id", "ids"]
+            grouped = [{k: g[k] for k in [*keep, "times_raised"] if k in g} for g in group_issues(rows)]
+            out["active_issues"] = grouped
+            if grouped:
+                out["issues_note"] = STALE_NOTE
         ifaces = [i for i in ensure_list(data.get("interfaces")) if isinstance(i, dict)]
         if "interfaces" in data:
             down = [
@@ -231,6 +236,10 @@ def register(reg: ToolRegistrar) -> None:
         comp = ensure_list(data.get("compliance"))
         if comp:
             out["compliance"] = pick(comp[0], ["complianceStatus", "lastUpdateTime", "message"])
+            if isinstance(out["compliance"].get("lastUpdateTime"), int | float):
+                out["compliance"]["checked"] = datetime.fromtimestamp(
+                    out["compliance"].pop("lastUpdateTime") / 1000, tz=UTC
+                ).strftime("%Y-%m-%d %H:%M UTC")
         if "eox" in data:
             out["eox"] = data["eox"]
         elif "eox" in errors and "404" in errors["eox"]:

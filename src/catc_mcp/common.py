@@ -85,6 +85,41 @@ def ensure_list(v: Any) -> list[Any]:
     return v if isinstance(v, list) else [v]
 
 
+def ago(ms: Any, now_ms: float | None = None) -> str | None:
+    """'2h49m ago' for an epoch-ms time (None if it isn't one)."""
+    if not isinstance(ms, int | float) or ms <= 0:
+        return None
+    secs = max(0, int(((now_ms if now_ms is not None else time.time() * 1000) - ms) / 1000))
+    if secs < 60:
+        return f"{secs}s ago"
+    mins = secs // 60
+    if mins < 60:
+        return f"{mins}m ago"
+    hours, mins = divmod(mins, 60)
+    if hours < 48:
+        return f"{hours}h{mins:02d}m ago"
+    return f"{hours // 24}d{hours % 24}h ago"
+
+
+async def inventory_names(app: CatcApp, ids: Any) -> dict[str, str] | None:
+    """{device id: hostname} for the ids that are still in the inventory, or None when the lookup
+    failed (then nothing can be said about missing devices). Assurance keeps health records and
+    issues for devices deleted from the inventory; this tells them apart."""
+    wanted = sorted({str(i) for i in ids if i and is_uuid(str(i))})
+    out: dict[str, str] = {}
+    try:
+        for n in range(0, len(wanted), 50):
+            found = await app.get_response(
+                "/dna/intent/api/v1/network-device", {"id": ",".join(wanted[n : n + 50])}
+            )
+            for d in ensure_list(found):
+                if isinstance(d, dict) and d.get("id"):
+                    out[str(d["id"])] = str(d.get("hostname") or d.get("managementIpAddress") or d["id"])
+    except UpstreamError:
+        return None
+    return out
+
+
 # --- resolution ----------------------------------------------------------------------------
 
 

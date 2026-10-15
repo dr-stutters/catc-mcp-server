@@ -82,6 +82,26 @@ def deploy_outcome(progress: Any) -> dict[str, Any]:
     return out
 
 
+def template_families(ref: dict[str, Any]) -> set[str]:
+    """The device families (lower case) a template targets; empty when it doesn't say."""
+    return {
+        str(t["productFamily"]).strip().lower()
+        for t in ensure_list(ref.get("deviceTypes"))
+        if isinstance(t, dict) and t.get("productFamily")
+    }
+
+
+def split_applicable(
+    devs: list[dict[str, Any]], families: set[str]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(devices whose family the template targets, the others). Catalyst Center refuses the others
+    as nonApplicableTargets ("mismatch of deviceType"), so they are left out of the deploy."""
+    if not families:
+        return devs, []
+    keep = [d for d in devs if str(d.get("family") or "").strip().lower() in families]
+    return keep, [d for d in devs if d not in keep]
+
+
 UNSAVED_NOTE = (
     "Catalyst Center does not save the configuration after a template deploy: the change is lost on "
     "reload, and RUNNING_CONFIG compliance shows it as drift. See the unsaved lines with "
@@ -120,13 +140,34 @@ def register(reg: ToolRegistrar) -> None:
         under a site, or every device with a tag. This changes the devices' running configuration.
         Preview-first: the preview renders the CLI for the first device and lists every target and the
         template version; nothing is pushed until you confirm. Uncommitted templates are refused (commit
-        with catc_commit_template). More than CATC_MAX_DEVICES_PER_CHANGE targets (default 10) are refused."""
+        with catc_commit_template). Only devices in the template's device families are targeted (e.g.
+        site= with a Routers template skips the switches and WLCs there; the preview lists them). More
+        than CATC_MAX_DEVICES_PER_CHANGE targets (default 10) are refused."""
         app: CatcApp = get_client(ctx)
         ref = await resolve_template(app, template)
         tid = str(ref.get("templateId") or ref.get("id"))
         devs, targeting = await resolve_targets(app, devices, site, tag)
         if not devs:
             raise InvalidRequest(f"No devices to deploy to ({targeting}).")
+        families = template_families(ref)
+        devs, skipped = split_applicable(devs, families)
+        if skipped:
+            targeting["skipped_not_applicable"] = [
+                f"{n} - {d.get('family') or 'unknown family'}"
+                for n, d in zip(brief(skipped), skipped, strict=True)
+            ]
+            targeting["template_families"] = sorted(
+                str(t.get("productFamily"))
+                for t in ensure_list(ref.get("deviceTypes"))
+                if isinstance(t, dict) and t.get("productFamily")
+            )
+        if not devs:
+            raise InvalidRequest(
+                "None of the target devices is in the template's device families "
+                f"({', '.join(targeting['template_families'])}); "
+                f"Catalyst Center would refuse them all: {', '.join(targeting['skipped_not_applicable'])}. "
+                "Pick other devices, or change the template's device types."
+            )
         blockers = device_limit_blockers(app, len(devs))
         versions = [v for v in ensure_list(ref.get("versionsInfo")) if isinstance(v, dict)]
         latest = max(versions, key=_version_key, default={})

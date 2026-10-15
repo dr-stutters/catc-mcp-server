@@ -24,6 +24,8 @@ from catc_mcp.common import (
     PAGE_DEVICE_HEALTH,
     PAGE_EVENTS,
     PAGE_ISSUES,
+    ago,
+    inventory_names,
     norm_mac,
     pick,
     resolve_device,
@@ -51,13 +53,87 @@ ISSUE_FIELDS = [
 ]
 
 
-def issue_row(i: dict[str, Any]) -> dict[str, Any]:
-    """An issue with its id under `id` (the data API calls it `issueId`) and readable UTC times."""
+def issue_attrs(i: dict[str, Any]) -> dict[str, Any]:
+    """additionalAttributes as a dict (the API sends a key/value list)."""
+    raw = i.get("additionalAttributes")
+    if isinstance(raw, dict):
+        return raw
+    return {
+        str(a.get("key")): a.get("value")
+        for a in raw or []
+        if isinstance(a, dict) and a.get("value") not in (None, "", "null")
+    }
+
+
+def is_device_issue(i: dict[str, Any]) -> bool:
+    kind = str(i.get("entityType") or "").lower()
+    return "network" in kind and "device" in kind
+
+
+def issue_row(i: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]:
+    """An issue with its id under `id` (the data API calls it `issueId`), the device it is about,
+    readable UTC times and how long ago it last occurred."""
     row = pick({**i, "id": i.get("issueId") or i.get("id")}, ISSUE_FIELDS)
+    attrs = issue_attrs(i)
+    if is_device_issue(i):
+        dev = attrs.get("nwDeviceName") or attrs.get("managementIpAddr")
+        if dev:
+            row["device"] = dev
+    if attrs.get("_count") and "occurrenceCount" not in row:
+        row["occurrenceCount"] = attrs["_count"]
+    if seen := ago(i.get("mostRecentOccurredTime")):
+        row["last_seen"] = seen
     for key in ("firstOccurredTime", "mostRecentOccurredTime"):
         if isinstance(row.get(key), int | float):
             row[key] = datetime.fromtimestamp(row[key] / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
     return row
+
+
+async def mark_unmanaged(app: CatcApp, raw: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[str]:
+    """Flag issue rows whose device is no longer in the inventory (Assurance keeps their issues);
+    returns those device names."""
+    ids = [i.get("entityId") for i in raw if is_device_issue(i)]
+    names = await inventory_names(app, ids) if ids else {}
+    if names is None:
+        return []
+    gone: list[str] = []
+    for i, row in zip(raw, rows, strict=True):
+        if is_device_issue(i) and i.get("entityId") and str(i["entityId"]) not in names:
+            row["device"] = f"{row.get('device') or i['entityId']} (not in inventory)"
+            gone.append(str(row["device"]))
+        elif is_device_issue(i) and i.get("entityId") and "device" not in row:
+            row["device"] = names[str(i["entityId"])]
+    return sorted(set(gone))
+
+
+STALE_NOTE = (
+    "Catalyst Center keeps an issue 'active' until it re-evaluates it, which can take hours: an issue "
+    "whose last_seen is old may already have cleared. Check the live state with the issue's suggested "
+    "commands (catc_get_issue -> catc_run_show_commands) before reporting it as current."
+)
+
+
+def group_issues(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Repeated issues (same name, device and summary) as one row, newest first: the newest
+    occurrence's fields, the earliest firstOccurredTime and every id (newest first)."""
+    ordered = sorted(rows, key=lambda r: str(r.get("mostRecentOccurredTime") or ""), reverse=True)
+    groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for r in ordered:
+        key = (r.get("name"), r.get("device"), r.get("summary"))
+        g = groups.setdefault(key, {**r, "ids": []})
+        g["ids"].append(r.get("id"))
+        firsts = [str(x) for x in (g.get("firstOccurredTime"), r.get("firstOccurredTime")) if x]
+        if firsts:
+            g["firstOccurredTime"] = min(firsts)
+    out = []
+    for g in groups.values():
+        if len(g["ids"]) == 1:
+            g.pop("ids")
+        else:
+            g.pop("id", None)
+            g["times_raised"] = len(g["ids"])
+        out.append(g)
+    return out
 
 
 EVENT_FAMILIES = Literal[
@@ -193,7 +269,8 @@ def register(reg: ToolRegistrar) -> None:
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """Assurance health per network device: overall score, CPU/memory, interface/link errors,
-        reachability, and the issue count. Filter with health='POOR' to find unhealthy devices."""
+        reachability, and the issue count. Filter with health='POOR' to find unhealthy devices. Assurance
+        keeps health records of devices deleted from the inventory; those are left out (and named)."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {}
         if role:
@@ -224,8 +301,19 @@ def register(reg: ToolRegistrar) -> None:
             "location",
             "uuid",
         ]
-        page.items = [pick(d, fields) for d in page.items if isinstance(d, dict)]
-        return list_result(page, fmt=response_format)
+        rows = [d for d in page.items if isinstance(d, dict)]
+        names = await inventory_names(app, [d.get("uuid") for d in rows])
+        extra: dict[str, Any] = {"note": "-1 = not computed for this device/platform"}
+        if names is not None:
+            gone = [d for d in rows if d.get("uuid") and str(d["uuid"]) not in names]
+            if gone:
+                rows = [d for d in rows if d not in gone]
+                extra["left_out"] = (
+                    f"{len(gone)} health record(s) of devices no longer in the inventory: "
+                    + ", ".join(str(d.get("name") or d.get("ipAddress")) for d in gone)
+                )
+        page.items = [pick(d, fields) for d in rows]
+        return list_result(page, fmt=response_format, extra=extra)
 
     @reg.read(title="Client health")
     async def catc_get_client_health(ctx: Context) -> ToolResult:
@@ -299,9 +387,11 @@ def register(reg: ToolRegistrar) -> None:
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
-        """Assurance issues (problems Catalyst Center detected) with priority, severity, status,
-        category, affected entity and site, newest first. Use catc_get_issue for root cause and
-        suggested actions."""
+        """Assurance issues (problems Catalyst Center detected) with priority, the device they are about,
+        summary, status, site and how long ago each last occurred, newest first. Issues stay 'active'
+        until Catalyst Center re-evaluates them, so an old last_seen may already have cleared; issues of
+        devices deleted from the inventory are marked. Use catc_get_issue for root cause and suggested
+        actions."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {**window(hours), "sortBy": "mostRecentOccurredTime", "order": "desc"}
         if priority:
@@ -319,19 +409,29 @@ def register(reg: ToolRegistrar) -> None:
         if mac:
             params["macAddress"] = norm_mac(mac)
         page = await issues_page(app, params, limit=limit, offset=offset)
-        page.items = [issue_row(i) for i in page.items if isinstance(i, dict)]
+        raw = [i for i in page.items if isinstance(i, dict)]
+        page.items = [issue_row(i) for i in raw]
+        gone = await mark_unmanaged(app, raw, page.items)
+        extra: dict[str, Any] = {}
+        if gone:
+            extra["note"] = (
+                f"Issues for devices no longer in the inventory: {', '.join(gone)} (Catalyst Center keeps "
+                "them until they age out)."
+            )
         return list_result(
             page,
             fmt=response_format,
             columns=[
                 "priority",
                 "name",
+                "device",
                 "summary",
                 "status",
                 "siteHierarchy",
-                "mostRecentOccurredTime",
+                "last_seen",
                 "id",
             ],
+            extra=extra or None,
         )
 
     @reg.read(title="Get assurance issue")
