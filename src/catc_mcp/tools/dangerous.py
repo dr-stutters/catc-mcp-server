@@ -210,7 +210,10 @@ def register(reg: ToolRegistrar) -> None:
                 "site": {"nameHierarchy": s.get("nameHierarchy"), "id": s.get("id")},
                 "requests": ([f"POST {path}"] if new_devs else []) + ([f"PUT {path}"] if again else []),
             },
-            side_effects=["Pushes the site's network settings (and profile templates) to each device."],
+            side_effects=[
+                "Pushes the site's network settings to each device (not the network profile's Day-N "
+                "templates: deploy those with catc_deploy_template)."
+            ],
             fingerprint={
                 "site": s["id"],
                 "devices": sorted(str(d["id"]) for d in devs),

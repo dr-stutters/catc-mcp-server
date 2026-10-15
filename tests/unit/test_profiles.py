@@ -123,3 +123,21 @@ async def test_create_switching_profile_refuses_duplicate(api: respx.MockRouter)
     base(api)
     out = await call("catc_create_switching_profile", {"name": "MCP-SW"}, mcp_enable_writes=True)
     assert out["status"] == "blocked"
+
+
+async def test_create_switching_profile_falls_back_to_siteprofile(api: respx.MockRouter) -> None:
+    profiles: list[dict[str, str]] = []
+    api.get(NP).mock(side_effect=lambda r: respx.MockResponse(json={"response": profiles}))
+    api.post("/dna/intent/api/v1/sda/switchNetworkProfiles").respond(404, json={"message": "no"})
+
+    def internal(request: Any) -> Any:
+        profiles.append({"id": PID, "name": "new-sw", "type": "Switching"})
+        return respx.MockResponse(202, json={"response": {"taskId": "t1"}})
+
+    route = api.post("/api/v1/siteprofile").mock(side_effect=internal)
+    api.get("/dna/intent/api/v1/task/t1").respond(
+        json={"response": {"id": "t1", "endTime": 1, "isError": False, "progress": "created"}}
+    )
+    _, done = await apply("catc_create_switching_profile", {"name": "new-sw"})
+    assert json.loads(route.calls.last.request.content)["namespace"] == "switching"
+    assert done["result"]["profile_id"] == PID and done["result"]["via"] == "/api/v1/siteprofile"

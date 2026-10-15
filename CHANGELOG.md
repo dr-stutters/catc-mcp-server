@@ -9,6 +9,15 @@
 - `catc_recent_activity(device, site, hours, sources)`: issues, assurance events, notifications and
   the audit log for one window and scope, merged newest first with a `source` column; a failing source
   is reported under `errors` and the rest still returned. Pull-only (ADR-003): queried when called.
+- Network profiles (D3): `catc_get_network_profile` (templates, sites incl. inherited),
+  `catc_create_switching_profile` (SDA API, or the UI's `/api/v1/siteprofile` where the SDA package
+  is absent), `catc_attach_template_to_profile` / `catc_detach_template_from_profile`,
+  `catc_assign_profile_to_sites` / `catc_unassign_profile_from_sites`. Only switching and wireless
+  profiles take templates. The provisioning API does not apply profile templates on 3.2.2 (checked
+  live): deploy them with `catc_deploy_template`.
+- Prompt `catc_onboard_device` (D6): credentials, discovery, inventory sync, site, settings and
+  profile check, assign, provision, template deploy, verification (360, compliance, show commands,
+  recent activity). Exercised live on a fresh cat9000v.
 
 ### Changed
 - Core pinned to stutters-mcp-core **v0.3.0** (pull-only; no event APIs). Lists from APIs without a
@@ -17,6 +26,8 @@
   endpoint page-size caps (issues 25, events 20, audit 25, device health 500) are passed per call
   with `fetch_page(max_page=...)`. The module-level `DATA_PAGER`, `EVENTS_PAGER`, `AUDIT_PAGER` and
   `DEVICE_HEALTH_PAGER` are gone.
+- `catc_create_discovery`: a bare address in a Range/Multi Range is sent as `ip-ip` (3.2.2 rejected
+  it with "IPAddress for Range Discovery is invalid").
 - `catc_list_audit_logs` takes `device` (hostname, IP, serial or id) and `site`. Catalyst Center tags
   few audit records with a device or site, so these filters also match the record text.
   `device_id` still works.

@@ -174,7 +174,8 @@ async def test_site_settings_shows_credential_names(api: respx.MockRouter) -> No
 # --- discovery ---------------------------------------------------------------------------------
 
 
-async def test_discovery_named_credentials_single_and_summary(api: respx.MockRouter) -> None:
+@pytest.mark.parametrize("dtype", ["Single", "Range"])
+async def test_discovery_named_credentials_single_and_summary(api: respx.MockRouter, dtype: str) -> None:
     mock_creds(api)
     api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
     post = api.post("/dna/intent/api/v1/discovery").respond(202, json={"response": {"taskId": "t9"}})
@@ -191,7 +192,7 @@ async def test_discovery_named_credentials_single_and_summary(api: respx.MockRou
     args = {
         "name": "d",
         "ip_ranges": ["10.0.0.1"],
-        "discovery_type": "Single",
+        "discovery_type": dtype,
         "global_credentials": ["lab", "lab-rw"],
         "snmp_rw_community": "rw-S3cret",
         "netconf_port": 830,

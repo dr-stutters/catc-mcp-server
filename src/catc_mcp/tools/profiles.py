@@ -1,8 +1,14 @@
 """Network profiles for sites (D3): attach Day-N templates to profiles and assign profiles to sites.
 
+A Day-N template attached to a switching or wireless profile assigned to a site is what the UI's
+provisioning flow offers for devices at that site. The provisioning API (`/sda/provisionDevices`,
+catc_provision_devices) pushes network settings only: on 3.2.2 it does not apply the profile's
+templates (checked live), so deploy them with catc_deploy_template after provisioning.
+
 Templates attached to a network profile are what provisioning applies to devices at the profile's
-sites. The 3.2.2 API can create switching profiles (`/sda/switchNetworkProfiles`) but not routing
-or wireless ones; those are created once in the UI (Design > Network Profiles)."""
+sites. Switching profiles can be created through the API (`/sda/switchNetworkProfiles`, or the UI's
+internal `/api/v1/siteprofile` when the SDA package is absent); routing and wireless ones are created
+once in the UI (Design > Network Profiles)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
@@ -27,6 +33,13 @@ from catc_mcp.common import ensure_list, is_uuid, pick, resolve_site, resolve_te
 NP = "/dna/intent/api/v1/networkProfilesForSites"
 TPL = "/dna/intent/api/v1/templates"
 SWITCH_PROFILES = "/dna/intent/api/v1/sda/switchNetworkProfiles"
+# The UI's internal profile API (3.2.2): works without the SDA package; not in the published spec.
+SITE_PROFILE = "/api/v1/siteprofile"
+
+
+def site_profile_body(name: str) -> dict[str, Any]:
+    return {"name": name, "namespace": "switching", "profileAttributes": []}
+
 
 ProfileRef = Annotated[str, Field(description="Network profile name or id (catc_list_network_profiles)")]
 
@@ -84,7 +97,8 @@ def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Get network profile")
     async def catc_get_network_profile(ctx: Context, profile: ProfileRef) -> dict[str, Any]:
         """One network profile: its type, the Day-N CLI templates attached to it and the sites it is
-        assigned to (by name). Provisioning a device at one of those sites applies the templates."""
+        assigned to (by name, including inherited child sites). These are the templates meant for devices
+        at those sites; deploy them with catc_deploy_template (the provisioning API doesn't)."""
         app: CatcApp = get_client(ctx)
         p = await resolve_profile(app, profile)
         pid = str(p["id"])
@@ -102,21 +116,36 @@ def register(reg: ToolRegistrar) -> None:
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Create an empty switching network profile, to attach Day-N templates to and assign to
-        sites. Routing and wireless profiles can't be created through the 3.2.2 API (use the UI:
-        Design > Network Profiles). Preview-first; refuses a duplicate name."""
+        sites. Uses the documented SDA API (`/sda/switchNetworkProfiles`) and, where that isn't
+        installed (404 on a CatC without the SDA package), the UI's own `/api/v1/siteprofile`.
+        Routing and wireless profiles are created in the UI (Design > Network Profiles).
+        Preview-first; refuses a duplicate name."""
         app: CatcApp = get_client(ctx)
-        body = [{"profileName": name}]
         dup = [p for p in await list_profiles(app) if str(p.get("name", "")).lower() == name.lower()]
         plan = Plan(
             f"Create switching profile {name}",
-            details={"method": "POST", "path": SWITCH_PROFILES, "body": body},
+            details={
+                "method": "POST",
+                "path": SWITCH_PROFILES,
+                "body": [{"profileName": name}],
+                "fallback": {"path": SITE_PROFILE, "body": site_profile_body(name)},
+            },
             blockers=[f"A network profile named {name!r} already exists."] if dup else [],
         )
 
         async def apply() -> Any:
-            job = await app.run_job("POST", SWITCH_PROFILES, body, ctx=ctx, what="create profile")
+            try:
+                job = await app.run_job(
+                    "POST", SWITCH_PROFILES, [{"profileName": name}], ctx=ctx, what="create profile"
+                )
+                via = SWITCH_PROFILES
+            except NotFound:
+                job = await app.run_job(
+                    "POST", SITE_PROFILE, site_profile_body(name), ctx=ctx, what="create profile"
+                )
+                via = SITE_PROFILE
             created = [p for p in await list_profiles(app) if p.get("name") == name]
-            return {"name": name, "profile_id": created[0].get("id") if created else None, **job}
+            return {"name": name, "profile_id": created[0].get("id") if created else None, "via": via, **job}
 
         return await preview_or_apply(
             ctx,
@@ -158,7 +187,7 @@ def register(reg: ToolRegistrar) -> None:
             blockers=blockers,
             side_effects=[]
             if detach
-            else ["Devices provisioned or re-provisioned at the profiles' sites get this template."],
+            else ["The template becomes part of the profiles' sites; deploy it with catc_deploy_template."],
         )
 
         async def apply() -> Any:
@@ -194,10 +223,10 @@ def register(reg: ToolRegistrar) -> None:
         ],
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Attach a Day-N CLI template to network profiles. When devices at the profiles' sites are
-        provisioned (catc_provision_devices), Catalyst Center applies the template's committed
-        version. Preview-first; shows where the template is attached now and skips profiles it is
-        already on."""
+        """Attach a Day-N CLI template to switching or wireless network profiles, so it belongs to
+        the profiles' sites (the UI's provisioning flow offers it there). The provisioning API
+        (catc_provision_devices) does not push it on 3.2.2: deploy it with catc_deploy_template.
+        Preview-first; shows where the template is attached now and skips profiles it is already on."""
         result: dict[str, Any] = await _attach(ctx, template, profiles, confirm, detach=False)
         return result
 
@@ -273,8 +302,8 @@ def register(reg: ToolRegistrar) -> None:
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Assign a network profile to sites (areas, buildings or floors; child sites inherit it).
-        Devices provisioned at those sites then get the profile's templates. Preview-first; skips
-        sites already assigned."""
+        The profile's templates then belong to devices at those sites (see catc_get_network_profile).
+        Preview-first; skips sites already assigned."""
         result: dict[str, Any] = await _assign(ctx, profile, sites, confirm, unassign=False)
         return result
 
