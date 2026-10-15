@@ -10,6 +10,8 @@ Access points, RF and wireless clients need real APs (CML has none) and are left
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import hashlib
+import hmac
+import os
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -20,7 +22,6 @@ from stutters_mcp_core import (
     NotFound,
     Plan,
     ToolRegistrar,
-    UpstreamError,
     compact,
     get_client,
     object_result,
@@ -35,6 +36,8 @@ from catc_mcp.tools.ops_writes import brief, device_site
 from catc_mcp.tools.profiles import profile_site_ids
 
 MASK = "********"
+# Per-process key: confirm tokens bind a keyed digest of the passphrase, never the value or a plain hash.
+_DIGEST_KEY = os.urandom(32)
 PROFILES = "/dna/intent/api/v1/wirelessProfiles"
 WLC = "/dna/intent/api/v1/wirelessControllers"
 Security = Literal[
@@ -191,7 +194,9 @@ def register(reg: ToolRegistrar) -> None:
                 "security": security,
                 # bound by digest, so a different passphrase needs a new preview; never the value itself
                 "passphrase": (
-                    hashlib.sha256(passphrase.get_secret_value().encode()).hexdigest()[:16]
+                    hmac.new(_DIGEST_KEY, passphrase.get_secret_value().encode(), hashlib.sha256).hexdigest()[
+                        :16
+                    ]
                     if passphrase
                     else None
                 ),
@@ -321,10 +326,7 @@ def register(reg: ToolRegistrar) -> None:
             raise NotFound(f"No wireless profile {name} (catc_list_network_profiles).")
         prof = found[0]
         pid = safe_id(str(prof["id"]), "profile id")
-        try:
-            sites = await profile_site_ids(app, pid)
-        except UpstreamError:
-            sites = []
+        sites = await profile_site_ids(app, pid)  # a failed lookup must not hide an assignment
         blockers = [f"Assigned to {len(sites)} site(s); unassign it first."] if sites else []
         plan = Plan(
             f"Delete wireless profile {prof.get('wirelessProfileName')}",
@@ -378,10 +380,10 @@ def register(reg: ToolRegistrar) -> None:
         profiles = await wireless_profiles(app)
         pushed: dict[str, list[str]] = {}
         for p in profiles:
-            try:
-                sites = set(await profile_site_ids(app, str(p["id"])))
-            except UpstreamError:
-                continue
+            # siteAssignments lists the sites a profile reaches, inherited child sites included, so an
+            # exact id match also catches a profile assigned to the floor's building or area. A failed lookup
+            # raises: the preview must not understate what gets pushed.
+            sites = set(await profile_site_ids(app, str(p["id"])))
             if sites & set(loc_ids):
                 pushed[str(p.get("wirelessProfileName"))] = profile_ssids(p)
         if not pushed:
@@ -391,15 +393,22 @@ def register(reg: ToolRegistrar) -> None:
                 "No wireless profile is assigned to those AP locations (catc_create_wireless_profile, "
                 "catc_assign_profile_to_sites); Catalyst Center refuses AP locations without one."
             )
-        try:
-            cur = await app.get_response(f"{WLC}/{did}/primaryManagedApLocations")
-        except UpstreamError:
-            cur = None
+        cur = await app.get_response(f"{WLC}/{did}/primaryManagedApLocations")
         cur_locs = cur.get("managedApLocations", []) if isinstance(cur, dict) else ensure_list(cur)
         current_ids = sorted(
             str(x.get("siteId")) for x in cur_locs if isinstance(x, dict) and x.get("siteId")
         )
         reassign = current_ids != loc_ids
+        g = await resolve_site(app, "Global")
+        wanted = {x for names in pushed.values() for x in names}
+        ssid_defs = sorted(
+            (
+                {k: v for k, v in x.items() if k != "passphrase"}
+                for x in await site_ssids(app, str(g["id"]))
+                if x.get("ssid") in wanted
+            ),
+            key=lambda x: str(x.get("ssid")),
+        )
         body = {"skipApProvision": skip_ap_provision}
         plan = Plan(
             f"Provision WLC {brief([dev])[0]} for {len(locs)} AP location(s)",
@@ -407,6 +416,7 @@ def register(reg: ToolRegistrar) -> None:
                 "site": at,
                 "managed_ap_locations": [x.get("nameHierarchy") for x in locs],
                 "wireless_profiles_pushed": pushed,
+                "current_ap_locations": current_ids,
                 "current_ap_locations_kept": not reassign,
                 "requests": [
                     f"POST {WLC}/{did}/assignManagedApLocations {{primaryManagedAPLocationsSiteIds}}",
@@ -420,6 +430,8 @@ def register(reg: ToolRegistrar) -> None:
                 "locations": loc_ids,
                 "current": current_ids,
                 "pushed": pushed,
+                "ssid_definitions": ssid_defs,
+                "reachability": dev.get("reachabilityStatus"),
             },
             blockers=blockers,
             blast_radius=1,

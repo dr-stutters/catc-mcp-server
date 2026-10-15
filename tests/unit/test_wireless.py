@@ -93,6 +93,7 @@ def mock_wlc(api: respx.MockRouter, site: str | None = "Global/AU/SYD-1") -> Non
     api.get(f"/dna/intent/api/v1/wirelessControllers/{DEV_ID}/primaryManagedApLocations").respond(
         json={"response": {"managedApLocations": []}}
     )
+    api.get(SSIDS).respond(json={"response": [{"id": "s1", "ssid": "corp", "passphrase": "x"}]})
 
 
 async def test_provision_wlc(api: respx.MockRouter) -> None:
@@ -134,3 +135,25 @@ async def test_provision_wlc_blockers(api: respx.MockRouter) -> None:
     )
     text = " ".join(out["blockers"])
     assert "isn't assigned" in text and "No wireless profile" in text
+
+
+async def test_delete_profile_lookup_failure_is_not_unassigned(api: respx.MockRouter) -> None:
+    api.get(PROFILES).respond(json={"response": [{"id": "p1", "wirelessProfileName": "campus"}]})
+    api.get("/dna/intent/api/v1/networkProfilesForSites/p1/siteAssignments").respond(
+        500, json={"message": "x"}
+    )
+    with pytest.raises(ToolError):
+        await flow("catc_delete_wireless_profile", {"name": "campus"})
+
+
+async def test_passphrase_not_in_errors_or_audit(
+    api: respx.MockRouter, caplog: pytest.LogCaptureFixture
+) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    api.post(SSIDS).respond(400, json={"response": {"message": "bad request"}})
+    with pytest.raises(ToolError) as e:
+        await flow(
+            "catc_create_ssid", {"ssid": "corp", "security": "WPA2_PERSONAL", "passphrase": "Sup3rS3cret!"}
+        )
+    assert "Sup3rS3cret!" not in str(e.value) and "Sup3rS3cret!" not in caplog.text
