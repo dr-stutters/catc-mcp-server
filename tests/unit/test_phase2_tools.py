@@ -174,7 +174,8 @@ async def test_site_settings_shows_credential_names(api: respx.MockRouter) -> No
 # --- discovery ---------------------------------------------------------------------------------
 
 
-async def test_discovery_named_credentials_single_and_summary(api: respx.MockRouter) -> None:
+@pytest.mark.parametrize("dtype", ["Single", "Range"])
+async def test_discovery_named_credentials_single_and_summary(api: respx.MockRouter, dtype: str) -> None:
     mock_creds(api)
     api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
     post = api.post("/dna/intent/api/v1/discovery").respond(202, json={"response": {"taskId": "t9"}})
@@ -191,7 +192,7 @@ async def test_discovery_named_credentials_single_and_summary(api: respx.MockRou
     args = {
         "name": "d",
         "ip_ranges": ["10.0.0.1"],
-        "discovery_type": "Single",
+        "discovery_type": dtype,
         "global_credentials": ["lab", "lab-rw"],
         "snmp_rw_community": "rw-S3cret",
         "netconf_port": 830,
@@ -210,6 +211,28 @@ async def test_discovery_named_credentials_single_and_summary(api: respx.MockRou
     assert done["result"]["devices"] == [
         {"hostname": "r1", "managementIpAddress": "10.0.0.1", "cliStatus": "SUCCESS"}
     ]
+
+
+async def test_discovery_multi_range_mix_and_bad_entry(api: respx.MockRouter) -> None:
+    mock_creds(api)
+    api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
+    preview = await call(
+        "catc_create_discovery",
+        {
+            "name": "d",
+            "ip_ranges": ["10.0.0.1", "10.0.0.5-10.0.0.9,10.0.0.20"],
+            "discovery_type": "Multi Range",
+        },
+        mcp_enable_writes=True,
+    )
+    assert (
+        preview["preview"]["body"]["ipAddressList"]
+        == "10.0.0.1-10.0.0.1,10.0.0.5-10.0.0.9,10.0.0.20-10.0.0.20"
+    )
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Not an IP"):
+        await call("catc_create_discovery", {"name": "d", "ip_ranges": ["sw1.lab"]}, mcp_enable_writes=True)
 
 
 async def test_discovery_needs_a_cli_credential(api: respx.MockRouter) -> None:
