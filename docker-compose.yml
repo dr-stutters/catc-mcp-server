@@ -5,6 +5,8 @@
 #   CORE_READ_TOKEN=$(gh auth token) docker compose up -d --build
 #
 # Writes are on (preview-first); the dangerous tier (deploy, provision, SWIM, deletes) stays off.
+# The container logs in as the least-privilege write account (role mcp-catc-rw, docs/least-privilege.md)
+# when CATC_RW_USERNAME/CATC_RW_PASSWORD are in .env, else as CATC_USERNAME.
 services:
   catc-mcp-server:
     build:
@@ -22,6 +24,9 @@ services:
       MCP_CACHE_DIR: /cache
       MCP_ENABLE_WRITES: "true"
       MCP_ENABLE_DANGEROUS: "false"
+      MCP_METRICS: "true"
+      CATC_USERNAME: ${CATC_RW_USERNAME:-${CATC_USERNAME}}
+      CATC_PASSWORD: ${CATC_RW_PASSWORD:-${CATC_PASSWORD}}
     ports:
       - "${MCP_PUBLISH_PORT:-8034}:8000"
     volumes:
