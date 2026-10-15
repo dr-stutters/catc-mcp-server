@@ -18,13 +18,18 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
-from stutters_mcp_core.http import OffsetLimit
 
 from catc_mcp.client import CatcApp, safe_id
-from catc_mcp.common import DATA_PAGER, norm_mac, pick, resolve_device, resolve_site, window
-
-EVENTS_PAGER = OffsetLimit(items="response", total="page.count", one_based=True, max_page=20)
-DEVICE_HEALTH_PAGER = OffsetLimit(items="response", total="totalCount", one_based=True, max_page=500)
+from catc_mcp.common import (
+    PAGE_DEVICE_HEALTH,
+    PAGE_EVENTS,
+    PAGE_ISSUES,
+    norm_mac,
+    pick,
+    resolve_device,
+    resolve_site,
+    window,
+)
 
 Hours = Annotated[float, Field(gt=0, le=720, description="Look-back window in hours (default 24)")]
 
@@ -86,8 +91,13 @@ def event_row(e: dict[str, Any]) -> dict[str, Any]:
 
 
 async def issues_page(app: CatcApp, params: dict[str, Any], *, limit: int, offset: int) -> Any:
-    return await DATA_PAGER.fetch_page(
-        app.api, "/dna/data/api/v1/assuranceIssues", params, limit=limit, offset=offset
+    return await app.data_pager.fetch_page(
+        app.api,
+        "/dna/data/api/v1/assuranceIssues",
+        params,
+        limit=limit,
+        offset=offset,
+        max_page=PAGE_ISSUES,
     )
 
 
@@ -192,8 +202,13 @@ def register(reg: ToolRegistrar) -> None:
             params["health"] = health
         if site:
             params["siteId"] = (await resolve_site(app, site))["id"]
-        page = await DEVICE_HEALTH_PAGER.fetch_page(
-            app.api, "/dna/intent/api/v1/device-health", params, limit=limit, offset=offset
+        page = await app.data_pager.fetch_page(
+            app.api,
+            "/dna/intent/api/v1/device-health",
+            params,
+            limit=limit,
+            offset=offset,
+            max_page=PAGE_DEVICE_HEALTH,
         )
         fields = [
             "name",
@@ -421,8 +436,13 @@ def register(reg: ToolRegistrar) -> None:
             params["messageType"] = message_type
         if severity is not None:
             params["severity"] = list(range(severity + 1))
-        page = await EVENTS_PAGER.fetch_page(
-            app.api, "/dna/data/api/v1/assuranceEvents", params, limit=limit, offset=offset
+        page = await app.data_pager.fetch_page(
+            app.api,
+            "/dna/data/api/v1/assuranceEvents",
+            params,
+            limit=limit,
+            offset=offset,
+            max_page=PAGE_EVENTS,
         )
         page.items = [event_row(e) for e in page.items if isinstance(e, dict)]
         return list_result(page, fmt=response_format)

@@ -9,16 +9,18 @@ from typing import Any
 from urllib.parse import quote
 
 from stutters_mcp_core import InvalidRequest, NotFound
-from stutters_mcp_core.http import OffsetLimit
 
 from catc_mcp.client import CatcApp, safe_id
 
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$|^([0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}$")
 
-# Assurance "data" API: {"response": [...], "page": {"count": N}}, 1-based offset; issues accept
-# at most 25 per request.
-DATA_PAGER = OffsetLimit(items="response", total="page.count", one_based=True, max_page=25)
+# Per-endpoint page-size caps (`fetch_page(max_page=...)`), found on 3.2.2: the API rejects or
+# silently truncates larger pages, and the spec doesn't say.
+PAGE_ISSUES = 25  # /dna/data/api/v1/assuranceIssues (app.data_pager)
+PAGE_EVENTS = 20  # /dna/data/api/v1/assuranceEvents (app.data_pager)
+PAGE_AUDIT = 25  # /dna/data/api/v1/event/event-series/audit-logs (app.audit_pager, 0-based)
+PAGE_DEVICE_HEALTH = 500  # /dna/intent/api/v1/device-health (app.data_pager, totalCount)
 
 DEVICE_FIELDS = [
     "hostname",

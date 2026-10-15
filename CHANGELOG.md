@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Core pinned to stutters-mcp-core **v0.3.0** (pull-only; no event APIs). Lists from APIs without a
+  total (PnP devices, audit log) now report `next_offset` when the page was full (core 0.1.2 fix).
+- Pagers: one per response shape on the client (`pager`, `data_pager`, `audit_pager`); the
+  endpoint page-size caps (issues 25, events 20, audit 25, device health 500) are passed per call
+  with `fetch_page(max_page=...)`. The module-level `DATA_PAGER`, `EVENTS_PAGER`, `AUDIT_PAGER` and
+  `DEVICE_HEALTH_PAGER` are gone.
+
 ## 0.2.0 (2026-10-15)
 
 Phase 2: gap analysis against the full 3.2.2 API (`docs/GAP-ANALYSIS.md`) and the first live tests

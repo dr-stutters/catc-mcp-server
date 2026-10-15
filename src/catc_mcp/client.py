@@ -122,6 +122,16 @@ def _exec_failed(e: dict[str, Any]) -> str | bool:
     return False
 
 
+def data_total(body: Any) -> Any:
+    """Total of an Assurance list: `page.count` (data API) or `totalCount` (device-health)."""
+    if not isinstance(body, dict):
+        return None
+    page = body.get("page")
+    if isinstance(page, dict) and page.get("count") is not None:
+        return page["count"]
+    return body.get("totalCount")
+
+
 class CatcApp:
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.settings = settings
@@ -143,8 +153,15 @@ class CatcApp:
             error_detail=catc_error_detail,
             transport=transport,
         )
-        # Intent API lists: {"response": [...]}, 1-based offset, limit <= 500.
+        # One pager per response shape; endpoint-specific page-size caps are passed per call
+        # (`max_page=` with the PAGE_* constants in common.py).
+        # Intent API lists: {"response": [...]}, 1-based offset, limit <= 500, usually no total.
         self.pager = OffsetLimit(items="response", one_based=True, max_page=500)
+        # Assurance lists: like the Intent API but with a total (`page.count` on the data API,
+        # `totalCount` on device-health).
+        self.data_pager = OffsetLimit(items="response", total=data_total, one_based=True, max_page=500)
+        # Audit log: a bare JSON list with a 0-based offset and no total.
+        self.audit_pager = OffsetLimit(items=None, max_page=500)
         self._version: str | None = None
 
     async def _login(self, client: ApiClient) -> Token:
