@@ -172,6 +172,9 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
 the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_auth_failed`,
 `ise_endpoint_360`, `catc_client_360`).
+`catc_decommission_device` (dangerous tier, uses **ise**) keeps a copy of the config, shows what
+un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
+removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 
 - **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
   `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
