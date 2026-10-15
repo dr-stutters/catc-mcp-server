@@ -702,7 +702,10 @@ async def test_tag_golden_image(api: respx.MockRouter) -> None:
         202, json={"response": {"taskId": "tg"}}
     )
     task_ok(api, "tg")
-    golden = f"/dna/intent/api/v1/image/importation/golden/site/{AREA['id']}/family/286315874/role/ACCESS/image/{IMG['id']}"
+    golden = (
+        f"/dna/intent/api/v1/image/importation/golden/site/{AREA['id']}/family/286315874"
+        f"/role/ACCESS/image/{IMG['id']}"
+    )
     state = {"taggedGolden": True, "inheritedSiteId": GLOBAL["id"], "inheritedSiteName": "Global"}
     route = api.get(golden).mock(side_effect=lambda r: httpx.Response(200, json={"response": state}))
     args = {"image": IMG["name"], "site": "Global/AU", "product": "286315874", "device_roles": ["ACCESS"]}
@@ -717,6 +720,10 @@ async def test_tag_golden_image(api: respx.MockRouter) -> None:
     state.update(inheritedSiteId=AREA["id"], inheritedSiteName="AU")
     again = await call("catc_tag_golden_image", args, mcp_enable_writes=True)
     assert again["status"] == "blocked" and "Already golden" in again["blockers"][0]
+    # Untagging where the tag is only inherited from Global can't work: blocked.
+    state.update(inheritedSiteId=GLOBAL["id"], inheritedSiteName="Global")
+    untag = await call("catc_tag_golden_image", {**args, "untag": True}, mcp_enable_writes=True)
+    assert untag["status"] == "blocked" and "only inherited" in untag["blockers"][0]
 
 
 # --- templates ---------------------------------------------------------------------------------

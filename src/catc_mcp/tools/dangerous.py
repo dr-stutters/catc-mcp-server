@@ -165,7 +165,8 @@ def register(reg: ToolRegistrar) -> None:
                     what="template deployment",
                 )
                 out["deployment"] = deployment_summary(status)
-            out["note"] = UNSAVED_NOTE
+            if str((out.get("deployment") or {}).get("status", "")).upper() == "SUCCESS":
+                out["note"] = UNSAVED_NOTE
             return out
 
         return await preview_or_apply(

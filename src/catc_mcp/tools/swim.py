@@ -62,8 +62,12 @@ async def golden_state(
     app: CatcApp, image_id: str, site: dict[str, Any], product_ordinal: Any, roles: list[str]
 ) -> dict[str, Any]:
     """{role: {taggedGolden, inherited_from, tagged_here} | "unknown: ..."} for the preview."""
-    site_id = "-1" if str(site.get("nameHierarchy", "")).lower() == "global" else str(site["id"])
+    is_global = str(site.get("nameHierarchy", "")).lower() == "global"
+    site_id = "-1" if is_global else str(site["id"])
+    here_ids = {site_id, str(site.get("id"))}
     out: dict[str, Any] = {}
+    if product_ordinal in (None, ""):
+        return {r: "unknown: the product has no productNameOrdinal" for r in roles}
     for role in roles:
         path = (
             f"/dna/intent/api/v1/image/importation/golden/site/{site_id}/family/{product_ordinal}"
@@ -76,10 +80,11 @@ async def golden_state(
             continue
         st = st if isinstance(st, dict) else {}
         inherited = st.get("inheritedSiteId")
+        here = not inherited or str(inherited) in here_ids
         out[role] = {
             "taggedGolden": bool(st.get("taggedGolden")),
-            "inherited_from": st.get("inheritedSiteName") if inherited and inherited != site_id else None,
-            "tagged_here": bool(st.get("taggedGolden")) and (not inherited or inherited == site_id),
+            "inherited_from": None if here else st.get("inheritedSiteName"),
+            "tagged_here": bool(st.get("taggedGolden")) and here,
         }
     return out
 
@@ -255,8 +260,11 @@ def register(reg: ToolRegistrar) -> None:
         blockers = []
         if not untag and roles and set(here) == set(roles):
             blockers.append(f"Already golden at {s.get('nameHierarchy')} for roles {', '.join(roles)}.")
-        if untag and roles and len(current) == len(roles) and not anywhere:
-            blockers.append(f"Not golden at {s.get('nameHierarchy')} for roles {', '.join(roles)}.")
+        if untag and roles and len(current) == len(roles) and not here:
+            where = "only inherited from a parent site" if anywhere else "not golden"
+            blockers.append(
+                f"Nothing to untag at {s.get('nameHierarchy')} for roles {', '.join(roles)}: {where}."
+            )
         plan = Plan(
             f"{'Remove golden tag from' if untag else 'Tag as golden'} {img.get('name')} for "
             f"{prod.get('productName')} at {s.get('nameHierarchy')} (roles {', '.join(roles)})",

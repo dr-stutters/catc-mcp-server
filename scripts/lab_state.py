@@ -20,14 +20,15 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from dotenv import dotenv_values
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
 from catc_mcp.server import create_server
 
@@ -49,8 +50,35 @@ TEMPLATES = {
 }
 
 
+ROOT = Path(__file__).resolve().parent.parent
+SECRET_VARS = ("LAB_CLI_PASSWORD", "LAB_SNMP_RO", "LAB_SNMP_RW")
+ABSENT = re.compile(
+    r"\bNo (network device|site|network profile|discovery|template project|global credential|project)"
+    r"|not found",
+    re.I,
+)
+
+
+def lab_env() -> dict[str, str]:
+    values = {k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}
+    return {**values, **{k: v for k, v in os.environ.items() if k.startswith("LAB_")}}
+
+
+def scrub(text: str) -> str:
+    """Error text with the lab secrets replaced, trimmed."""
+    env = lab_env()
+    for var in SECRET_VARS:
+        if env.get(var):
+            text = text.replace(env[var], "***")
+    return text[:300]
+
+
 def say(msg: str) -> None:
-    print(msg, flush=True)
+    print(scrub(msg) if len(msg) < 2000 else scrub(msg[:2000]), flush=True)
+
+
+def absent(err: Exception) -> bool:
+    return bool(ABSENT.search(str(err)))
 
 
 async def call(c: Client, tool: str, args: dict[str, Any]) -> Any:  # type: ignore[type-arg]
@@ -63,7 +91,7 @@ async def call(c: Client, tool: str, args: dict[str, Any]) -> Any:  # type: igno
         except ValueError:
             data = text
     if res.is_error:
-        raise ToolError(f"{tool}: {data}")
+        raise ToolError(scrub(f"{tool}: {data}"))
     return data
 
 
@@ -77,11 +105,14 @@ async def write(c: Client, tool: str, args: dict[str, Any]) -> str:  # type: ign
 
 
 async def exists(c: Client, tool: str, args: dict[str, Any]) -> bool:  # type: ignore[type-arg]
+    """True/False for present/absent; any other error (auth, timeout...) is raised."""
     try:
         await call(c, tool, args)
         return True
-    except ToolError:
-        return False
+    except ToolError as e:
+        if absent(e):
+            return False
+        raise
 
 
 async def project_templates(c: Client) -> list[str]:  # type: ignore[type-arg]
@@ -112,7 +143,7 @@ async def status(c: Client) -> dict[str, Any]:  # type: ignore[type-arg]
 
 
 async def seed(c: Client, devices: bool) -> None:  # type: ignore[type-arg]
-    env = {**dotenv_values(".env"), **os.environ}
+    env = lab_env()
     missing = [
         k for k in ("LAB_CLI_USERNAME", "LAB_CLI_PASSWORD", "LAB_SNMP_RO", "LAB_SNMP_RW") if not env.get(k)
     ]
@@ -240,7 +271,7 @@ async def seed(c: Client, devices: bool) -> None:  # type: ignore[type-arg]
     say("provision: " + await write(c, "catc_provision_devices", {"devices": list(ROUTERS), "site": BLDG}))
 
 
-async def cleanup(c: Client, app: CatcApp, keep_devices: bool) -> None:  # type: ignore[type-arg]
+async def cleanup(c: Client, keep_devices: bool) -> None:  # type: ignore[type-arg]
     if not keep_devices:
         for ip in ROUTERS:
             if await exists(c, "catc_get_device", {"device": ip}):
@@ -252,19 +283,25 @@ async def cleanup(c: Client, app: CatcApp, keep_devices: bool) -> None:  # type:
         try:
             say(f"{tool} {args}: " + await write(c, tool, args))
         except ToolError as e:
-            say(f"{tool} {args}: not present ({str(e)[:80]})")
-    try:
+            if not absent(e):
+                raise
+            say(f"{tool} {args}: not present")
+    if await exists(c, "catc_get_network_profile", {"profile": PROFILE}):
         prof = await call(c, "catc_get_network_profile", {"profile": PROFILE})
         if prof.get("sites"):
-            say(
-                "profile sites: "
-                + await write(
-                    c, "catc_unassign_profile_from_sites", {"profile": PROFILE, "sites": prof["sites"]}
+            try:
+                say(
+                    "profile sites: "
+                    + await write(
+                        c, "catc_unassign_profile_from_sites", {"profile": PROFILE, "sites": prof["sites"]}
+                    )
                 )
-            )
-        await app.run_job("DELETE", f"/dna/intent/api/v1/networkProfilesForSites/{prof['id']}")
-        say(f"profile {PROFILE}: deleted")
-    except ToolError:
+            except ToolError as e:
+                say(f"profile sites: {e} (deleting the profile anyway)")
+        # No delete tool for profiles: the raw API call, preview-first like everything else.
+        path = f"/dna/intent/api/v1/networkProfilesForSites/{prof['id']}"
+        say(f"profile {PROFILE}: " + await write(c, "catc_api_call", {"method": "DELETE", "path": path}))
+    else:
         say(f"profile {PROFILE}: not present")
     if await exists(c, "catc_get_site", {"site": AREA}):
         say(f"site {AREA}: " + await write(c, "catc_delete_site", {"site": AREA, "recursive": True}))
@@ -274,7 +311,9 @@ async def cleanup(c: Client, app: CatcApp, keep_devices: bool) -> None:  # type:
                 f"credential {name}: " + await write(c, "catc_delete_global_credential", {"credential": name})
             )
         except ToolError as e:
-            say(f"credential {name}: not present ({str(e)[:80]})")
+            if not absent(e):
+                raise
+            say(f"credential {name}: not present")
 
 
 async def main() -> None:
@@ -283,17 +322,14 @@ async def main() -> None:
     ap.add_argument("--no-devices", action="store_true", help="seed: skip discovering/provisioning r1/r2")
     ap.add_argument("--keep-devices", action="store_true", help="cleanup: leave r1/r2 in the inventory")
     args = ap.parse_args()
+    os.chdir(ROOT)  # .env is read from the repo root
     settings = Settings(mcp_enable_writes=True, mcp_enable_dangerous=True, mcp_task_timeout=1800)
-    app = CatcApp(settings)
-    try:
-        async with Client(create_server(settings)) as c:
-            if args.action == "seed":
-                await seed(c, devices=not args.no_devices)
-            elif args.action == "cleanup":
-                await cleanup(c, app, keep_devices=args.keep_devices)
-            print(json.dumps(await status(c), indent=1))
-    finally:
-        await app.aclose()
+    async with Client(create_server(settings)) as c:
+        if args.action == "seed":
+            await seed(c, devices=not args.no_devices)
+        elif args.action == "cleanup":
+            await cleanup(c, keep_devices=args.keep_devices)
+        print(json.dumps(await status(c), indent=1))
 
 
 if __name__ == "__main__":
