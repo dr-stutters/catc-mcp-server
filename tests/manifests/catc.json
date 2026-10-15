@@ -18,6 +18,34 @@
         "catc"
       ]
     },
+    "catc_decommission_device": {
+      "arguments": [
+        "device",
+        "clean_config",
+        "remove_ise_nad"
+      ],
+      "references": [
+        "catc_device_360",
+        "catc_get_device_config",
+        "catc_list_config_archive",
+        "catc_delete_device",
+        "catc_list_tags",
+        "catc_list_tag_members",
+        "catc_update_tag_members",
+        "catc_get_device",
+        "catc_get_task",
+        "ise_get_nad",
+        "ise_delete_nad",
+        "ise_list_nads",
+        "catc_onboard_device"
+      ],
+      "rendered": true,
+      "tier": "dangerous",
+      "uses": [
+        "catc",
+        "ise"
+      ]
+    },
     "catc_onboard_device": {
       "arguments": [
         "ip_or_range",
