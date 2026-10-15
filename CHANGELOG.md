@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-10-15)
 
 Production gate (D17, D19, D20) on core v0.12.0. D18 (version matrix) skipped overnight: it needs older
 Catalyst Center releases.
