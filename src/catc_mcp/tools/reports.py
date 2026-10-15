@@ -405,10 +405,9 @@ def register(reg: ToolRegistrar) -> None:
         for i in items:
             if not isinstance(i, dict):
                 continue
-            data_ = i.get("data") if isinstance(i.get("data"), dict) else {}
-            conn = (
-                data_.get("ConnectionSettings") if isinstance(data_.get("ConnectionSettings"), dict) else {}
-            )
+            data_: dict[str, Any] = i["data"] if isinstance(i.get("data"), dict) else {}
+            settings = data_.get("ConnectionSettings")
+            conn: dict[str, Any] = settings if isinstance(settings, dict) else {}
             row = compact(
                 {k: i.get(k) for k in ("name", "id", "typeId", "description", "dypName", "schemaVersion")}
             )
