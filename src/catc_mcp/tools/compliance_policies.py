@@ -341,6 +341,7 @@ def register(reg: ToolRegistrar) -> None:
                 "rules": [{**rb, "conditions": cb} for rb, cb in bodies],
                 "sites": [s.get("nameHierarchy") for s in st],
             },
+            fingerprint={"sites": [str(x["id"]) for x in st]},
             blockers=blockers,
             side_effects=["Devices at the sites show violations after the next compliance run."]
             if st
@@ -427,7 +428,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Set the sites of compliance policy {p.get('name')} ({mode})",
             details={"current": before, "after": after},
-            fingerprint=sorted(current),
+            fingerprint={"policy": pid, "current": sorted(current), "new": sorted(new)},
             blockers=["No change: the site list would stay the same."] if set(new) == set(current) else [],
         )
 
@@ -460,7 +461,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Delete compliance policy {p.get('name')}",
             details=pick(p, ["name", "status", "rulesCount", "sitesCount", "source", "id"]),
-            fingerprint=pick(p, ["rulesCount", "sitesCount"]),
+            fingerprint={"id": pid, **pick(p, ["rulesCount", "sitesCount"])},
             blockers=["System policies can't be deleted."] if p.get("source") == "SYSTEM" else [],
         )
 
