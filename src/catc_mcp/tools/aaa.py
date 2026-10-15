@@ -517,8 +517,18 @@ def register(reg: ToolRegistrar) -> None:
                 )
             body.pop(key, None)
         body.update(want)
-        changes = {k: field_changes(clean(effective.get(k)) or {}, v) for k, v in want.items()} | {
-            f"{r} (inherit)": {"from": clean(local.get("aaaNetwork" if r == "network" else "aaaClient"))}
+
+        def visible(v: Any) -> Any:
+            """A role as previewed: no inheritance markers and never a read-back shared secret."""
+            v = clean(v)
+            return {k: x for k, x in v.items() if k != "sharedSecret"} if isinstance(v, dict) else v
+
+        # The body carries both local roles; a role given here is a whole new object (replace=True), and a
+        # dropped role is listed as "(inherit)" below.
+        changes = {
+            k: field_changes(visible(effective.get(k)) or {}, v, replace=True) for k, v in want.items()
+        } | {
+            f"{r} (inherit)": {"from": visible(local.get("aaaNetwork" if r == "network" else "aaaClient"))}
             for r in inherit or []
         }
         if want and not any(changes.get(k) for k in want) and not inherit and not secrets:

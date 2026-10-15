@@ -255,3 +255,28 @@ async def test_discovery_password_needs_username(api: respx.MockRouter) -> None:
         "catc_create_discovery", {"name": "d", "ip_ranges": ["10.0.0.1"], "cli_password": "x"}
     )
     assert preview["status"] == "blocked"
+
+
+async def test_update_template_preview_diffs_whole_body(api: respx.MockRouter) -> None:
+    """The PUT sends the whole template; the preview diffs that body (replace=True) without noise from the
+    read-only validationErrors it leaves out."""
+    tid = "11111111-2222-3333-4444-555555555555"
+    tpl = {
+        "id": tid,
+        "name": "mcp-test-tpl",
+        "projectName": "mcp-test",
+        "templateContent": "hostname a",
+        "description": "d",
+        "validationErrors": {"templateErrors": [{"type": "x"}]},
+    }
+    tp = "/dna/intent/api/v1/template-programmer/template"
+    api.get(tp).respond(json=[{"templateId": tid, "name": "mcp-test-tpl", "projectName": "mcp-test"}])
+    api.get(f"{tp}/{tid}").respond(json=tpl)
+    put = api.put(tp).respond(202, json={"response": {"taskId": "t9"}})
+    task_ok(api, "t9")
+    preview, _ = await preview_then_apply(
+        "catc_update_template", {"template": "mcp-test/mcp-test-tpl", "content": "hostname b"}
+    )
+    assert preview["preview"]["changes"] == {"templateContent": {"from": "hostname a", "to": "hostname b"}}
+    sent = json.loads(put.calls.last.request.content)
+    assert sent["templateContent"] == "hostname b" and "validationErrors" not in sent

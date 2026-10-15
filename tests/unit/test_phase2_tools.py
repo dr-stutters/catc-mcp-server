@@ -898,3 +898,24 @@ def test_expand_addresses() -> None:
     assert expand_addresses(["10.0.0.0-10.0.255.255"]) == []  # too big: no comparison
     assert expand_addresses(["not-an-ip"]) == []
     assert expand_addresses(["2001:db8::1", "10.0.0.5"]) == ["10.0.0.5"]  # unparseable parts skipped
+
+
+async def test_update_site_settings_keeps_untouched_local_telemetry(api: respx.MockRouter) -> None:
+    """The telemetry PUT replaces the category: sub-settings this call doesn't change are sent back."""
+    mock_sites(api, [GLOBAL, AREA])
+    base = f"/dna/intent/api/v1/sites/{AREA['id']}"
+    tele = {
+        "syslogs": {"useBuiltinSyslogServer": True, "externalSyslogServers": []},
+        "snmpTraps": {"useBuiltinTrapServer": False, "externalTrapServers": ["10.0.0.9"]},
+    }
+    api.get(f"{base}/telemetrySettings").respond(json={"response": tele})
+    put = api.put(f"{base}/telemetrySettings").respond(202, json={"response": {"taskId": "b"}})
+    task_ok(api, "b")
+    preview, _ = await preview_then_apply(
+        "catc_update_site_settings", {"site": "Global/AU", "syslog_servers": ["10.0.0.5"]}
+    )
+    assert not any(c.get("removed") for c in preview["preview"]["changes"]["telemetry"].values())
+    assert json.loads(put.calls.last.request.content) == {
+        "syslogs": {"useBuiltinSyslogServer": True, "externalSyslogServers": ["10.0.0.5"]},
+        "snmpTraps": {"useBuiltinTrapServer": False, "externalTrapServers": ["10.0.0.9"]},
+    }
