@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2 (2026-10-15)
+
+### Fixed
+- Core v0.12.3: the bundled spec's 12 `//dna/...` paths are normalized, so `catc_search_spec` results can be used
+  directly with `catc_api_call` (before, the double slash was rejected).
+
 ## 0.8.1 (2026-10-15)
 
 ### Changed
