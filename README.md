@@ -143,6 +143,10 @@ Typical flows:
 
 Prompts: `catc_onboard_device` (write tier) walks credentials → discovery → site → settings →
 assign → provision → template deploy → verification, preview-first at every write.
+`catc_change_window` (write tier) runs a Day-N template change: baseline (issues, compliance, config
+archive) → per-device preview → rails (≤ 10 devices, window end) → deploy → deployment status → CLI
+check → config diff → compliance → issue diff → a written rollback plan (negation template or the
+pre-change archive). Without the dangerous tier it stops after the rails with a reviewed change plan.
 
 - `catc_run_show_commands` is **read tier** but only accepts `show ...` commands; after a `|` only
   include/exclude/begin/section/count filters are allowed (regex alternatives such as
