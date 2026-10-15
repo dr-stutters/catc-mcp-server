@@ -1,5 +1,5 @@
 {
-  "core_version": "0.4.0",
+  "core_version": "0.12.0",
   "manifest": 1,
   "prefix": "catc",
   "prompts": {
@@ -170,7 +170,7 @@
     },
     "catc_delete_device": {
       "tier": "dangerous",
-      "title": "Delete device"
+      "title": "Delete device (un-provision)"
     },
     "catc_delete_discovery": {
       "tier": "dangerous",
@@ -501,5 +501,5 @@
       "title": "Update template"
     }
   },
-  "version": "0.3.0"
+  "version": "0.4.0"
 }

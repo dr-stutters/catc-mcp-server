@@ -274,5 +274,5 @@ async def test_provisioning_previews(lab_rw: Client, routers: dict[str, Any]) ->
         )
     prov = await call(lab_rw, "catc_provision_devices", {"devices": [R1], "site": "Global"})
     assert prov["status"] == "blocked"
-    delete = await call(lab_rw, "catc_delete_device", {"device": R1})
+    delete = await call(lab_rw, "catc_delete_device", {"device": R1, "clean_config": False})
     assert delete["status"] == "preview"  # not confirmed: r1 stays

@@ -490,6 +490,7 @@ def register(reg: ToolRegistrar) -> None:
                 "path": "/dna/intent/api/v1/network-device/sync",
             },
             fingerprint=sorted(str(d["id"]) for d in devs),
+            blast_radius=len(devs),
         )
 
         async def apply() -> Any:
@@ -532,6 +533,7 @@ def register(reg: ToolRegistrar) -> None:
             f"Run compliance on {len(devs)} device(s)",
             details={"devices": brief(devs), "body": body},
             fingerprint=sorted(str(d["id"]) for d in devs),
+            blast_radius=len(devs),
         )
 
         async def apply() -> Any:
