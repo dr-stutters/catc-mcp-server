@@ -37,7 +37,7 @@ async def _managed(c: Client) -> bool:  # type: ignore[type-arg]
             dev = await call(c, "catc_get_device", {"device": d})
         except ToolError:
             return False
-        if dev.get("reachabilityStatus") != "Reachable":
+        if dev.get("reachabilityStatus") != "Reachable" or dev.get("collectionStatus") != "Managed":
             return False
     return True
 
@@ -61,7 +61,9 @@ async def test_change_window_on_routers(lab_rw: Client) -> None:  # type: ignore
     # 1. Baseline.
     baseline: dict[str, Any] = {}
     for d in DEVICES:
-        issues = await call(lab_rw, "catc_list_issues", {"device": d, "response_format": "json"})
+        issues = await call(
+            lab_rw, "catc_list_issues", {"device": d, "priority": ["P1", "P2"], "response_format": "json"}
+        )
         comp = await call(lab_rw, "catc_get_compliance_detail", {"device": d})
         arch = await call(
             lab_rw,
@@ -72,7 +74,7 @@ async def test_change_window_on_routers(lab_rw: Client) -> None:  # type: ignore
         assert arch["results"], f"{d} has no archived running config"
     # 2. Template is committed; 3. preview renders per device.
     tpl = await call(lab_rw, "catc_get_template", {"template": TEMPLATE})
-    assert tpl
+    assert tpl.get("versions"), "template is not committed"
     for d in DEVICES:
         pv = await call(
             lab_rw, "catc_preview_template", {"template": TEMPLATE, "params": PARAMS, "device": d}
@@ -85,12 +87,12 @@ async def test_change_window_on_routers(lab_rw: Client) -> None:  # type: ignore
     deployed = False
     try:
         # 5-6. Deploy + status + CLI check.
+        deployed = True  # set first: a partial push must still be rolled back
         done = await apply(
             lab_rw,
             "catc_deploy_template",
             {"template": TEMPLATE, "devices": DEVICES, "params": PARAMS, "force_push": True},
         )
-        deployed = True
         dep = done["deployment"]
         assert dep["status"] == "SUCCESS", done
         dep_id = done.get("deployment_id")

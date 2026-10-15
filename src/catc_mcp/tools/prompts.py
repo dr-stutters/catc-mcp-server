@@ -1,6 +1,8 @@
 """Workflow prompts owned by this server (core `@reg.prompt`, BUILDING-A-SERVER §5a)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import json
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -143,17 +145,38 @@ user's approval, then repeat the call with the confirm token. Stop and report if
         CLI verification, a compliance run, the config diff, a post-change issue diff, and a written
         rollback plan. Deploying is dangerous-tier; without it the prompt stops at a reviewed plan."""
         devices = [t.strip() for t in targets.split(",") if t.strip()]
-        devs = "[" + ", ".join(f'"{d}"' for d in devices) + "]"
-        params_arg = params.strip() or "{}"
+        if any(ord(ch) < 32 for ch in template + targets + window_end + params):
+            raise ValueError("Arguments must not contain control characters (newlines, tabs).")
+        devs = json.dumps(devices)
+        try:
+            parsed = json.loads(params) if params.strip() else {}
+        except ValueError as exc:
+            raise ValueError(f"params must be a JSON object: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError('params must be a JSON object, e.g. {"loopback_id": 77}')
+        params_arg = json.dumps(parsed)
+        try:
+            end = datetime.fromisoformat(window_end.strip())
+        except ValueError as exc:
+            raise ValueError(f"window_end must be ISO 8601, e.g. 2026-10-15T23:00+11:00: {exc}") from exc
+        if end.tzinfo is None:
+            raise ValueError("window_end needs a UTC offset, e.g. 2026-10-15T23:00+11:00")
         too_many = (
             f"\n   STOP: {len(devices)} devices is over the limit of {MAX_DEVICES_PER_CHANGE} per change. "
             "Ask the user to split the change into batches."
             if len(devices) > MAX_DEVICES_PER_CHANGE
             else ""
         )
+        left = (end - datetime.now(UTC)).total_seconds() / 60
+        if left < 15:
+            too_many += (
+                f"\n   STOP: when this prompt was rendered the window had {max(left, 0):.0f} minutes left "
+                "(under 15). Don't deploy; offer to plan the change for the next window."
+            )
         if rollback == "negation":
             rollback_plan = f"""   - Write the negation: for every line the template added (step 7's diff, '+'
-     lines), the 'no ...' form, in dependency order (children before parents, e.g. 'no interface Loopback77'
+     lines; if the deploy failed before step 7, use the rendered CLI from step 3), the
+     'no ...' form, in dependency order (children before parents, e.g. 'no interface Loopback77'
      removes its sub-commands too). Offer to create it as "<template>-rollback" in the same project
      with {tool_ref("catc_create_template")} + {tool_ref("catc_commit_template")}, preview it with
      {tool_ref("catc_preview_template")}, and (only if the user asks to roll back now)
@@ -198,7 +221,9 @@ with the confirm token. Keep a short log of each step's result for the summary.
    the change (e.g. "show running-config | section <what the template touches>").
 7. Config diff: {tool_ref("catc_resync_devices")}, wait ~2 minutes, then
    {tool_ref("catc_compare_device_configs")} with compare="previous" for each device. The '+'
-   lines must be what the template rendered in step 3 and nothing else.
+   lines must be what the template rendered in step 3 and nothing else. If the result is
+   identical or misses the change (the archive got no new version, or more than one), compare
+   with compare="files", from_file=<step 1's file id> and to_file=<the newest RUNNINGCONFIG>.
 8. Compliance: {tool_ref("catc_run_compliance")} for {devs}, then
    {tool_ref("catc_get_compliance_detail")} again. Compare with the baseline: RUNNING_CONFIG
    (startup vs running) usually turns NON_COMPLIANT because Catalyst Center doesn't save the
