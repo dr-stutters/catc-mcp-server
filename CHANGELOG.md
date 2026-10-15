@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0 (2026-10-15)
+
+Later items D13 (first slice), D14 and D16: 125 tools (64 read, 40 write, 21 dangerous), 3 prompts.
+
+### Added
+- **SD-Access writes (D13, first slice)**: `catc_create_fabric_site`, `catc_create_virtual_network` (write);
+  `catc_add_fabric_device` (border/control plane/edge, border ASN), `catc_add_anycast_gateway`,
+  `catc_assign_fabric_port`, `catc_delete_sda_object` (dangerous, reverse-order blockers). `catc_get_sda_fabric`
+  returns ids and port assignments. Previews are live-checked; applying is refused by the lab 3.2.2 image
+  (NCSP11008: no SD-Access application), which the tools now explain. `labs/mcp-catc-fabric.yaml`.
+- **Wireless (D14)**: `catc_get_wireless_controller`; `catc_create_ssid` / `catc_delete_ssid` /
+  `catc_create_wireless_profile` / `catc_delete_wireless_profile` (write; passphrases masked, bound by a keyed
+  digest); `catc_provision_wireless_controller` (dangerous). Live on a 9800-CL (`labs/mcp-catc-wlc.yaml`).
+- **Reports (D16)**: `catc_list_report_views`, `catc_get_report_view`, `catc_list_reports`,
+  `catc_get_report_content` (CSV/JSON), `catc_create_report`, `catc_delete_report`; `catc_list_itsm_instances`.
+  Live: Inventory report filtered to Routers.
+- `scripts/lab_state.py seed` discovers the WLC when CML lab `mcp-catc-wlc` runs.
+
+### Found live (3.2.2-75131)
+- Every CML cat9000v reports serial CMLUADP: Catalyst Center merges them into one device. Give each a unique
+  `conf/vswitch.xml` serial.
+- Non-open SSIDs need an AKM and an RSN cipher (NCND10090); AP locations without a wireless profile are refused;
+  the WLANs stay on the WLC when the design objects are deleted.
+- Reports: viewGroupVersion isn't exposed (Inventory wants 2.0.0); `GET /data/reports` is 404 when empty; the
+  download needs `Accept: application/octet-stream`; executions take ~7 minutes on the lab.
+
+### Changed
+- The cortex container logs in as the least-privilege `mcp-catc-rw` account; `MCP_METRICS=true`.
+
 ## 0.5.0 (2026-10-15)
 
 Production gate (D17, D19, D20) on core v0.12.0. D18 (version matrix) skipped overnight: it needs older

@@ -190,7 +190,7 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (58)
+### Read (64)
 
 | Tool | What it does |
 |---|---|
@@ -212,7 +212,9 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_get_network_profile` | One network profile: its type, the Day-N CLI templates attached to it and the sites it is assigned to (by name, including inherited child sites). |
 | `catc_get_physical_topology` | Physical (CDP/LLDP-derived) topology: devices and the links between them with port names, link status and addresses. |
 | `catc_get_policy_servers` | Authentication and policy servers known to Catalyst Center (System > Settings > Authentication and Policy Servers): plain RADIUS/TACACS servers and integrated Cisco ISE, with protocol, ports, state, pxGrid, and per ISE node its role (PRIMARY/SECONDARY/PXGRID), FQDN and certificate trust state; plus the ISE integration status (each step, and the certificate waiting to be accepted, if any). |
-| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge) and border settings, layer 3 virtual networks and anycast gateways (VN, IP pool, VLAN). |
+| `catc_get_report_content` | Download a report execution's content (CSV or JSON reports only; PDF/TDE are binary). |
+| `catc_get_report_view` | A report view's formats, filters (name, type) and field groups, i.e. |
+| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge) and border settings, layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the ids catc_delete_sda_object takes. |
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
 | `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the device credentials the site uses (shown as 'TYPE:description', never secrets). |
@@ -221,6 +223,7 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_get_template` | One template in full: content (CLI body), language, variables (name, type, required, default, choices), target device families/software, project and version history. |
 | `catc_get_template_deployment` | Status of one template deployment: overall status and, per device, whether the push succeeded and Catalyst Center's detailed message (e.g. the CLI line the device rejected). |
 | `catc_get_vlan_topology` | Without `vlan`: the VLAN names Catalyst Center knows about. |
+| `catc_get_wireless_controller` | A Catalyst 9800 WLC as Catalyst Center sees it: provisioning status, primary managed AP locations and the SSIDs deployed on it (admin status, managed by Catalyst Center or not). |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls), with category and severity. |
 | `catc_list_compliance_policies` | User-defined compliance policies (Provision > Compliance > Policies) with their status (ACTIVE, NO_RULES_CONFIGURED, NO_SITES_ASSIGNED...), rule and site counts. |
 | `catc_list_compliance_violations` | Compliance policy violations from the last compliance run (catc_run_compliance), per device (every violating policy, or one) or per site for one policy: rule, condition, severity and message. |
@@ -239,8 +242,11 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_list_images` | Software images known to Catalyst Center (imported into the repository, or suggested from cisco.com): name, version, product families, golden tag, integrity status and id. |
 | `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, severity, status, category, affected entity and site, newest first. |
+| `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
 | `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
 | `catc_list_pnp_devices` | Plug and Play (PnP) devices waiting for or going through zero-touch onboarding: serial, platform, state, the site and workflow they're claimed to, first/last contact, and any error. |
+| `catc_list_report_views` | Report view groups (Inventory, Compliance, SWIM, Licensing, EoX, Access Point, ...) or, with group, that group's views. |
+| `catc_list_reports` | Reports defined in Catalyst Center with their view, format and executions (newest first: id, status, start/end), for catc_get_report_content. |
 | `catc_list_ssids` | Wireless SSIDs defined at a site (Design > Network Settings > Wireless): name, security (auth type), radio bands, whether it's enabled and broadcast, AAA servers and id. |
 | `catc_list_tag_members` | Members of one tag: network devices (hostname, IP, platform) or interfaces, whether added statically or by a dynamic rule. |
 | `catc_list_tags` | Tags used to group devices and interfaces (for templates, provisioning and filtering): name, description, whether it is a system tag, dynamic membership rules and id. |
@@ -253,7 +259,7 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 
-### Write (32)
+### Write (40)
 
 | Tool | What it does |
 |---|---|
@@ -265,18 +271,26 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
 | `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'). |
 | `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
+| `catc_create_fabric_site` | Make a site an SD-Access fabric site. |
 | `catc_create_global_credential` | Create a global device credential that discovery and site assignment can use. |
 | `catc_create_ip_pool` | Create a global IP pool, or reserve a subpool of one for a site (pass site + global_pool). |
+| `catc_create_report` | Create a report from a view and run it now (delivery: download). |
 | `catc_create_site` | Create an area, building or floor in the site hierarchy. |
+| `catc_create_ssid` | Define an SSID (WLAN) in network design. |
 | `catc_create_switching_profile` | Create an empty switching network profile, to attach Day-N templates to and assign to sites. |
 | `catc_create_tag` | Create a (static) tag for grouping devices or interfaces. |
 | `catc_create_template` | Create a (not yet committed) configuration template in a project. |
 | `catc_create_template_project` | Create a template project (a folder for configuration templates). |
+| `catc_create_virtual_network` | Create a layer 3 virtual network (VRF) or add an existing one to more fabric sites. |
+| `catc_create_wireless_profile` | Create a wireless network profile that carries SSIDs. |
 | `catc_delete_global_credential` | Delete a global device credential. |
 | `catc_delete_ip_pool` | Release a site's reserved subpool, or delete a global pool (refused while it still has reservations). |
+| `catc_delete_report` | Delete a report and its executions. |
+| `catc_delete_ssid` | Delete an SSID from network design. |
 | `catc_delete_tag` | Delete a user-defined tag. |
 | `catc_delete_template` | Delete a configuration template and all its versions. |
 | `catc_delete_template_project` | Delete a template project together with every template in it. |
+| `catc_delete_wireless_profile` | Delete a wireless network profile. |
 | `catc_detach_template_from_profile` | Detach a Day-N CLI template from network profiles. |
 | `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
@@ -290,24 +304,29 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (16)
+### Dangerous (21)
 
 | Tool | What it does |
 |---|---|
 | `catc_accept_ise_certificate` | Answer Catalyst Center's 'trust this ISE certificate?' step of the ISE integration (or retry a failed integration). |
 | `catc_activate_image` | Install and activate a software image on a device (distributing it first if needed). |
+| `catc_add_anycast_gateway` | Add an anycast gateway (the client subnet's default gateway, the same IP on every edge) for an IP pool in a virtual network at a fabric site. |
+| `catc_add_fabric_device` | Give a provisioned device a fabric role (control plane, border, edge) at a fabric site. |
 | `catc_add_ise_server` | Integrate Cisco ISE with Catalyst Center as the AAA and policy server: CatC connects to ISE (ERS over 443, pxGrid 8910), discovers its nodes and, after you accept ISE's certificate, trusts it. |
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
+| `catc_assign_fabric_port` | Assign an edge port to a fabric VLAN (host onboarding): Catalyst Center configures the access port (VLAN, authentication template) on the edge. |
 | `catc_claim_pnp_device` | Claim an Unclaimed Plug and Play device to a site: Catalyst Center pushes the day-0 onboarding template (with its variables), optionally an image, then adds the device to the inventory at that site. |
 | `catc_delete_compliance_policy` | Delete a user compliance policy with its rules, conditions and site assignments; its violations disappear from the compliance results. |
 | `catc_delete_device` | Remove a device from Catalyst Center. |
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |
 | `catc_delete_pnp_device` | Remove a device from the Plug and Play list (not from the inventory). |
 | `catc_delete_policy_server` | Remove an authentication and policy server (plain AAA or the integrated ISE) from Catalyst Center. |
+| `catc_delete_sda_object` | Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a device's fabric role or a fabric site. |
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
 | `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |
+| `catc_provision_wireless_controller` | Provision a Catalyst 9800 WLC: set its primary managed AP locations, then push the WLANs, policy profiles and tags of the wireless profiles assigned to those sites (plus the site's AAA, DNS, NTP and telemetry settings). |
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
 
