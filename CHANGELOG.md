@@ -26,6 +26,11 @@
   endpoint page-size caps (issues 25, events 20, audit 25, device health 500) are passed per call
   with `fetch_page(max_page=...)`. The module-level `DATA_PAGER`, `EVENTS_PAGER`, `AUDIT_PAGER` and
   `DEVICE_HEALTH_PAGER` are gone.
+- Compliance policies (D4): `catc_list_compliance_policies`, `catc_get_compliance_policy` (rules,
+  conditions, sites), `catc_list_compliance_violations` (per device or per site),
+  `catc_create_compliance_policy` (policy + rules + regex/string conditions + sites in one preview,
+  rolled back if a step fails), `catc_assign_compliance_policy` (add/remove/replace sites),
+  `catc_delete_compliance_policy` (dangerous). Remediation stays on `catc_api_call`.
 - `catc_create_discovery`: a bare address in a Range/Multi Range is sent as `ip-ip` (3.2.2 rejected
   it with "IPAddress for Range Discovery is invalid").
 - `catc_list_audit_logs` takes `device` (hostname, IP, serial or id) and `site`. Catalyst Center tags
