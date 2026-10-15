@@ -132,7 +132,7 @@ async def replacements(app: CatcApp, **params: Any) -> list[dict[str, Any]]:
 
 
 def register(reg: ToolRegistrar) -> None:
-    @reg.dangerous(title="Claim a PnP device to a site")
+    @reg.dangerous(title="Claim a PnP device to a site", task=True)
     async def catc_claim_pnp_device(
         ctx: Context,
         device: DeviceRef,
@@ -457,7 +457,7 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Replace a faulty device (RMA)")
+    @reg.dangerous(title="Replace a faulty device (RMA)", task=True)
     async def catc_replace_device(
         ctx: Context,
         faulty: Annotated[str, Field(description="The faulty device, marked for replacement")],

@@ -51,6 +51,31 @@ async def device_site(app: CatcApp, device_id: str) -> str | None:
     return str(a.get("siteNameHierarchy")) if isinstance(a, dict) and a.get("siteNameHierarchy") else None
 
 
+MISSING_NOTE = (
+    "Some addresses didn't produce a device. Usual causes: nothing answers there (ping/SSH/SNMP), wrong "
+    "credentials, or the device reports the same serial number as one already found or in the inventory: "
+    "Catalyst Center then merges them silently (every CML cat9000v reports CMLUADP unless its "
+    "conf/vswitch.xml sets a unique serial). Check catc_list_discovery_devices and catc_list_devices."
+)
+
+
+def expand_addresses(ranges: list[str], limit: int = 1024) -> list[str]:
+    """IPv4 addresses of 'a', 'a-b' and comma lists; [] when unparseable or larger than `limit`."""
+    import ipaddress
+
+    out: list[str] = []
+    try:
+        for part in (x.strip() for r in ranges for x in r.split(",") if x.strip()):
+            lo, _, hi = part.partition("-")
+            a, b = ipaddress.IPv4Address(lo.strip()), ipaddress.IPv4Address((hi or lo).strip())
+            if int(b) < int(a) or int(b) - int(a) + len(out) >= limit:
+                return []
+            out += [str(ipaddress.IPv4Address(i)) for i in range(int(a), int(b) + 1)]
+    except ValueError:
+        return []
+    return out
+
+
 def brief(devs: list[dict[str, Any]]) -> list[str]:
     return [f"{d.get('hostname') or '(not collected yet)'} ({d.get('managementIpAddress')})" for d in devs]
 
@@ -226,7 +251,7 @@ def register(reg: ToolRegistrar) -> None:
 
     # --- discovery -------------------------------------------------------------------------------
 
-    @reg.write(title="Create discovery")
+    @reg.write(title="Create discovery", task=True)
     async def catc_create_discovery(
         ctx: Context,
         name: Annotated[str, Field(min_length=1, max_length=128, description="Discovery job name")],
@@ -411,6 +436,12 @@ def register(reg: ToolRegistrar) -> None:
                         )
                     )
                     out["devices"] = [pick(d, DISCOVERED_FIELDS) for d in found[:100] if isinstance(d, dict)]
+                    wanted = expand_addresses(ip_ranges)
+                    got = {str(d.get("managementIpAddress")) for d in found if isinstance(d, dict)}
+                    missing = sorted(set(wanted) - got, key=lambda a: tuple(int(x) for x in a.split(".")))
+                    if wanted and missing:
+                        out["not_found"] = missing[:50]
+                        out["note"] = MISSING_NOTE
             return out
 
         return await preview_or_apply(
