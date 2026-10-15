@@ -30,6 +30,7 @@ from catc_mcp.common import (
     PAGE_EVENTS,
     PAGE_ISSUES,
     PAGE_NOTIFICATIONS,
+    ensure_list,
     resolve_device,
     resolve_site,
     window,
@@ -299,6 +300,89 @@ async def _notifications(
     return rows, f"capped at {SOURCE_CAP} rows" if len(found) > SOURCE_CAP else None
 
 
+# Catalyst Center's own bookkeeping in the audit log: provisioning sub-flows and internal messaging
+# (one provisioning writes ~60 of these), not changes anyone made. Found on 3.2.2-75131.
+AUDIT_INTERNAL = re.compile(
+    "|".join(
+        [
+            r"not applicable for the device",
+            r"in Device Controllability has been initiated",
+            r"^Finished executing .* flow",
+            r"received a (request|response) message of type",
+            r"^Sending (message|notification)",
+            r"Telemetry Receiver is already configured",
+            r"(Deleting existing|Configuring) Telemetry subscriptions",
+            r"is reachable from device",
+            r"Resync will begin shortly",
+            r"^Service request processing completed",
+            r"^Updating siteHierarchyId",
+        ]
+    ),
+    re.IGNORECASE,
+)
+# Reads and sessions: logins, retrievals, downloads, show commands.
+AUDIT_READ = re.compile(
+    r"LOGIN_USER_EVENT|logged (in|out)|retrieval succeeded|\bdownloaded\b|"
+    r"request to run read-only commands|^Fetch(ed|ing)\b|^Get(ting)?\b",
+    re.IGNORECASE,
+)
+
+
+def audit_kind(r: dict[str, Any]) -> str:
+    """'internal' (Catalyst Center bookkeeping), 'read' (logins, reads) or 'change'."""
+    text = str(r.get("description") or r.get("name") or "")
+    if AUDIT_INTERNAL.search(text):
+        return "internal"
+    if AUDIT_READ.search(text):
+        return "read"
+    return "change"
+
+
+def audit_device(r: dict[str, Any]) -> Any:
+    """The device an audit record is about (Catalyst Center puts its management IP in
+    network.deviceId), or None."""
+    net = r.get("network")
+    return net.get("deviceId") if isinstance(net, dict) and net.get("deviceId") else None
+
+
+async def device_names_by_ip(app: CatcApp, ips: Any) -> dict[str, str]:
+    """{management IP: hostname} for the IPs that are in the inventory (best effort)."""
+    wanted = sorted({str(i) for i in ips if i})
+    if not wanted:
+        return {}
+    try:
+        found = await app.get_response("/dna/intent/api/v1/network-device", {"managementIpAddress": wanted})
+    except UpstreamError:
+        return {}
+    return {
+        str(d["managementIpAddress"]): str(d.get("hostname") or d["managementIpAddress"])
+        for d in ensure_list(found)
+        if isinstance(d, dict) and d.get("managementIpAddress")
+    }
+
+
+async def audit_rows(app: CatcApp, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Audit records as readable rows: time (UTC), user, device, what, source IP, id."""
+    names = await device_names_by_ip(app, [audit_device(r) for r in records])
+    out = []
+    for r in records:
+        dev = audit_device(r)
+        out.append(
+            _clean(
+                {
+                    "time": ts_text(r.get("timestamp")),
+                    "user": r.get("userId") or r.get("userName"),
+                    "device": names.get(str(dev), dev) if dev else None,
+                    "what": _short(r.get("description") or r.get("name"), 300),
+                    "category": r.get("category") if r.get("category") not in (None, "INFO") else None,
+                    "source": r.get("source") if r.get("source") not in (None, "NA") else None,
+                    "id": r.get("instanceId"),
+                }
+            )
+        )
+    return out
+
+
 async def fetch_audit(
     app: CatcApp,
     params: dict[str, Any],
@@ -342,21 +426,31 @@ async def _audit(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: d
         "order": "desc",
     }
     found, more, truncated = await fetch_audit(app, params, device=dev, site=site)
+    kept = [r for r in found if audit_kind(r) == "change"]
+    names = await device_names_by_ip(app, [audit_device(r) for r in kept])
     rows = [
         _row(
             "audit",
             r.get("timestamp"),
             r.get("description") or r.get("name"),
+            device=names.get(str(audit_device(r)), audit_device(r)),
             user=r.get("userId") or r.get("userName"),
-            severity=r.get("severity"),
-            type=r.get("category"),
+            type=r.get("category") if r.get("category") != "INFO" else None,
             id=r.get("instanceId"),
         )
-        for r in found
+        for r in kept
     ]
+    notes = []
+    if hidden := len(found) - len(kept):
+        notes.append(
+            f"{hidden} audit records left out (logins, reads and Catalyst Center's internal provisioning "
+            "steps; catc_list_audit_logs shows everything)"
+        )
     if truncated:
-        return rows, f"text scan stopped at the newest {AUDIT_SCAN_CAP} audit records"
-    return rows, f"capped at {SOURCE_CAP} rows" if more else None
+        notes.append(f"text scan stopped at the newest {AUDIT_SCAN_CAP} audit records")
+    elif more:
+        notes.append(f"capped at {SOURCE_CAP} rows")
+    return rows, "; ".join(notes) or None
 
 
 SOURCE_FETCHERS: dict[str, Callable[..., Awaitable[Any]]] = {
@@ -469,9 +563,11 @@ def register(reg: ToolRegistrar) -> None:
     ) -> ToolResult:
         """What happened on this device or site recently? Queries Catalyst Center's assurance issues,
         assurance events (syslog, traps), platform event notifications and the audit log for the same
-        window and scope, and merges them newest first with a `source` column. A source that fails is
-        reported under `errors` and the others are still returned. Drill down with catc_get_issue,
-        catc_list_events, catc_list_event_notifications or catc_list_audit_logs."""
+        window and scope, and merges them newest first with a `source` column. Audit records are limited
+        to changes (logins, reads and Catalyst Center's internal provisioning steps are counted, not
+        listed). A source that fails is reported under `errors` and the others are still returned.
+        For "what changed in the configuration" also see catc_compare_device_configs. Drill down with
+        catc_get_issue, catc_list_events, catc_list_event_notifications or catc_list_audit_logs."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device) if device else None
         st = await resolve_site(app, site) if site else None
