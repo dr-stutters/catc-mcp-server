@@ -86,6 +86,8 @@ SPEC = ServerSpec(
     product="Cisco Catalyst Center",
     env_prefix="CATC_",
     instructions=INSTRUCTIONS,
+    spec_search_example="network device",
+    spec_path_example="/dna/intent/api/v1/network-device/{id}",
 )
 
 REGISTER = [
