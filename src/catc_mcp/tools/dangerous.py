@@ -64,6 +64,14 @@ def deploy_outcome(progress: Any) -> dict[str, Any]:
     return out
 
 
+UNSAVED_NOTE = (
+    "Catalyst Center does not save the configuration after a template deploy: the change is lost on "
+    "reload, and RUNNING_CONFIG compliance shows it as drift. See the unsaved lines with "
+    "catc_compare_device_configs(compare='startup'), and save it on the device (write memory) if it "
+    "must persist."
+)
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.dangerous(title="Deploy template")
     async def catc_deploy_template(
@@ -122,7 +130,10 @@ def register(reg: ToolRegistrar) -> None:
                 "note": "CLI rendered for the first device only; device-bound variables may differ.",
                 "params": compact(params or {}),
             },
-            side_effects=["Changes the running configuration of every listed device."],
+            side_effects=[
+                "Changes the running configuration of every listed device.",
+                "The change is not saved to the startup config (Catalyst Center doesn't write memory).",
+            ],
             fingerprint={
                 "template": tid,
                 "devices": sorted(str(d["id"]) for d in devs),
@@ -154,6 +165,8 @@ def register(reg: ToolRegistrar) -> None:
                     what="template deployment",
                 )
                 out["deployment"] = deployment_summary(status)
+            if str((out.get("deployment") or {}).get("status", "")).upper() == "SUCCESS":
+                out["note"] = UNSAVED_NOTE
             return out
 
         return await preview_or_apply(

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import re
 import time
+from collections.abc import Awaitable
 from typing import Any
 from urllib.parse import quote
 
-from stutters_mcp_core import InvalidRequest, NotFound
+from stutters_mcp_core import InvalidRequest, NotFound, UpstreamError
 
 from catc_mcp.client import CatcApp, safe_id
 
@@ -212,3 +214,19 @@ async def resolve_tag(app: CatcApp, ref: str) -> dict[str, Any]:
     if len(found) == 1:
         return dict(found[0])
     raise NotFound(f"No tag named {ref!r}. Use catc_list_tags.")
+
+
+async def gather_sections(sections: dict[str, Awaitable[Any]]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Await named sections concurrently: ({name: value}, {name: error}) where upstream errors are
+    collected per section instead of failing the whole tool; anything else is raised."""
+    results = await asyncio.gather(*sections.values(), return_exceptions=True)
+    ok: dict[str, Any] = {}
+    errors: dict[str, str] = {}
+    for key, val in zip(sections, results, strict=True):
+        if isinstance(val, UpstreamError):
+            errors[key] = str(val)[:200]
+        elif isinstance(val, BaseException):
+            raise val
+        else:
+            ok[key] = val
+    return ok, errors
