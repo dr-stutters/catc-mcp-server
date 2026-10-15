@@ -592,7 +592,8 @@ async def test_pnp_devices(api: respx.MockRouter) -> None:
                 "deviceInfo": {
                     "serialNumber": "FOC1",
                     "pid": "C9300-24U",
-                    "onbState": "Unclaimed",
+                    "state": "Unclaimed",
+                    "onbState": "Initialized",
                     "lastContact": 5,
                 },
             }
@@ -600,7 +601,14 @@ async def test_pnp_devices(api: respx.MockRouter) -> None:
     )
     out = await call("catc_list_pnp_devices", {"state": "Unclaimed", "response_format": "json"})
     assert out["results"] == [
-        {"serial": "FOC1", "pid": "C9300-24U", "state": "Unclaimed", "lastContact": 5, "id": "p1"}
+        {
+            "serial": "FOC1",
+            "pid": "C9300-24U",
+            "state": "Unclaimed",
+            "onboarding": "Initialized",
+            "lastContact": 5,
+            "id": "p1",
+        }
     ]
 
 

@@ -11,6 +11,7 @@ from stutters_mcp_core.spec import SpecSource, bundled
 from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
 from catc_mcp.tools import (
+    aaa,
     activity,
     archive,
     assurance,
@@ -87,6 +88,7 @@ REGISTER = [
     prompts.register,
     site_writes.register,
     settings_writes.register,
+    aaa.register,
     template_writes.register,
     ops_writes.register,
     dangerous.register,

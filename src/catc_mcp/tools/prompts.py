@@ -1,15 +1,20 @@
 """Workflow prompts owned by this server (core `@reg.prompt`, BUILDING-A-SERVER §5a)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import ipaddress
 import json
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from pydantic import Field
 from stutters_mcp_core import Tier, ToolRegistrar, tool_ref
 
+from catc_mcp.common import norm_mac
+
 # Devices per change (roadmap D19's CATC_MAX_DEVICES_PER_CHANGE default).
 MAX_DEVICES_PER_CHANGE = 10
+PORT_RE = re.compile(r"[A-Za-z][A-Za-z\-]*\d+(/\d+){0,3}(\.\d+)?")
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -236,3 +241,135 @@ with the confirm token. Keep a short log of each step's result for the summary.
 11. Summary: what was deployed where, deployment result, verification output, config diff,
     compliance before/after, new issues, and the rollback plan. Suggest "write memory" (or a
     template) if the change should survive a reload."""
+
+    @reg.prompt(
+        title="Onboard an access switch with 802.1X/MAB (Catalyst Center + ISE)",
+        uses=["catc", "ise"],
+        tier=Tier.WRITE,
+    )
+    def catc_onboard_switch_with_nac(
+        switch_ip: Annotated[str, Field(description="Management IP of the switch to onboard")],
+        site_path: Annotated[
+            str, Field(description="Building or floor for the switch, e.g. 'Global/Area/Building'")
+        ],
+        access_port: Annotated[
+            str, Field(description="Access port to enable 802.1X/MAB on, e.g. GigabitEthernet1/0/2")
+        ],
+        test_mac: Annotated[
+            str, Field(description="MAC of a test endpoint on that port, e.g. 52:54:00:12:34:56")
+        ],
+        auth_mode: Annotated[
+            Literal["monitor", "closed"],
+            Field(
+                description="monitor: open authentication (traffic allowed, results logged); closed: enforced"
+            ),
+        ] = "monitor",
+        cli_credential: Annotated[
+            str, Field(description="Global CLI credential (description) to discover with")
+        ] = "",
+        snmp_credential: Annotated[str, Field(description="Global SNMPv2c read credential (optional)")] = "",
+    ) -> str:
+        """Onboard an access switch with network access control: check the Catalyst Center <-> ISE
+        integration, set the site's client AAA to ISE, discover/assign/provision the switch, confirm
+        its NAD in ISE, deploy an 802.1X/MAB access-port template, then verify the first
+        authentication in ISE and Catalyst Center. Needs the ise MCP server too. Every write is
+        preview-first."""
+        texts = (switch_ip, site_path, access_port, test_mac, cli_credential, snmp_credential)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        try:
+            ip = str(ipaddress.ip_address(switch_ip.strip()))
+        except ValueError as exc:
+            raise ValueError(f"switch_ip must be an IP address: {exc}") from exc
+        port = access_port.strip()
+        if not PORT_RE.fullmatch(port):
+            raise ValueError(
+                f"access_port must be an interface name such as GigabitEthernet1/0/2, not {port!r}."
+            )
+        mac = norm_mac(test_mac)
+        switch_ip = ip
+        closed_line = "\n        access-session closed" if auth_mode == "closed" else ""
+        creds = ", ".join(c for c in (cli_credential, snmp_credential) if c) or "(ask the user)"
+        return f"""Onboard switch {switch_ip} at {site_path} with 802.1X/MAB ({auth_mode} mode) on {port}, and
+prove it with test endpoint {mac}. This needs both the catc and the ise MCP servers; if the ise
+tools are missing, say so and stop after step 5. Every write is preview-first: show the preview,
+wait for approval, then repeat the call with the confirm token. Stop and report on any failure.
+
+1. ISE integration: {tool_ref("catc_get_policy_servers")}. An ISE entry must exist with its nodes
+   TRUSTED and the integration COMPLETE. If none, it has to be added with
+   {tool_ref("catc_add_ise_server")} (ISE PAN IP/FQDN, a super-admin login, a RADIUS shared secret;
+   suggest the user enters the secrets themselves rather than pasting them into the chat); when it
+   stops at WAITING_USER_INPUT show the certificate fingerprints and, after the user confirms them,
+   {tool_ref("catc_accept_ise_certificate")}. ISE needs ERS and the pxGrid persona. Both tools are
+   dangerous tier: if they are missing here, stop and say ISE must be integrated first.
+2. Site AAA: {tool_ref("catc_get_site_settings")} with categories ["aaa"] for "{site_path}". Set
+   client (endpoint) AAA to ISE with {tool_ref("catc_update_site_aaa_settings")}:
+   client={{"server_type": "ISE", "protocol": "RADIUS", "primary": "<ISE PSN IP from step 1>"}}.
+   Leave network (device admin) AAA alone unless the user asks: pointing device logins at ISE
+   without an ISE device-admin policy for Catalyst Center's CLI user locks Catalyst Center out.
+3. Onboard (as in the catc_onboard_device prompt): {tool_ref("catc_get_device")} "{switch_ip}";
+   if absent, credentials ({creds}) via {tool_ref("catc_list_global_credentials")}, then
+   {tool_ref("catc_create_discovery")} with ip_ranges ["{switch_ip}"], discovery_type "Range", wait=true;
+   poll {tool_ref("catc_get_device")} until Reachable + Managed (2-5 minutes); create missing site
+   levels with {tool_ref("catc_create_site")}; {tool_ref("catc_assign_devices_to_site")}.
+4. Provision: {tool_ref("catc_provision_devices")} with devices ["{switch_ip}"] and site
+   "{site_path}". This pushes the AAA/RADIUS config pointing at ISE and creates the switch as a
+   NAD in ISE. (Dangerous tier; if it isn't available, stop and say so.)
+5. Check the switch: {tool_ref("catc_run_show_commands")} with
+   "show running-config | section aaa|radius" and "show running-config | include dot1x|device-tracking":
+   the radius server must be the ISE PSN and aaa authentication dot1x / authorization network must
+   use that group.
+6. NAD in ISE: {tool_ref("ise_get_nad")} with "{switch_ip}". Catalyst Center normally creates it
+   during provisioning. Only if it's missing, offer {tool_ref("ise_create_nad")} (name = the
+   switch hostname, ips ["{switch_ip}"], the same RADIUS shared secret as step 1).
+7. Access-port template (IBNS 2.0 style: Catalyst Center's provisioning leaves the switch in the
+   new-style identity mode, where legacy "authentication ..." interface commands are dropped):
+   create it in a project of the user's choice with {tool_ref("catc_create_template")}
+   (device_families ["Switches and Hubs"]), content:
+       dot1x system-auth-control
+       policy-map type control subscriber MCP-NAC
+        event session-started match-all
+         10 class always do-until-failure
+          10 authenticate using mab priority 20
+        event agent-found match-all
+         10 class always do-until-failure
+          10 terminate mab
+          20 authenticate using dot1x priority 10
+        event authentication-failure match-first
+         10 class always do-until-failure
+          10 terminate mab
+          20 terminate dot1x
+          30 authentication-restart 60
+       interface {port}
+        switchport mode access
+        access-session host-mode multi-auth{closed_line}
+        access-session port-control auto
+        mab
+        dot1x pae authenticator
+        spanning-tree portfast
+        service-policy type control subscriber MCP-NAC
+   then {tool_ref("catc_commit_template")}, {tool_ref("catc_preview_template")} against the switch,
+   and {tool_ref("catc_deploy_template")} to ["{switch_ip}"]. If the deploy fails because the switch
+   asks "This operation will permanently convert all relevant authentication commands ... Do you
+   wish to continue?" (it is still in legacy mode), tell the user, and with their approval add these
+   lines right after "dot1x system-auth-control", commit and deploy again (a switch already in
+   new-style mode rejects the convert command, so only add it when asked):
+       #INTERACTIVE
+       authentication convert-to new-style<IQ>Do you wish to continue<R>yes
+       #ENDS_INTERACTIVE
+   Check with "show running-config interface {port}" that the access-session lines are there.
+8. First authentication: have the endpoint {mac} send traffic on {port} (MAB starts on the first
+   frame). Then:
+   - {tool_ref("catc_run_show_commands")} "show access-session interface {port} details";
+   - {tool_ref("ise_find_session")} with mac "{mac}" (live session, authz profile, NAD);
+   - {tool_ref("ise_get_auth_history")} with mac "{mac}" (every attempt, pass/fail, rule hit);
+   - on failure {tool_ref("ise_why_auth_failed")} with mac "{mac}". A MAB endpoint ISE doesn't
+     know is usually rejected: offer to register it ({tool_ref("ise_set_endpoint")} with a group
+     the MAB rule permits) or a rule for it ({tool_ref("ise_create_authz_rule")}), then bounce the
+     port by re-triggering traffic and check again;
+   - {tool_ref("ise_endpoint_360")} with mac "{mac}" (profile, group, history);
+   - {tool_ref("catc_client_360")} with mac "{mac}" (Catalyst Center's view: switch, port, VLAN,
+     health; it can take ~5 minutes to show up).
+9. Summary: switch onboarded (site, provisioning), AAA/ISE config on the switch, NAD in ISE,
+   the port template, and the endpoint's authentication result in both products. In monitor mode
+   remind the user that failures don't block traffic yet, and that "closed" mode enforces it."""
