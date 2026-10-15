@@ -163,3 +163,160 @@ async def test_device_health_paging_after_filter(api: respx.MockRouter) -> None:
 
 def test_families_not_filtered_for_series_only_entries() -> None:
     assert template_families({"deviceTypes": [{"productFamily": "Routers"}, {"productSeries": "x"}]}) == set()
+
+
+# --- D28-D30 --------------------------------------------------------------------------------------
+
+
+async def test_list_clients_by_device(api: respx.MockRouter) -> None:
+    from .test_read_tools import mock_device_lookup
+
+    mock_device_lookup(api)
+    client = {
+        "macAddress": "52:54:00:C8:EF:06",
+        "username": "52:54:00:C8:EF:06",
+        "ipv4Address": "10.77.0.10",
+        "type": "Wired",
+        "connectionStatus": "connected",
+        "lastUpdatedTime": NOW - 120_000,
+        "health": {"overallScore": 10, "rssiThreshold": -72},
+        "connectedNetworkDevice": {
+            "connectedNetworkDeviceName": "edge-sw1.lab.local",
+            "interfaceName": "Gi1/0/2",
+        },
+        "connection": {"vlanId": "10", "ssid": None, "rssi": 0},
+        "onboarding": {"latestFailureReason": "SUCCESS"},
+        "traffic": {"txBytes": 1},
+    }
+    old = {**client, "macAddress": "aa", "connectionStatus": "disconnected"}
+    route = api.get("/dna/data/api/v1/clients").respond(
+        json={"response": [client, old], "page": {"count": 2}}
+    )
+    out = await call("catc_list_clients", {"device": "edge-sw1", "response_format": "json"})
+    assert route.calls.last.request.url.params["connectedNetworkDeviceName"] == DEVICE["hostname"]
+    row = out["results"][0]
+    assert row == {
+        "mac": "52:54:00:C8:EF:06",
+        "ip": "10.77.0.10",
+        "type": "Wired",
+        "status": "connected",
+        "health": 10,
+        "device": "edge-sw1.lab.local",
+        "port": "Gi1/0/2",
+        "vlan": "10",
+        "last_seen": "2m ago",
+    }
+    out = await call("catc_list_clients", {"connected_only": True, "response_format": "json"})
+    assert [r["mac"] for r in out["results"]] == ["52:54:00:C8:EF:06"]
+
+
+async def test_path_trace_accepts_device_names(api: respx.MockRouter) -> None:
+    from .test_read_tools import fixture, mock_device_lookup
+
+    mock_device_lookup(api)
+    fid = "aeb4c1b6-0c13-4dba-9210-6a4627d81a3b"
+    post = api.post("/dna/intent/api/v1/flow-analysis").respond(
+        202, json={"response": {"flowAnalysisId": fid, "taskId": "t"}}
+    )
+    api.get(f"/dna/intent/api/v1/flow-analysis/{fid}").respond(json=fixture("flow_analysis_failed.json"))
+    await call("catc_path_trace", {"source_ip": "edge-sw1", "dest_ip": "10.2.2.2"})
+    import json as _json
+
+    assert _json.loads(post.calls.last.request.content)["sourceIP"] == "10.0.0.11"
+
+
+async def test_get_issue_drops_internal_attributes(api: respx.MockRouter) -> None:
+    iid = "8928922f-257f-432a-bdfb-17b8e26317f0"
+    api.get(f"/dna/data/api/v1/assuranceIssues/{iid}").respond(
+        json={
+            "response": [
+                {
+                    **raw_issue(iid, DEV_ID, name="OSPF_Down", summary="OSPF down"),
+                    "additionalAttributes": [
+                        {"key": "_key", "value": "NetworkDevice:x:y"},
+                        {"key": "siteHierarchyGraphId", "value": "/a/b/"},
+                        {"key": "deviceUuid", "value": DEV_ID},
+                        {"key": "priority", "value": "P2"},
+                        {"key": "syslogMsg", "value": "Nbr 10.255.255.2 from FULL to DOWN"},
+                        {"key": "intfName", "value": "GigabitEthernet2"},
+                        {"key": "nwDeviceName", "value": "r1"},
+                    ],
+                }
+            ]
+        }
+    )
+    out = await call("catc_get_issue", {"issue_id": iid})
+    assert out["attributes"] == {
+        "syslogMsg": "Nbr 10.255.255.2 from FULL to DOWN",
+        "intfName": "GigabitEthernet2",
+    }
+    assert out["device"] == "r1"
+
+
+def test_deployment_summary_keeps_realized_cli() -> None:
+    from catc_mcp.tools.templates import deployment_summary
+
+    out = deployment_summary(
+        {
+            "status": "SUCCESS",
+            "devices": [{"name": "r1", "status": "SUCCESS", "realizedClis": "ntp server 1.1.1.1"}],
+        }
+    )
+    assert out["devices"][0]["realizedClis"] == "ntp server 1.1.1.1"
+
+
+def test_wlc_provision_status_readable() -> None:
+    from catc_mcp.tools.wireless import provision_status
+
+    out = provision_status(
+        {
+            "networkDeviceId": "x",
+            "siteId": "y",
+            "lastProvisionedTimeStamp": "1792080802897",
+            "outOfSync": False,
+        }
+    )
+    assert out == {"outOfSync": False, "lastProvisioned": "2026-10-15 16:13 UTC"}
+
+
+async def test_get_issue_keeps_ssid_and_real_values(api: respx.MockRouter) -> None:
+    iid = "8928922f-257f-432a-bdfb-17b8e26317f1"
+    api.get(f"/dna/data/api/v1/assuranceIssues/{iid}").respond(
+        json={
+            "response": {
+                **raw_issue(iid, DEV_ID, name="wifi"),
+                "additionalAttributes": [
+                    {"key": "ssid", "value": "corp"},
+                    {"key": "bssid", "value": "aa:bb"},
+                    {"key": "routerId", "value": "1.1.1.1"},
+                    {"key": "count", "value": "1"},
+                    {"key": "nwDeviceName", "value": "r1"},
+                    {"key": "failureReason", "value": "AAA timeout"},
+                ],
+            }
+        }
+    )
+    out = await call("catc_get_issue", {"issue_id": iid})
+    assert out["attributes"] == {
+        "ssid": "corp",
+        "bssid": "aa:bb",
+        "count": "1",
+        "failureReason": "AAA timeout",
+    }
+
+
+def test_deployment_summary_redacts_lists() -> None:
+    from catc_mcp.tools.templates import deployment_summary
+
+    out = deployment_summary(
+        {"devices": [{"name": "r1", "realizedClis": ["username a secret 9 xyz", "ntp x"]}]}
+    )
+    assert "xyz" not in str(out) and out["devices"][0]["realizedClis"][1] == "ntp x"
+
+
+async def test_path_trace_rejects_bad_ip(api: respx.MockRouter) -> None:
+    async with Client(create_server(make_settings())) as c:
+        r = await c.call_tool(
+            "catc_path_trace", {"source_ip": "10.0.0.999", "dest_ip": "10.0.0.1"}, raise_on_error=False
+        )
+    assert r.is_error and "not a valid IP" in r.content[0].text  # type: ignore[union-attr]

@@ -12,6 +12,7 @@ Access points, RF and wireless clients need real APs (CML has none) and are left
 import hashlib
 import hmac
 import os
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -78,6 +79,20 @@ def profile_ssids(profile: dict[str, Any]) -> list[str]:
     return [str(s.get("ssidName")) for s in ensure_list(profile.get("ssidDetails")) if isinstance(s, dict)]
 
 
+def provision_status(st: Any) -> Any:
+    """The WLC provisioning status without ids, with a readable time."""
+    if not isinstance(st, dict):
+        return st
+    out = {k: v for k, v in st.items() if k not in ("networkDeviceId", "siteId", "deviceName")}
+    ts = out.pop("lastProvisionedTimeStamp", None)
+    try:
+        out["lastProvisioned"] = datetime.fromtimestamp(int(ts) / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
+    except (TypeError, ValueError, OverflowError, OSError):
+        if ts:
+            out["lastProvisioned"] = ts
+    return out
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Wireless controller")
     async def catc_get_wireless_controller(
@@ -103,7 +118,7 @@ def register(reg: ToolRegistrar) -> None:
             "device": brief([dev])[0],
             "family": dev.get("family"),
             "site": await device_site(app, did),
-            "provision_status": sec.get("provision_status"),
+            "provision_status": provision_status(sec.get("provision_status")),
             "managed_ap_locations": [loc.get("siteNameHierarchy") or loc for loc in ensure_list(locs) if loc],
             "ssids": [
                 compact(

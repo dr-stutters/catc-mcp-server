@@ -55,6 +55,18 @@ def register(reg: ToolRegistrar) -> None:
             devs_note = ""
             check = f'Call {tool_ref("catc_get_device")} with "{first}".'
         creds = ", ".join(c for c in (cli_credential, snmp_credential) if c) or "(none named)"
+        cli_part = (
+            f'Use the CLI credential "{cli_credential}"'
+            if cli_credential
+            else "Ask the user which CLI credential to use (or list them and let them pick)"
+        )
+        snmp_part = (
+            f'Use the SNMPv2c read credential "{snmp_credential}".'
+            if snmp_credential
+            else "No SNMP credential was named: ask the user, or name every global SNMPv2c read "
+            "credential in global_credentials."
+        )
+        cred_line = f"{cli_part}. {snmp_part}"
         provision_step = (
             f"""8. Provision: call {tool_ref("catc_provision_devices")} with devices={devs} and
    site="{site_path}". Show the preview (it pushes the site's network settings: DNS, NTP, banner,
@@ -73,10 +85,9 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 {devs_note}
 1. Is it already managed? {check} A device that exists and is Reachable/Managed skips to
    step 5; one that exists but is unreachable is reported instead of rediscovered.
-2. Credentials: call {tool_ref("catc_list_global_credentials")}. Use the CLI credential
-   "{cli_credential or "<ask the user which one>"}" and SNMP credential
-   "{snmp_credential or "<optional>"}". If one is missing, ask the user for the values and create
-   it with {tool_ref("catc_create_global_credential")} (secrets are never echoed back).
+2. Credentials: call {tool_ref("catc_list_global_credentials")}. {cred_line} If one is missing,
+   ask the user for the values and create it with {tool_ref("catc_create_global_credential")}
+   (secrets are never echoed back).
 3. Discover: call {tool_ref("catc_create_discovery")} with name "onboard-{first}",
    ip_ranges=["{target}"], discovery_type "Range" (a single address is sent as a
    one-address range; the "Single" type finds nothing on 3.2.x), global_credentials naming the
@@ -105,8 +116,8 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 9. Verify:
    - {tool_ref("catc_device_360")} for each of {devs}: reachability, site, provisioning state, health
      (health can take ~5 minutes to appear for a new device);
-   - {tool_ref("catc_run_compliance")} for the device, then {tool_ref("catc_get_compliance_summary")};
-     NETWORK_SETTINGS should be compliant after provisioning;
+   - {tool_ref("catc_run_compliance")} for the device, then {tool_ref("catc_get_compliance_detail")}
+     for it; NETWORK_SETTINGS should be compliant after provisioning;
    - {tool_ref("catc_run_show_commands")} with
      "show running-config | include ntp|logging host|ip domain|banner" to see what was pushed.
      Catalyst Center doesn't save the config: suggest "write memory" or a template if the user
