@@ -144,7 +144,7 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Add fabric device")
+    @reg.dangerous(title="Add fabric device", task=True)
     async def catc_add_fabric_device(
         ctx: Context,
         device: Annotated[str, Field(description="Device hostname, management IP, serial or id")],
@@ -308,7 +308,7 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Add anycast gateway")
+    @reg.dangerous(title="Add anycast gateway", task=True)
     async def catc_add_anycast_gateway(
         ctx: Context,
         fabric_site: FabricRef,

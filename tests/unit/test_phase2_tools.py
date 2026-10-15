@@ -873,3 +873,28 @@ async def test_settings_bad_timezone_and_local_base(api: respx.MockRouter) -> No
     await preview_then_apply("catc_update_site_settings", {"site": "Global/AU", "domain_name": "au.lab"})
     # The inherited DNS servers are not copied into the area as a local override.
     assert json.loads(put.calls.last.request.content) == {"dns": {"domainName": "au.lab"}}
+
+
+async def test_discovery_explains_missing_addresses(api: respx.MockRouter) -> None:
+    mock_creds(api)
+    api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
+    api.post("/dna/intent/api/v1/discovery").respond(202, json={"response": {"taskId": "t9"}})
+    api.get("/dna/intent/api/v1/task/t9").respond(
+        json={"response": {"data": '{"discoveryId": "12"}', "progress": "x", "endTime": 1}}
+    )
+    api.get("/dna/intent/api/v1/discovery/12/network-device").respond(
+        json={"response": [{"hostname": "bcp", "managementIpAddress": "10.0.0.1"}]}
+    )
+    args = {"name": "d", "ip_ranges": ["10.0.0.1-10.0.0.3"], "global_credentials": ["lab"], "wait": True}
+    _, done = await preview_then_apply("catc_create_discovery", args)
+    assert done["result"]["not_found"] == ["10.0.0.2", "10.0.0.3"]
+    assert "same serial number" in done["result"]["note"]
+
+
+def test_expand_addresses() -> None:
+    from catc_mcp.tools.ops_writes import expand_addresses
+
+    assert expand_addresses(["10.0.0.1-10.0.0.2", "10.0.0.9"]) == ["10.0.0.1", "10.0.0.2", "10.0.0.9"]
+    assert expand_addresses(["10.0.0.0-10.0.255.255"]) == []  # too big: no comparison
+    assert expand_addresses(["not-an-ip"]) == []
+    assert expand_addresses(["2001:db8::1", "10.0.0.5"]) == ["10.0.0.5"]  # unparseable parts skipped
