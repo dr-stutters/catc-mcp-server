@@ -87,7 +87,7 @@ def ensure_list(v: Any) -> list[Any]:
 
 def ago(ms: Any, now_ms: float | None = None) -> str | None:
     """'2h49m ago' for an epoch-ms time (None if it isn't one)."""
-    if not isinstance(ms, int | float) or ms <= 0:
+    if isinstance(ms, bool) or not isinstance(ms, int | float) or ms <= 0:
         return None
     secs = max(0, int(((now_ms if now_ms is not None else time.time() * 1000) - ms) / 1000))
     if secs < 60:

@@ -214,7 +214,16 @@ def register(reg: ToolRegistrar) -> None:
         issues = data.get("issues")
         if isinstance(issues, dict):
             rows = [issue_row(i) for i in ensure_list(issues.get("response")) if isinstance(i, dict)]
-            keep = ["name", "priority", "summary", "last_seen", "mostRecentOccurredTime", "id", "ids"]
+            keep = [
+                "name",
+                "priority",
+                "summary",
+                "last_seen",
+                "mostRecentOccurredTime",
+                "occurrenceCount",
+                "id",
+                "ids",
+            ]
             grouped = [{k: g[k] for k in [*keep, "times_raised"] if k in g} for g in group_issues(rows)]
             out["active_issues"] = grouped
             if grouped:

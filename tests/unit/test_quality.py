@@ -54,7 +54,7 @@ def test_issue_row_names_device_and_age() -> None:
         now_ms=NOW,
     )
     assert row["device"] == "edge-sw1.lab.local" and row["id"] == "i1"
-    assert row["last_seen"].startswith("3h") and row["occurrenceCount"] == "4"
+    assert row["last_seen"] == "3h00m ago" and row["occurrenceCount"] == "4"
     assert isinstance(row["mostRecentOccurredTime"], str)
 
 
@@ -84,7 +84,7 @@ async def test_list_issues_device_column_and_ghosts(api: respx.MockRouter) -> No
     rows = {r["id"]: r for r in out["results"]}
     assert rows["i1"]["device"] == DEVICE["hostname"]  # from the inventory when the issue doesn't say
     assert rows["i2"]["device"] == "old-sw (not in inventory)"
-    assert "old-sw (not in inventory)" in out["note"]
+    assert "old-sw (not in inventory)" in out["unmanaged"]
 
 
 async def test_device_health_leaves_out_deleted_devices(api: respx.MockRouter) -> None:
@@ -100,7 +100,8 @@ async def test_device_health_leaves_out_deleted_devices(api: respx.MockRouter) -
     )
     out = await call("catc_list_device_health", {"response_format": "json"})
     assert [r["name"] for r in out["results"]] == ["edge-sw1"]
-    assert "ghost-sw" in out["left_out"] and "-1" in out["note"]
+    assert "ghost-sw" in out["left_out"] and "-1" in out["legend"]
+    assert out["total"] == 1 and "next_offset" not in out
 
 
 async def test_device_health_kept_when_inventory_lookup_fails(api: respx.MockRouter) -> None:
@@ -110,6 +111,7 @@ async def test_device_health_kept_when_inventory_lookup_fails(api: respx.MockRou
     )
     out = await call("catc_list_device_health", {"response_format": "json"})
     assert [r["name"] for r in out["results"]] == ["ghost-sw"] and "left_out" not in out
+    assert out["inventory_check"].startswith("failed")
 
 
 def test_split_applicable_by_family() -> None:
@@ -147,3 +149,17 @@ async def test_deploy_refuses_when_nothing_applies(api: respx.MockRouter) -> Non
             "catc_deploy_template", {"template": TID, "devices": [DEV2["id"]]}, raise_on_error=False
         )
     assert r.is_error and "device families" in r.content[0].text  # type: ignore[union-attr]
+
+
+async def test_device_health_paging_after_filter(api: respx.MockRouter) -> None:
+    mock_inventory(api)
+    health = [{"name": f"ghost{n}", "uuid": f"9999999{n}-0000-0000-0000-000000000000"} for n in range(3)]
+    health.insert(1, {"name": "edge-sw1", "uuid": DEV_ID})
+    api.get("/dna/intent/api/v1/device-health").respond(json={"response": health, "totalCount": 4})
+    out = await call("catc_list_device_health", {"limit": 1, "response_format": "json"})
+    assert [r["name"] for r in out["results"]] == ["edge-sw1"] and out["total"] == 1
+    assert "next_offset" not in out
+
+
+def test_families_not_filtered_for_series_only_entries() -> None:
+    assert template_families({"deviceTypes": [{"productFamily": "Routers"}, {"productSeries": "x"}]}) == set()

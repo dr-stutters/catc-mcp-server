@@ -83,12 +83,12 @@ def deploy_outcome(progress: Any) -> dict[str, Any]:
 
 
 def template_families(ref: dict[str, Any]) -> set[str]:
-    """The device families (lower case) a template targets; empty when it doesn't say."""
-    return {
-        str(t["productFamily"]).strip().lower()
-        for t in ensure_list(ref.get("deviceTypes"))
-        if isinstance(t, dict) and t.get("productFamily")
-    }
+    """The device families (lower case) a template targets; empty (no filtering) when it doesn't
+    say, or when any device type entry has no family (series/type-only entries aren't checked here)."""
+    types = [t for t in ensure_list(ref.get("deviceTypes")) if isinstance(t, dict)]
+    if not types or any(not t.get("productFamily") for t in types):
+        return set()
+    return {str(t["productFamily"]).strip().lower() for t in types}
 
 
 def split_applicable(
@@ -98,8 +98,10 @@ def split_applicable(
     as nonApplicableTargets ("mismatch of deviceType"), so they are left out of the deploy."""
     if not families:
         return devs, []
-    keep = [d for d in devs if str(d.get("family") or "").strip().lower() in families]
-    return keep, [d for d in devs if d not in keep]
+    ok = [str(d.get("family") or "").strip().lower() in families for d in devs]
+    return [d for d, k in zip(devs, ok, strict=True) if k], [
+        d for d, k in zip(devs, ok, strict=True) if not k
+    ]
 
 
 UNSAVED_NOTE = (

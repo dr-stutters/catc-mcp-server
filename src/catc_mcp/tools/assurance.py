@@ -18,6 +18,7 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
+from stutters_mcp_core.http import fetch_all, page_of
 
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import (
@@ -26,12 +27,15 @@ from catc_mcp.common import (
     PAGE_ISSUES,
     ago,
     inventory_names,
+    is_uuid,
     norm_mac,
     pick,
     resolve_device,
     resolve_site,
     window,
 )
+
+HEALTH_SCAN_CAP = 5000
 
 Hours = Annotated[float, Field(gt=0, le=720, description="Look-back window in hours (default 24)")]
 
@@ -81,7 +85,7 @@ def issue_row(i: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]:
             row["device"] = dev
     if attrs.get("_count") and "occurrenceCount" not in row:
         row["occurrenceCount"] = attrs["_count"]
-    if seen := ago(i.get("mostRecentOccurredTime")):
+    if seen := ago(i.get("mostRecentOccurredTime"), now_ms):
         row["last_seen"] = seen
     for key in ("firstOccurredTime", "mostRecentOccurredTime"):
         if isinstance(row.get(key), int | float):
@@ -89,20 +93,26 @@ def issue_row(i: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]:
     return row
 
 
-async def mark_unmanaged(app: CatcApp, raw: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[str]:
-    """Flag issue rows whose device is no longer in the inventory (Assurance keeps their issues);
-    returns those device names."""
-    ids = [i.get("entityId") for i in raw if is_device_issue(i)]
+async def mark_unmanaged(
+    app: CatcApp, raw: list[dict[str, Any]], rows: list[dict[str, Any]]
+) -> list[str] | None:
+    """Flag issue rows whose device is no longer in the inventory (Assurance keeps their issues) and
+    fill in missing device names; returns the unmanaged device names, or None when the inventory
+    lookup failed."""
+    ids = [str(i["entityId"]) for i in raw if is_device_issue(i) and is_uuid(str(i.get("entityId") or ""))]
     names = await inventory_names(app, ids) if ids else {}
     if names is None:
-        return []
+        return None
     gone: list[str] = []
     for i, row in zip(raw, rows, strict=True):
-        if is_device_issue(i) and i.get("entityId") and str(i["entityId"]) not in names:
-            row["device"] = f"{row.get('device') or i['entityId']} (not in inventory)"
+        eid = str(i.get("entityId") or "")
+        if not (is_device_issue(i) and is_uuid(eid)):
+            continue
+        if eid not in names:
+            row["device"] = f"{row.get('device') or eid} (not in inventory)"
             gone.append(str(row["device"]))
-        elif is_device_issue(i) and i.get("entityId") and "device" not in row:
-            row["device"] = names[str(i["entityId"])]
+        elif "device" not in row:
+            row["device"] = names[eid]
     return sorted(set(gone))
 
 
@@ -279,12 +289,14 @@ def register(reg: ToolRegistrar) -> None:
             params["health"] = health
         if site:
             params["siteId"] = (await resolve_site(app, site))["id"]
-        page = await app.data_pager.fetch_page(
+        # Fetched whole (the API returns up to 500 per page) so that leaving out deleted devices keeps
+        # offsets and totals consistent.
+        full = await fetch_all(
+            app.data_pager,
             app.api,
             "/dna/intent/api/v1/device-health",
             params,
-            limit=limit,
-            offset=offset,
+            cap=HEALTH_SCAN_CAP,
             max_page=PAGE_DEVICE_HEALTH,
         )
         fields = [
@@ -301,18 +313,31 @@ def register(reg: ToolRegistrar) -> None:
             "location",
             "uuid",
         ]
-        rows = [d for d in page.items if isinstance(d, dict)]
+        rows = [d for d in full.items if isinstance(d, dict)]
         names = await inventory_names(app, [d.get("uuid") for d in rows])
-        extra: dict[str, Any] = {"note": "-1 = not computed for this device/platform"}
-        if names is not None:
-            gone = [d for d in rows if d.get("uuid") and str(d["uuid"]) not in names]
-            if gone:
-                rows = [d for d in rows if d not in gone]
+        extra: dict[str, Any] = {"legend": "-1 = not computed for this device/platform"}
+        if names is None:
+            extra["inventory_check"] = "failed: records of deleted devices may be included"
+        else:
+            gone_ids = {
+                str(d["uuid"])
+                for d in rows
+                if d.get("uuid") and is_uuid(str(d["uuid"])) and str(d["uuid"]) not in names
+            }
+            if gone_ids:
+                gone = [d for d in rows if str(d.get("uuid")) in gone_ids]
+                rows = [d for d in rows if str(d.get("uuid")) not in gone_ids]
                 extra["left_out"] = (
                     f"{len(gone)} health record(s) of devices no longer in the inventory: "
                     + ", ".join(str(d.get("name") or d.get("ipAddress")) for d in gone)
                 )
-        page.items = [pick(d, fields) for d in rows]
+        page = page_of([pick(d, fields) for d in rows], limit=limit, offset=offset)
+        if not full.complete:
+            page.total = None
+            page.more = True
+            extra["scan"] = (
+                f"only the first {HEALTH_SCAN_CAP} health records were read; filter by site or role"
+            )
         return list_result(page, fmt=response_format, extra=extra)
 
     @reg.read(title="Client health")
@@ -413,8 +438,10 @@ def register(reg: ToolRegistrar) -> None:
         page.items = [issue_row(i) for i in raw]
         gone = await mark_unmanaged(app, raw, page.items)
         extra: dict[str, Any] = {}
-        if gone:
-            extra["note"] = (
+        if gone is None:
+            extra["inventory_check"] = "failed: issues of deleted devices are not marked"
+        elif gone:
+            extra["unmanaged"] = (
                 f"Issues for devices no longer in the inventory: {', '.join(gone)} (Catalyst Center keeps "
                 "them until they age out)."
             )
