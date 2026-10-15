@@ -4,6 +4,7 @@ status. All preview-first."""
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import contextlib
 import hashlib
+import ipaddress
 import json
 from typing import Annotated, Any, Literal
 
@@ -60,19 +61,20 @@ MISSING_NOTE = (
 
 
 def expand_addresses(ranges: list[str], limit: int = 1024) -> list[str]:
-    """IPv4 addresses of 'a', 'a-b' and comma lists; [] when unparseable or larger than `limit`."""
-    import ipaddress
-
+    """IPv4 addresses of 'a', 'a-b' and comma lists, for the "which addresses gave no device" note. Parts it
+    can't parse (IPv6, CIDR, shorthand) are skipped; [] when the total is larger than `limit` (no note)."""
     out: list[str] = []
-    try:
-        for part in (x.strip() for r in ranges for x in r.split(",") if x.strip()):
-            lo, _, hi = part.partition("-")
+    for part in (x.strip() for r in ranges for x in r.split(",") if x.strip()):
+        lo, _, hi = part.partition("-")
+        try:
             a, b = ipaddress.IPv4Address(lo.strip()), ipaddress.IPv4Address((hi or lo).strip())
-            if int(b) < int(a) or int(b) - int(a) + len(out) >= limit:
-                return []
-            out += [str(ipaddress.IPv4Address(i)) for i in range(int(a), int(b) + 1)]
-    except ValueError:
-        return []
+        except ValueError:
+            continue
+        if int(b) < int(a):
+            continue
+        if int(b) - int(a) + len(out) >= limit:
+            return []
+        out += [str(ipaddress.IPv4Address(i)) for i in range(int(a), int(b) + 1)]
     return out
 
 

@@ -897,3 +897,4 @@ def test_expand_addresses() -> None:
     assert expand_addresses(["10.0.0.1-10.0.0.2", "10.0.0.9"]) == ["10.0.0.1", "10.0.0.2", "10.0.0.9"]
     assert expand_addresses(["10.0.0.0-10.0.255.255"]) == []  # too big: no comparison
     assert expand_addresses(["not-an-ip"]) == []
+    assert expand_addresses(["2001:db8::1", "10.0.0.5"]) == ["10.0.0.5"]  # unparseable parts skipped
