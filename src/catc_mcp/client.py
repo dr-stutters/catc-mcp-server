@@ -15,6 +15,7 @@ import json
 import logging
 import re
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastmcp import Context
@@ -36,6 +37,7 @@ from stutters_mcp_core.http import (
 )
 
 from catc_mcp.config import Settings
+from catc_mcp.rbac import BUILTIN_TIERS, account_check, enabled_tier, permissions_tier
 
 log = logging.getLogger(__name__)
 
@@ -217,7 +219,33 @@ class CatcApp:
             if isinstance(val, dict):
                 val = val.get("count")
             out[key] = val if isinstance(val, int) else f"unavailable ({type(val).__name__})"
+        if self.settings.username:
+            try:
+                out["account"] = await self.account()
+            except UpstreamError as e:
+                out["account"] = {"unavailable": str(e)[:200]}
         return out
+
+    async def account(self) -> dict[str, Any]:
+        """The API account's roles and the server tier they amount to (rbac.account_check)."""
+        users = await self.get_response("/dna/system/api/v1/user")
+        users = users.get("users", []) if isinstance(users, dict) else []
+        me = next(
+            (u for u in users if isinstance(u, dict) and u.get("username") == self.settings.username), None
+        )
+        if me is None:
+            return {"unavailable": "the account is not a local user (external/AAA login?)"}
+        tiers: dict[str, str] = {}
+        for role in me.get("roleList") or []:
+            role = str(role)
+            if role in BUILTIN_TIERS:
+                tiers[role] = BUILTIN_TIERS[role]
+                continue
+            detail = await self.get_response(f"/dna/system/api/v2/roles/{quote(role, safe='')}")
+            perms = detail.get("permissions", []) if isinstance(detail, dict) else []
+            tiers[role] = permissions_tier(perms)
+        s = self.settings
+        return account_check(tiers, enabled_tier(s.mcp_enable_writes, s.mcp_enable_dangerous))
 
     # --- asynchronous jobs -----------------------------------------------------------------
 

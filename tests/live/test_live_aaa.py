@@ -23,6 +23,7 @@ from dotenv import dotenv_values
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+from .conftest import require_reachable
 from .test_live_writes import RUN, apply, call
 
 pytestmark = pytest.mark.live
@@ -109,6 +110,7 @@ async def test_ise_integration(lab_rw: Client) -> None:  # type: ignore[type-arg
 
 
 async def test_site_aaa_pushes_radius_and_creates_nad(lab_rw: Client) -> None:  # type: ignore[type-arg]
+    require_reachable(SW, "sw2 of CML lab mcp-catc-onboard")
     _need("LAB_ISE_USERNAME", "LAB_ISE_PASSWORD", "LAB_RADIUS_SECRET")
     if not await _ise_integrated(lab_rw):
         pytest.skip("ISE is not integrated (run test_ise_integration first)")

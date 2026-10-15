@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+Production gate (D17, D19, D20) on core v0.12.0. D18 (version matrix) skipped overnight: it needs older
+Catalyst Center releases.
+
+### Added
+- **Least-privilege roles (D17)**: `src/catc_mcp/rbac.py` defines three custom Catalyst Center roles
+  (`mcp-catc-ro`, `mcp-catc-rw`, `mcp-catc-dangerous`); `scripts/seed_access.py` creates them with
+  Global access groups and users from `.env` (idempotent, `--check`, `--delete`); docs/least-privilege.md lists
+  every permission. Tested live on 3.2.2: read tier ok 53/denied 0 as `mcp-catc-ro`; the whole live suite as
+  `mcp-catc-rw` (only template deploys get 403, as designed) and as `mcp-catc-admin` (all pass).
+  `tests/live/test_least_privilege.py`.
+- `catc_status` reports the account's roles and the tier they amount to (`catc.account`), with a warning when
+  the role allows more than the enabled tiers.
+- **Safety rails (D19)**: `CATC_MAX_DEVICES_PER_CHANGE` (default 10, 0 = off) blocks template deploys,
+  provisioning, SWIM, PnP claims, device replacement and deletion that touch more devices; those tools plus
+  resync and compliance runs report `blast_radius` for core's `MCP_MAX_BLAST_RADIUS`. Change windows, dry run
+  and two-person approval (core G7) are covered by unit and live tests.
+- `catc_deploy_template` targets a `site` (all devices below it, Global = whole inventory) or a `tag` as well as a
+  device list; the preview shows the targets and the template version (number, commit time, comment); the
+  confirm token is bound to the resolved devices.
+
+### Changed
+- **`catc_delete_device` (D20)**: `clean_config` is required; title "Delete device (un-provision)"; the
+  description and preview say plainly that un-provisioning deletes the device (unmanaged, assurance history
+  and config archive lost, the ISE NAD stays) and show the archived config versions that go.
+  Live: r2 un-provisioned with clean_config=false (config stays on the device), then re-onboarded.
+- Core pinned to v0.12.0 (safety rails, roles, secrets, metrics, OAuth, multi-instance, tasks, `config`).
+- Live tests that need sw2 (`mcp-catc-onboard`) skip when it is unreachable.
+
+### Found live (3.2.2-75131)
+- Users created through the API without an access group get `accessGroups: [""]`; tag creation then fails
+  inside Catalyst Center with a NullPointerException, whatever the role.
+- Floors need *Network Design.Wireless Maps* Write; the template preview API needs *Network Design.Profiles &
+  Settings* Write; template deploys need the dangerous role; Command Runner Read is enough for show commands.
+
 ## 0.4.0 (2026-10-15)
 
 Roadmap "Next" (D8-D11): ISE integration and site AAA, PnP claim and RMA, and the

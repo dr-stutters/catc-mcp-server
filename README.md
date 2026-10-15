@@ -82,6 +82,11 @@ claude mcp add --transport http catc http://cortex:8034/mcp --header "Authorizat
 | `CATC_TIMEOUT` / `CATC_RETRIES` | `30` / `2` | Per-request timeout (s) and retries (429 always retried, honouring `Retry-After`) |
 | `CATC_RATE_LIMIT` / `CATC_MAX_CONCURRENCY` | none / `8` | Client-side pacing (requests/min) and concurrent requests |
 | `CATC_COMMAND_RUNNER_TIMEOUT` | `120` | Seconds `catc_run_show_commands` waits for output |
+| `CATC_MAX_DEVICES_PER_CHANGE` | `10` | Most devices one deploy/provision/SWIM/PnP/delete may touch (`0` = off; see Safety rails) |
+| `MCP_ROLES` / `MCP_DEFAULT_ROLE` | off / `ro` | Per-caller roles `ro`/`rw`/`admin` (core docs/PRODUCTION.md) |
+| `MCP_DRY_RUN`, `MCP_CHANGE_WINDOW`, `MCP_MAX_BLAST_RADIUS`, `MCP_TWO_PERSON_TOOLS`, `MCP_DENY_TOOLS` | off | Safety rails (core G7; see Safety rails) |
+| `CATC_INSTANCES` | | Several Catalyst Centers in one server (`CATC_<NAME>_URL`, ...): every tool gets `instance` |
+| `MCP_METRICS` | `false` | Prometheus `/metrics` on the HTTP port |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `MCP_HOST` / `MCP_PORT` / `MCP_PATH` | `0.0.0.0` / `8000` / `/mcp` | HTTP listener |
 | `MCP_AUTH_TOKENS` / `MCP_AUTH_TOKENS_FILE` | | `name:sha256:<hex>` entries; **required** for HTTP |
@@ -96,22 +101,36 @@ claude mcp add --transport http catc http://cortex:8034/mcp --header "Authorizat
 
 ## Least-privilege account
 
-Create a dedicated local user (System > Users & Roles > User Management) instead of using an admin:
-
-- **Read-only use:** assign the built-in **OBSERVER-ROLE**. Everything in the read tier works except
-  `catc_run_show_commands` and `catc_path_trace`, which start jobs on the appliance (see the next item).
-- **Read + troubleshooting:** a custom role (System > Users & Roles > Role Based Access Control) with
-  Read on everything, plus Write on *Assurance > Path Trace* and *Network Analytics > Data Access /
-  Command Runner*.
-- **Writes:** add Write on *Network Design* (sites, network settings, IP pools, credentials),
-  *Network Provisioning > Inventory Management* (tags, discovery, device site assignment, resync,
-  compliance), *Network Provisioning > Templates* and *Network Provisioning > Image Update* (golden
-  tagging).
-- **Dangerous tier:** additionally *Network Provisioning > Provision* and *Image Update*; or use
-  NETWORK-ADMIN-ROLE. Keep this on a separate token/instance with `MCP_ENABLE_DANGEROUS=true`.
+Don't run the server as an admin. Three custom Catalyst Center roles, tested live on 3.2.2, match the
+server's tiers: **mcp-catc-ro** (read tier), **mcp-catc-rw** (+ write tier; Catalyst Center itself refuses
+provisioning, PnP claims and ISE changes) and **mcp-catc-dangerous**. [docs/least-privilege.md](docs/least-privilege.md)
+lists every permission, the access-group requirement and the API calls; `scripts/seed_access.py` creates the roles,
+access groups and users. `catc_status` shows the account's roles under `catc.account` and warns when they allow
+more than the enabled tiers.
 
 Every tool call is written to the audit log with the caller's token name, so give each person their own
 token (`catc-mcp-server token alice`).
+
+## Safety rails
+
+Every write is preview-first. On top of that (core G7, `docs/PRODUCTION.md` in stutters-mcp-core):
+
+- **`CATC_MAX_DEVICES_PER_CHANGE`** (default **10**, `0` = off): template deploys, provisioning, SWIM
+  distribute/activate, PnP claims, device replacement and device deletion that touch more devices are blocked
+  in the preview. `catc_deploy_template` targets an explicit device list, every device under a `site`
+  (child sites included; `Global` = the whole inventory) or a `tag`; the limit applies after expansion.
+- **Blast radius**: those tools plus `catc_resync_devices` and `catc_run_compliance` report `blast_radius`
+  (devices touched), limited by `MCP_MAX_BLAST_RADIUS` / `MCP_BLAST_RADIUS_OVERRIDES` (e.g.
+  `catc_deploy_template=5`).
+- **Change windows** (`MCP_CHANGE_WINDOW="Sat 22:00-04:00 Australia/Sydney"`), **dry run** (`MCP_DRY_RUN=true`),
+  **two-person approval** (`MCP_TWO_PERSON_TOOLS="@dangerous"`) and per-tool deny lists (`MCP_DENY_TOOLS`) apply
+  to every write tool.
+- Confirm tokens are bound to the resolved targets: if a tag's or site's members, a template's versions or a
+  device's provisioning change between preview and confirm, the confirm is refused.
+- **Un-provisioning deletes the device.** Catalyst Center 3.x has no separate un-provision call;
+  `catc_delete_device` is the only way, requires `clean_config` explicitly and its preview lists every effect
+  (unmanaged, assurance history and config archive lost, ISE NAD left behind). To keep managing a device,
+  re-provision it instead.
 
 ## Tools
 
@@ -281,12 +300,12 @@ the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_a
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
 | `catc_claim_pnp_device` | Claim an Unclaimed Plug and Play device to a site: Catalyst Center pushes the day-0 onboarding template (with its variables), optionally an image, then adds the device to the inventory at that site. |
 | `catc_delete_compliance_policy` | Delete a user compliance policy with its rules, conditions and site assignments; its violations disappear from the compliance results. |
-| `catc_delete_device` | Remove a device from the Catalyst Center inventory. |
+| `catc_delete_device` | Remove a device from Catalyst Center. |
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |
 | `catc_delete_pnp_device` | Remove a device from the Plug and Play list (not from the inventory). |
 | `catc_delete_policy_server` | Remove an authentication and policy server (plain AAA or the integrated ISE) from Catalyst Center. |
 | `catc_delete_site` | Delete a site from the hierarchy. |
-| `catc_deploy_template` | Deploy (push) a committed configuration template to devices. |
+| `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
 | `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
@@ -322,6 +341,9 @@ uv run pytest tests/live -m live     # against the lab in .env; creates and remo
 uv run python scripts/tool_table.py  # regenerate the tool tables above
 uv run python scripts/gap_report.py  # API coverage per area (docs/GAP-ANALYSIS.md)
 ```
+
+Troubleshooting configuration: `uv run catc-mcp-server config` prints the effective settings and where each
+came from (secrets only as set/unset), without contacting Catalyst Center.
 
 Live tests skip themselves when `CATC_URL` is unset or unreachable. The device workflow tests in
 `tests/live/test_live_phase2.py` need the two CML routers of the cml-mcp-server `catc-routers`

@@ -222,8 +222,27 @@ async def test_delete_provisioned_device_uses_provisioning_api(api: respx.MockRo
         202, json={"response": {"taskId": "tdp"}}
     )
     task_ok(api, "tdp")
-    preview, done = await flow("catc_delete_device", {"device": "edge-sw1"})
+    api.get("/dna/intent/api/v1/networkDeviceConfigFiles").respond(
+        json={
+            "response": [
+                {"id": "f1", "versionId": "v1", "fileType": "RUNNINGCONFIG", "createdTime": 1792060568267}
+            ]
+        }
+    )
+    preview, done = await flow("catc_delete_device", {"device": "edge-sw1", "clean_config": False})
     assert preview["preview"]["provisioned"] is True and preview["action"].startswith(
         "Un-provision and delete"
     )
+    effects = " ".join(preview["side_effects"])
+    assert "no longer managed" in effects and "Leaves the device's configuration" in effects
+    assert preview["preview"]["config_archive_lost"]["versions"] == 1
+    assert preview["blast_radius"] == 1
     assert done["status"] == "applied" and route.calls.last.request.url.params["cleanUpConfig"] == "false"
+
+
+async def test_delete_device_requires_clean_config(api: respx.MockRouter) -> None:
+    import pytest
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="clean_config"):
+        await flow("catc_delete_device", {"device": "edge-sw1"})

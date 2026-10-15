@@ -31,6 +31,7 @@ from stutters_mcp_core.http import page_of
 
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, is_uuid, resolve_device, resolve_site, resolve_template
+from catc_mcp.safety import device_limit_blockers
 from catc_mcp.tools.inventory import redact_config
 
 PNP = "/dna/intent/api/v1/onboarding/pnp-device"
@@ -243,7 +244,8 @@ def register(reg: ToolRegistrar) -> None:
                 "template": details.get("template", {}).get("content"),
                 "versions": details.get("template", {}).get("versions"),
             },
-            blockers=blockers,
+            blockers=blockers + device_limit_blockers(app, 1),
+            blast_radius=1,
         )
 
         async def apply() -> Any:
@@ -524,7 +526,8 @@ def register(reg: ToolRegistrar) -> None:
                 "body": body,
             },
             fingerprint={"recs": recs, "new": stable(new)},
-            blockers=blockers,
+            blockers=blockers + device_limit_blockers(app, 1),
+            blast_radius=1,
         )
 
         async def apply() -> Any:

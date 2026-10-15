@@ -275,7 +275,10 @@ async def cleanup(c: Client, keep_devices: bool) -> None:  # type: ignore[type-a
     if not keep_devices:
         for ip in ROUTERS:
             if await exists(c, "catc_get_device", {"device": ip}):
-                say(f"device {ip}: " + await write(c, "catc_delete_device", {"device": ip}))
+                say(
+                    f"device {ip}: "
+                    + await write(c, "catc_delete_device", {"device": ip, "clean_config": False})
+                )
     for tool, args in (
         ("catc_delete_discovery", {"discovery": DISCOVERY}),
         ("catc_delete_template_project", {"project": PROJECT}),

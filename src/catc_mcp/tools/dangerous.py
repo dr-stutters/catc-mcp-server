@@ -4,6 +4,7 @@ preview-first."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import re
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastmcp import Context
@@ -22,6 +23,8 @@ from stutters_mcp_core import (
 
 from catc_mcp.client import CatcApp, job_ref, safe_id
 from catc_mcp.common import ensure_list, resolve_device, resolve_site, resolve_template
+from catc_mcp.safety import device_limit_blockers, resolve_targets
+from catc_mcp.tools.archive import archive_files
 from catc_mcp.tools.discovery import resolve_discovery
 from catc_mcp.tools.inventory import redact_config
 from catc_mcp.tools.ops_writes import Devices, brief, resolve_devices
@@ -46,6 +49,14 @@ async def provisioned_records(app: CatcApp, device_ids: list[str]) -> dict[str, 
             if isinstance(r, dict) and r.get("networkDeviceId") == did:
                 out[did] = r
     return out
+
+
+def iso_ms(value: Any) -> str | None:
+    """Catalyst Center epoch milliseconds -> ISO 8601 UTC."""
+    try:
+        return datetime.fromtimestamp(float(value) / 1000, tz=UTC).isoformat(timespec="seconds")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
 
 
 def deploy_outcome(progress: Any) -> dict[str, Any]:
@@ -77,7 +88,17 @@ def register(reg: ToolRegistrar) -> None:
     async def catc_deploy_template(
         ctx: Context,
         template: TemplateRef,
-        devices: Devices,
+        devices: Annotated[
+            list[str] | None,
+            Field(max_length=100, description="Devices (hostname, IP, serial or id); or give site / tag"),
+        ] = None,
+        site: Annotated[
+            str | None,
+            Field(description="Instead of devices: every device under this site (and its children)"),
+        ] = None,
+        tag: Annotated[
+            str | None, Field(description="Instead of devices: every device with this tag")
+        ] = None,
         params: Annotated[
             dict[str, Any] | None,
             Field(description='Template variable values, applied to every device, e.g. {"vlan_id": 10}'),
@@ -88,15 +109,20 @@ def register(reg: ToolRegistrar) -> None:
         wait: Wait = True,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Deploy (push) a committed configuration template to devices. This changes the devices'
-        running configuration. Preview-first: the preview renders the CLI for the first device and
-        lists every target; nothing is pushed until you confirm. Uncommitted templates are refused
-        (commit with catc_commit_template)."""
+        """Deploy (push) a committed configuration template to devices: an explicit list, every device
+        under a site, or every device with a tag. This changes the devices' running configuration.
+        Preview-first: the preview renders the CLI for the first device and lists every target and the
+        template version; nothing is pushed until you confirm. Uncommitted templates are refused (commit
+        with catc_commit_template). More than CATC_MAX_DEVICES_PER_CHANGE targets (default 10) are refused."""
         app: CatcApp = get_client(ctx)
         ref = await resolve_template(app, template)
         tid = str(ref.get("templateId") or ref.get("id"))
-        devs = await resolve_devices(app, devices)
-        blockers = []
+        devs, targeting = await resolve_targets(app, devices, site, tag)
+        blockers = device_limit_blockers(app, len(devs))
+        if not devs:
+            raise InvalidRequest(f"No devices to deploy to ({targeting}).")
+        versions = [v for v in ensure_list(ref.get("versionsInfo")) if isinstance(v, dict)]
+        latest = max(versions, key=lambda v: float(v.get("version") or 0), default={})
         if not ensure_list(ref.get("versionsInfo")):
             blockers.append(
                 "The template has never been committed; commit it with catc_commit_template first."
@@ -126,6 +152,12 @@ def register(reg: ToolRegistrar) -> None:
             f"Deploy template {ref.get('projectName')}/{ref.get('name')} to {len(devs)} device(s)",
             details={
                 "devices": brief(devs),
+                "targets": targeting,
+                "template_version": {
+                    "version": latest.get("version"),
+                    "committed": iso_ms(latest.get("versionTime")),
+                    "comment": latest.get("versionComment") or latest.get("description"),
+                },
                 "rendered_cli_first_device": rendered,
                 "note": "CLI rendered for the first device only; device-bound variables may differ.",
                 "params": compact(params or {}),
@@ -137,11 +169,10 @@ def register(reg: ToolRegistrar) -> None:
             fingerprint={
                 "template": tid,
                 "devices": sorted(str(d["id"]) for d in devs),
-                "versions": [
-                    v.get("id") for v in ensure_list(ref.get("versionsInfo")) if isinstance(v, dict)
-                ],
+                "versions": [v.get("id") for v in versions],
             },
             blockers=blockers,
+            blast_radius=len(devs),
         )
 
         async def apply() -> Any:
@@ -175,6 +206,8 @@ def register(reg: ToolRegistrar) -> None:
             args={
                 "template": template,
                 "devices": devices,
+                "site": site,
+                "tag": tag,
                 "params": params,
                 "force_push": force_push,
                 "wait": wait,
@@ -200,7 +233,7 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         devs = await resolve_devices(app, devices)
-        blockers = []
+        blockers = device_limit_blockers(app, len(devs))
         if s.get("type") not in ("building", "floor"):
             blockers.append(f"Provision to a building or floor, not a {s.get('type')}.")
         existing = await provisioned_records(app, [str(d["id"]) for d in devs])
@@ -233,6 +266,7 @@ def register(reg: ToolRegistrar) -> None:
                 "existing": existing,
             },
             blockers=blockers,
+            blast_radius=len(devs),
         )
 
         async def apply() -> Any:
@@ -297,6 +331,8 @@ def register(reg: ToolRegistrar) -> None:
             },
             side_effects=effects,
             fingerprint={"device": dev["id"], "image": img["id"], "action": action},
+            blockers=device_limit_blockers(app, 1),
+            blast_radius=1,
         )
 
         async def apply() -> Any:
@@ -394,20 +430,26 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Delete device")
+    @reg.dangerous(title="Delete device (un-provision)")
     async def catc_delete_device(
         ctx: Context,
         device: DeviceRef,
         clean_config: Annotated[
-            bool, Field(description="Also remove the configuration Catalyst Center pushed to the device")
-        ] = False,
+            bool,
+            Field(
+                description="Required, no default: true also removes the configuration Catalyst Center "
+                "pushed to the device (AAA/RADIUS, syslog/SNMP/telemetry, banner, ...); false leaves the "
+                "device's configuration as it is"
+            ),
+        ],
         confirm: Confirm = None,
     ) -> dict[str, Any]:
-        """Remove a device from the Catalyst Center inventory. A provisioned device is un-provisioned
-        and deleted in one step (Catalyst Center has no separate un-provision API in 3.x); with
-        clean_config the settings Catalyst Center pushed (AAA, syslog/SNMP/telemetry, banners, ...) are
-        also removed from the device. Assurance history is lost; rediscover to bring it back.
-        Preview-first."""
+        """Remove a device from Catalyst Center. This is also the only way to UN-PROVISION a device:
+        Catalyst Center 3.x has no separate un-provision call, and un-provisioning DELETES the device from
+        the inventory (the device is no longer managed, its assurance history and config archive go). To
+        keep managing it, don't use this: re-provision it instead. Bring a deleted device back with a
+        discovery, then assign and provision it (prompt catc_onboard_device). clean_config must be given
+        explicitly. Preview-first: states every effect and the archived config versions that are lost."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
         did = str(dev["id"])
@@ -418,19 +460,46 @@ def register(reg: ToolRegistrar) -> None:
         else:
             path = f"/dna/intent/api/v1/network-device/{did}"
             params = {"cleanConfig": str(clean_config).lower()}
+        try:
+            files = await archive_files(app, did)
+        except UpstreamError as e:
+            files = None
+            archive: dict[str, Any] = {"unavailable": str(e)[:200]}
+        if files is not None:
+            running = [f for f in files if f.get("fileType") == "RUNNINGCONFIG"]
+            archive = {
+                "versions": len({f.get("versionId") for f in files}),
+                "latest_running_config": iso_ms(running[0].get("createdTime")) if running else None,
+                "keep_a_copy_with": "catc_get_device_config (running config) before confirming",
+            }
+        effects = [
+            ("Un-provisions the device AND deletes it" if prov else "Deletes the device")
+            + " from the Catalyst Center inventory: it is no longer managed (no assurance, compliance, "
+            "templates or provisioning) until it is rediscovered, assigned and provisioned again.",
+            "Its assurance history and archived configuration versions are deleted.",
+            "Removes the configuration Catalyst Center pushed (AAA/RADIUS, syslog/SNMP/telemetry, banner, "
+            "...) from the device."
+            if clean_config
+            else "Leaves the device's configuration as it is (clean_config=false), including AAA pointing at "
+            "ISE; ISE keeps its network device entry either way.",
+        ]
         plan = Plan(
-            f"{'Un-provision and delete' if prov else 'Delete'} device {brief([dev])[0]} from inventory",
+            f"{'Un-provision and delete' if prov else 'Delete'} device {brief([dev])[0]} from inventory"
+            + (" and clean its configuration" if clean_config else ""),
             details={
                 "device": brief([dev])[0],
+                "site": prov.get("siteId") if prov else None,
                 "provisioned": bool(prov),
                 "clean_config": clean_config,
+                "config_archive_lost": archive,
                 "method": "DELETE",
                 "path": path,
                 "params": params,
             },
-            side_effects=["Assurance history for the device is lost."]
-            + (["Removes Catalyst Center-pushed config from the device."] if clean_config else []),
-            fingerprint={"id": did, "provisioning": prov},
+            side_effects=effects,
+            fingerprint={"id": did, "provisioning": prov, "clean_config": clean_config},
+            blockers=device_limit_blockers(app, 1),
+            blast_radius=1,
         )
 
         async def apply() -> Any:
