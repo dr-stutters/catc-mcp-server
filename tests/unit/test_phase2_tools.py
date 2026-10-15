@@ -635,7 +635,9 @@ async def test_sda_fabric(api: respx.MockRouter) -> None:
         json={"response": [{"virtualNetworkName": "CORP", "fabricIds": [fid]}]}
     )
     api.get("/dna/intent/api/v1/sda/portAssignments").respond(
-        json={"response": [{"id": "pa1", "interfaceName": "GigabitEthernet1/0/3", "dataVlanName": "CORP_VLAN"}]}
+        json={
+            "response": [{"id": "pa1", "interfaceName": "GigabitEthernet1/0/3", "dataVlanName": "CORP_VLAN"}]
+        }
     )
     out = await call("catc_get_sda_fabric")
     site = out["fabric_sites"][0]

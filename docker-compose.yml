@@ -6,7 +6,7 @@
 #
 # Writes are on (preview-first); the dangerous tier (deploy, provision, SWIM, deletes) stays off.
 # The container logs in as the least-privilege write account (role mcp-catc-rw, docs/least-privilege.md)
-# when CATC_RW_USERNAME/CATC_RW_PASSWORD are in .env, else as CATC_USERNAME.
+# when CATC_RW_USERNAME/CATC_RW_PASSWORD are in .env (set both or neither), else as CATC_USERNAME.
 services:
   catc-mcp-server:
     build:

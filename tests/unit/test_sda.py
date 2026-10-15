@@ -132,6 +132,7 @@ async def test_anycast_gateway_counts_edges(api: respx.MockRouter) -> None:
 
 async def test_port_assignment_maps_pool_to_vlan(api: respx.MockRouter) -> None:
     mock_inventory(api)
+    api.get(f"{SDA}/fabricSites").respond(json={"response": [FABRIC]})
     api.get(f"{SDA}/fabricDevices").respond(
         json={
             "response": [
@@ -184,3 +185,30 @@ async def test_sda_application_missing_is_explained(api: respx.MockRouter) -> No
     )
     with pytest.raises(ToolError, match="SD-Access application"):
         await flow("catc_create_fabric_site", {"site": "Global/AU/SYD-1"})
+
+
+async def test_delete_last_cp_with_edges_refused(api: respx.MockRouter) -> None:
+    cp = {
+        "id": "fd-cp",
+        "networkDeviceId": "d1",
+        "fabricId": FID,
+        "deviceRoles": ["CONTROL_PLANE_NODE", "BORDER_NODE"],
+    }
+    edge = {"id": "fd-e", "networkDeviceId": "d2", "fabricId": FID, "deviceRoles": ["EDGE_NODE"]}
+    api.get(f"{SDA}/fabricSites").respond(json={"response": [FABRIC]})
+    api.get(f"{SDA}/fabricDevices").respond(json={"response": [cp, edge]})
+    api.get(f"{SDA}/portAssignments").respond(json={"response": []})
+    out, _ = await flow("catc_delete_sda_object", {"kind": "fabric_device", "id": "fd-cp"})
+    assert out["status"] == "blocked" and "last control plane" in out["blockers"][0]
+
+
+async def test_delete_fabric_site_in_use_refused(api: respx.MockRouter) -> None:
+    api.get(f"{SDA}/fabricSites").respond(json={"response": [FABRIC]})
+    api.get(f"{SDA}/fabricDevices").respond(json={"response": []})
+    api.get(f"{SDA}/anycastGateways").respond(json={"response": [{"id": "g1", "fabricId": FID}]})
+    api.get(f"{SDA}/layer3VirtualNetworks").respond(
+        json={"response": [{"virtualNetworkName": "CORP", "fabricIds": [FID]}]}
+    )
+    out, _ = await flow("catc_delete_sda_object", {"kind": "fabric_site", "id": FID})
+    text = " ".join(out["blockers"])
+    assert "anycast gateway" in text and "CORP" in text

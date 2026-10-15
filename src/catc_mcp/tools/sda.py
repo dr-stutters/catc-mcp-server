@@ -44,6 +44,17 @@ async def sda_list(app: CatcApp, what: str, params: dict[str, Any] | None = None
     return [x for x in page.items if isinstance(x, dict)]
 
 
+async def fabric_devices(app: CatcApp, network_device_id: str | None = None) -> list[dict[str, Any]]:
+    """Fabric device records across every fabric site (the API needs fabricId on every query)."""
+    out: list[dict[str, Any]] = []
+    for f in await sda_list(app, "fabricSites"):
+        params: dict[str, Any] = {"fabricId": f["id"]}
+        if network_device_id:
+            params["networkDeviceId"] = network_device_id
+        out += await sda_list(app, "fabricDevices", params)
+    return out
+
+
 async def resolve_fabric(app: CatcApp, ref: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """(fabric site record, site) from a site name/id or a fabric id."""
     fabrics = await sda_list(app, "fabricSites")
@@ -102,7 +113,8 @@ def register(reg: ToolRegistrar) -> None:
         blockers = []
         if s.get("type") not in ("area", "building"):
             blockers.append(f"A fabric site is an area or building, not a {s.get('type')}.")
-        if await sda_list(app, "fabricSites", {"siteId": s["id"]}):
+        existing = await sda_list(app, "fabricSites", {"siteId": s["id"]})
+        if existing:
             blockers.append(f"{s.get('nameHierarchy')} is already a fabric site.")
         body = [
             {
@@ -114,7 +126,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Make {s.get('nameHierarchy')} an SD-Access fabric site ({authentication_profile})",
             details={"method": "POST", "path": f"{SDA}/fabricSites", "body": body},
-            fingerprint={"site": s["id"]},
+            fingerprint={"site": s["id"], "existing": existing},
             blockers=blockers,
         )
 
@@ -142,7 +154,11 @@ def register(reg: ToolRegistrar) -> None:
             Field(min_length=1, description="CONTROL_PLANE_NODE, BORDER_NODE and/or EDGE_NODE"),
         ],
         border_asn: Annotated[
-            str | None, Field(description="BORDER_NODE: local BGP AS number (layer 3 handoff), e.g. '65001'")
+            str | None,
+            Field(
+                pattern=r"^\d{1,10}(\.\d{1,5})?$",
+                description="BORDER_NODE: local BGP AS number, e.g. '65001'",
+            ),
         ] = None,
         default_exit: Annotated[bool, Field(description="BORDER_NODE: default exit for the fabric")] = True,
         import_external_routes: Annotated[
@@ -187,20 +203,24 @@ def register(reg: ToolRegistrar) -> None:
                     "prependAutonomousSystemCount": 0,
                 },
             }
-        if (
-            "EDGE_NODE" in roles
-            and not any(
-                "CONTROL_PLANE_NODE" in (d.get("deviceRoles") or [])
-                for d in await sda_list(app, "fabricDevices", {"fabricId": fabric["id"]})
-            )
-            and "CONTROL_PLANE_NODE" not in roles
-        ):
+        has_cp = any(
+            "CONTROL_PLANE_NODE" in (d.get("deviceRoles") or [])
+            for d in await sda_list(app, "fabricDevices", {"fabricId": fabric["id"]})
+        )
+        if "EDGE_NODE" in roles and not has_cp and "CONTROL_PLANE_NODE" not in roles:
             blockers.append("The fabric site has no control plane node yet; add it before the edges.")
         plan = Plan(
             f"Add {brief([dev])[0]} to fabric {fsite.get('nameHierarchy')} as {', '.join(roles)}",
             details={"method": "POST", "path": f"{SDA}/fabricDevices", "body": [item]},
             side_effects=["Pushes the fabric (LISP, VRF, border handoff) configuration to the device."],
-            fingerprint={"device": dev["id"], "fabric": fabric["id"], "at": at, "existing": existing},
+            fingerprint={
+                "device": dev["id"],
+                "fabric": fabric["id"],
+                "at": at,
+                "existing": existing,
+                "provisioned": sorted(str(p.get("id")) for p in prov if isinstance(p, dict)),
+                "has_cp": has_cp,
+            },
             blockers=blockers,
             blast_radius=1,
         )
@@ -255,7 +275,11 @@ def register(reg: ToolRegistrar) -> None:
             have = set(ensure_list(current[0].get("fabricIds")))
             if set(fids) <= have:
                 blockers.append(f"Virtual network {name} exists and is already at those fabric sites.")
-            body: dict[str, Any] = {**current[0], "fabricIds": sorted(have | set(fids))}
+            body: dict[str, Any] = {
+                "id": current[0].get("id"),
+                "virtualNetworkName": name,
+                "fabricIds": sorted(have | set(fids)),
+            }
             method, action = "PUT", f"Add virtual network {name} to {', '.join(map(str, names))}"
         else:
             body = {"virtualNetworkName": name, **({"fabricIds": fids} if fids else {})}
@@ -314,16 +338,15 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(
                 f"No virtual network {virtual_network}; create it with catc_create_virtual_network."
             )
-        elif (
-            str(fabric["id"]) not in ensure_list(vns[0].get("fabricIds")) and virtual_network != "DEFAULT_VN"
-        ):
+        elif str(fabric["id"]) not in ensure_list(vns[0].get("fabricIds")):
             blockers.append(
                 f"{virtual_network} is not at this fabric site; add it with catc_create_virtual_network."
             )
         pools = ensure_list(
             await app.get_response("/dna/intent/api/v1/ipam/siteIpAddressPools", {"siteId": fsite["id"]})
         )
-        if not any(isinstance(p, dict) and p.get("name") == ip_pool for p in pools):
+        pool = next((p for p in pools if isinstance(p, dict) and p.get("name") == ip_pool), None)
+        if pool is None:
             blockers.append(
                 f"No IP pool {ip_pool!r} is reserved at {fsite.get('nameHierarchy')} (catc_create_ip_pool)."
             )
@@ -332,6 +355,8 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(f"{ip_pool} already has an anycast gateway at this fabric site.")
         devices = await sda_list(app, "fabricDevices", {"fabricId": fabric["id"]})
         edges = [d for d in devices if "EDGE_NODE" in (d.get("deviceRoles") or [])]
+        if not edges:
+            blockers.append("The fabric site has no edge nodes yet; add them first (catc_add_fabric_device).")
         blockers += device_limit_blockers(app, len(edges), "edge devices")
         item: dict[str, Any] = {
             "fabricId": fabric["id"],
@@ -362,7 +387,9 @@ def register(reg: ToolRegistrar) -> None:
             fingerprint={
                 "fabric": fabric["id"],
                 "edges": sorted(str(d.get("id")) for d in edges),
-                "gws": len(gws),
+                "gws": sorted(str(g.get("id")) for g in gws),
+                "vn": vns[0] if vns else None,
+                "pool": pool,
             },
             blockers=blockers,
             blast_radius=len(edges),
@@ -425,7 +452,7 @@ def register(reg: ToolRegistrar) -> None:
         an assignment or a VLAN that has no anycast gateway at the device's fabric site."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
-        fdevs = await sda_list(app, "fabricDevices", {"networkDeviceId": dev["id"]})
+        fdevs = await fabric_devices(app, str(dev["id"]))
         fdev = next((d for d in fdevs if "EDGE_NODE" in (d.get("deviceRoles") or [])), None)
         if fdev is None:
             raise InvalidRequest(f"{brief([dev])[0]} is not a fabric edge node (catc_add_fabric_device).")
@@ -470,7 +497,13 @@ def register(reg: ToolRegistrar) -> None:
             f"Assign {brief([dev])[0]} {interface} to {data or voice or connected_device_type}",
             details={"method": "POST", "path": f"{SDA}/portAssignments", "body": [item]},
             side_effects=[f"Reconfigures {interface} on the edge (any existing port config is replaced)."],
-            fingerprint={"device": dev["id"], "fabric": fid, "current": current, "gws": len(gws)},
+            fingerprint={
+                "device": dev["id"],
+                "fabric": fid,
+                "current": current,
+                "vlans": {"data": data, "voice": voice},
+                "gws": sorted((str(g.get("id")), str(g.get("vlanName"))) for g in gws),
+            },
             blockers=blockers,
             blast_radius=1,
         )
@@ -518,6 +551,7 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         blockers: list[str] = []
         params: dict[str, Any] | None = None
+        dependents: list[str] = []
         paths = {
             "port_assignment": "portAssignments",
             "anycast_gateway": "anycastGateways",
@@ -536,6 +570,7 @@ def register(reg: ToolRegistrar) -> None:
                 raise NotFound(f"No virtual network {name}.")
             obj = found[0]
             gws = [g for g in await sda_list(app, "anycastGateways") if g.get("virtualNetworkName") == name]
+            dependents = sorted(str(g.get("id")) for g in gws)
             if gws:
                 blockers.append(f"{len(gws)} anycast gateway(s) still use {name}; remove them first.")
             path, params = f"{SDA}/layer3VirtualNetworks", {"virtualNetworkName": name}
@@ -544,7 +579,15 @@ def register(reg: ToolRegistrar) -> None:
             if not id:
                 raise InvalidRequest(f"Give the {kind}'s id (catc_get_sda_fabric).")
             oid = safe_id(id, f"{kind} id")
-            found = [x for x in await sda_list(app, paths[kind], {"id": oid}) if str(x.get("id")) == oid]
+            if kind == "fabric_device":
+                candidates = await fabric_devices(app)
+            elif kind == "port_assignment":
+                candidates = []
+                for f in await sda_list(app, "fabricSites"):
+                    candidates += await sda_list(app, "portAssignments", {"fabricId": f["id"]})
+            else:
+                candidates = await sda_list(app, paths[kind], {"id": oid})
+            found = [x for x in candidates if str(x.get("id")) == oid]
             if not found:
                 raise NotFound(f"No {kind} with id {oid}.")
             obj = found[0]
@@ -552,9 +595,38 @@ def register(reg: ToolRegistrar) -> None:
             radius = 1
             if kind == "fabric_site":
                 devs = await sda_list(app, "fabricDevices", {"fabricId": oid})
+                gws = await sda_list(app, "anycastGateways", {"fabricId": oid})
+                vns = [
+                    str(v.get("virtualNetworkName"))
+                    for v in await sda_list(app, "layer3VirtualNetworks")
+                    if oid in ensure_list(v.get("fabricIds"))
+                ]
+                dependents = [str(x.get("id")) for x in devs + gws] + vns
                 if devs:
                     blockers.append(
                         f"{len(devs)} fabric device(s) are still in this fabric site; remove them first."
+                    )
+                if gws:
+                    blockers.append(f"{len(gws)} anycast gateway(s) still exist here; remove them first.")
+                if vns:
+                    blockers.append(f"Virtual networks still at this fabric site: {', '.join(vns)}.")
+            if kind == "fabric_device":
+                fid = obj.get("fabricId")
+                ports = await sda_list(
+                    app, "portAssignments", {"fabricId": fid, "networkDeviceId": obj.get("networkDeviceId")}
+                )
+                peers = [
+                    d for d in await sda_list(app, "fabricDevices", {"fabricId": fid}) if d.get("id") != oid
+                ]
+                dependents = [str(p.get("id")) for p in ports] + sorted(str(d.get("id")) for d in peers)
+                if ports:
+                    blockers.append(f"{len(ports)} port assignment(s) on this device; remove them first.")
+                last_cp = "CONTROL_PLANE_NODE" in (obj.get("deviceRoles") or []) and not any(
+                    "CONTROL_PLANE_NODE" in (d.get("deviceRoles") or []) for d in peers
+                )
+                if last_cp and any("EDGE_NODE" in (d.get("deviceRoles") or []) for d in peers):
+                    blockers.append(
+                        "This is the last control plane node and edges remain; remove the edges first."
                     )
             if kind == "anycast_gateway":
                 edges = [
@@ -568,6 +640,7 @@ def register(reg: ToolRegistrar) -> None:
                     for p in await sda_list(app, "portAssignments", {"fabricId": obj.get("fabricId")})
                     if obj.get("vlanName") in (p.get("dataVlanName"), p.get("voiceVlanName"))
                 ]
+                dependents = [str(p.get("id")) for p in ports] + sorted(str(d.get("id")) for d in edges)
                 if ports:
                     blockers.append(
                         f"{len(ports)} port assignment(s) still use this gateway's VLAN; remove them first."
@@ -578,7 +651,7 @@ def register(reg: ToolRegistrar) -> None:
             f"Delete {kind.replace('_', ' ')} {name or id}",
             details={"object": obj, "method": "DELETE", "path": path, "params": params},
             side_effects=["Catalyst Center removes the matching configuration from the fabric devices."],
-            fingerprint=obj,
+            fingerprint={"object": obj, "dependents": dependents},
             blockers=blockers,
             blast_radius=radius,
         )
