@@ -61,12 +61,12 @@ def register(reg: ToolRegistrar) -> None:
             else "Ask the user which CLI credential to use (or list them and let them pick)"
         )
         snmp_part = (
-            f' and the SNMPv2c read credential "{snmp_credential}".'
+            f'Use the SNMPv2c read credential "{snmp_credential}".'
             if snmp_credential
-            else "; no SNMP credential was named, so use the site's or every global SNMP read "
-            "credential (discovery tries them all)."
+            else "No SNMP credential was named: ask the user, or name every global SNMPv2c read "
+            "credential in global_credentials."
         )
-        cred_line = cli_part + snmp_part
+        cred_line = f"{cli_part}. {snmp_part}"
         provision_step = (
             f"""8. Provision: call {tool_ref("catc_provision_devices")} with devices={devs} and
    site="{site_path}". Show the preview (it pushes the site's network settings: DNS, NTP, banner,

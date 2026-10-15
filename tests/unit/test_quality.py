@@ -277,3 +277,46 @@ def test_wlc_provision_status_readable() -> None:
         }
     )
     assert out == {"outOfSync": False, "lastProvisioned": "2026-10-15 16:13 UTC"}
+
+
+async def test_get_issue_keeps_ssid_and_real_values(api: respx.MockRouter) -> None:
+    iid = "8928922f-257f-432a-bdfb-17b8e26317f1"
+    api.get(f"/dna/data/api/v1/assuranceIssues/{iid}").respond(
+        json={
+            "response": {
+                **raw_issue(iid, DEV_ID, name="wifi"),
+                "additionalAttributes": [
+                    {"key": "ssid", "value": "corp"},
+                    {"key": "bssid", "value": "aa:bb"},
+                    {"key": "routerId", "value": "1.1.1.1"},
+                    {"key": "count", "value": "1"},
+                    {"key": "nwDeviceName", "value": "r1"},
+                    {"key": "failureReason", "value": "AAA timeout"},
+                ],
+            }
+        }
+    )
+    out = await call("catc_get_issue", {"issue_id": iid})
+    assert out["attributes"] == {
+        "ssid": "corp",
+        "bssid": "aa:bb",
+        "count": "1",
+        "failureReason": "AAA timeout",
+    }
+
+
+def test_deployment_summary_redacts_lists() -> None:
+    from catc_mcp.tools.templates import deployment_summary
+
+    out = deployment_summary(
+        {"devices": [{"name": "r1", "realizedClis": ["username a secret 9 xyz", "ntp x"]}]}
+    )
+    assert "xyz" not in str(out) and out["devices"][0]["realizedClis"][1] == "ntp x"
+
+
+async def test_path_trace_rejects_bad_ip(api: respx.MockRouter) -> None:
+    async with Client(create_server(make_settings())) as c:
+        r = await c.call_tool(
+            "catc_path_trace", {"source_ip": "10.0.0.999", "dest_ip": "10.0.0.1"}, raise_on_error=False
+        )
+    assert r.is_error and "not a valid IP" in r.content[0].text  # type: ignore[union-attr]

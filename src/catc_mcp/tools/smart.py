@@ -159,6 +159,19 @@ def summarise_trace(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+async def trace_ip(app: CatcApp, ref: str) -> str:
+    """An IP as given, or a managed device's management IP."""
+    ref = ref.strip()
+    if is_ip(ref):
+        return ref
+    if re.fullmatch(r"[\d.]+|[0-9a-fA-F]*:[0-9a-fA-F:]*", ref):
+        raise InvalidRequest(f"{ref!r} is not a valid IP address.")
+    ip = (await resolve_device(app, ref)).get("managementIpAddress")
+    if not ip:
+        raise InvalidRequest(f"Device {ref!r} has no management IP; give an IP address instead.")
+    return str(ip)
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Device 360")
     async def catc_device_360(
@@ -396,7 +409,9 @@ def register(reg: ToolRegistrar) -> None:
         """Trace the network path between two IPs as Catalyst Center sees it: each hop (device,
         ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are
         requested, and the failure reason if the trace can't be built (e.g. the source isn't known to
-        Catalyst Center). Starts a flow analysis, waits for it and summarises it. It records the trace
+        Catalyst Center). A device name stands for its management IP, which may take the management
+        path rather than the data path: give loopback/host IPs for that. Starts a flow analysis, waits
+        for it and summarises it. It records the trace
         in Catalyst Center's path-trace history but changes no configuration."""
         app: CatcApp = get_client(ctx)
         if flow_analysis_id:
@@ -407,10 +422,8 @@ def register(reg: ToolRegistrar) -> None:
                     "Give source_ip and dest_ip (IPs or device names), or a flow_analysis_id."
                 )
             # A device name stands for its management IP (a loopback or host IP traces a data path).
-            if not is_ip(source_ip):
-                source_ip = str((await resolve_device(app, source_ip))["managementIpAddress"])
-            if not is_ip(dest_ip):
-                dest_ip = str((await resolve_device(app, dest_ip))["managementIpAddress"])
+            source_ip = await trace_ip(app, source_ip)
+            dest_ip = await trace_ip(app, dest_ip)
             body: dict[str, Any] = {"sourceIP": source_ip, "destIP": dest_ip, "periodicRefresh": False}
             if protocol:
                 body["protocol"] = protocol

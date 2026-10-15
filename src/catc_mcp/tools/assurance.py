@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import re
 import time
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -71,7 +72,6 @@ ATTR_DROP = {
     "category",
     "entityType",
     "eventSource",
-    "failureReason",
     "siteHierarchy",
     "buildingName",
     "areaName",
@@ -80,7 +80,6 @@ ATTR_DROP = {
     "eventUniqueId",
     "floorName",
     "siteType",
-    "additionalDescription",
 }
 
 
@@ -116,6 +115,10 @@ def client_row(c: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]
         "last_seen": ago(c.get("lastUpdatedTime"), now_ms),
     }
     return {k: v for k, v in row.items() if v not in (None, "", -1)}
+
+
+# camelCase id-like attribute keys (siteId, deviceUuid, siteHierarchyGraphId...), not ssid/bssid.
+ID_KEY = re.compile(r"(?<=[a-z])(Id|Ids|IdList|Uuid|GraphId)$")
 
 
 def issue_attrs(i: dict[str, Any]) -> dict[str, Any]:
@@ -650,13 +653,17 @@ def register(reg: ToolRegistrar) -> None:
             for a in data.get("suggestedActions") or []
             if isinstance(a, dict)
         ]
+        dup = {"nwDeviceName": out.get("device"), "managementIpAddr": out.get("device")}
+        texts = {str(out.get("description") or ""), str(out.get("summary") or "")}
         attrs = {
             k: v
             for k, v in issue_attrs(data).items()
-            if not k.startswith("_")
+            if v not in (None, "", "null")
+            and not k.startswith("_")
             and k not in ATTR_DROP
-            and not k.lower().endswith(("id", "idlist", "uuid", "graphid", "hierarchyid"))
-            and str(v) not in {str(out.get(x)) for x in out}
+            and not ID_KEY.search(k)
+            and not (k in dup and str(v) == str(dup[k]))
+            and not (k in ("failureReason", "additionalDescription") and str(v) in texts | {"Issue"})
         }
         if attrs:
             out["attributes"] = attrs

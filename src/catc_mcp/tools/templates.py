@@ -198,6 +198,15 @@ DEPLOY_DEVICE_FIELDS = [
 ]
 
 
+def _redact(v: Any) -> Any:
+    """redact_config for strings, recursively for lists (realizedClis may be a list of lines)."""
+    if isinstance(v, str):
+        return redact_config(v)
+    if isinstance(v, list):
+        return [_redact(x) for x in v]
+    return v
+
+
 def deployment_summary(d: Any) -> dict[str, Any]:
     """The useful part of a template deployment status (per-device result and message)."""
     if not isinstance(d, dict):
@@ -218,7 +227,7 @@ def deployment_summary(d: Any) -> dict[str, Any]:
     )
     out = {k: redact_config(v) if isinstance(v, str) else v for k, v in out.items()}
     out["devices"] = [
-        {k: redact_config(v) if isinstance(v, str) else v for k, v in pick(x, DEPLOY_DEVICE_FIELDS).items()}
+        {k: _redact(v) for k, v in pick(x, DEPLOY_DEVICE_FIELDS).items()}
         for x in d.get("devices") or []
         if isinstance(x, dict)
     ]

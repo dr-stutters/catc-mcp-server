@@ -17,7 +17,7 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 
 1. Is it already managed? Call `catc_get_device` with "198.18.128.170". A device that exists and is Reachable/Managed skips to
    step 5; one that exists but is unreachable is reported instead of rediscovered.
-2. Credentials: call `catc_list_global_credentials`. Use the CLI credential "mcp-test-cli" and the SNMPv2c read credential "mcp-test-snmp-ro". If one is missing,
+2. Credentials: call `catc_list_global_credentials`. Use the CLI credential "mcp-test-cli". Use the SNMPv2c read credential "mcp-test-snmp-ro". If one is missing,
    ask the user for the values and create it with `catc_create_global_credential`
    (secrets are never echoed back).
 3. Discover: call `catc_create_discovery` with name "onboard-198.18.128.170",
