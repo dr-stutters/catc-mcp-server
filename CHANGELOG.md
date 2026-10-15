@@ -6,6 +6,15 @@
 - Prompt `catc_change_window(template, targets, window_end, params, rollback)` (D10): baseline ->
   preview -> safety rails -> deploy -> status -> verify -> diff -> compliance -> issue diff -> rollback
   plan. Live-tested on r1 + r2 (`tests/live/test_live_change_window.py`, deploy and negation rollback).
+- ISE integration and site AAA (D8): `catc_get_policy_servers` (AAA/ISE servers, ISE node roles and
+  trust, integration steps and the certificate waiting to be accepted; secrets never returned),
+  `catc_update_site_aaa_settings` (write: network/client AAA as ISE or plain AAA, RADIUS/TACACS,
+  inherit), and dangerous `catc_add_ise_server`, `catc_accept_ise_certificate` (preview shows the ISE
+  certificate fingerprints), `catc_delete_policy_server`. Live: ISE 3.5 integrated (pxGrid), client
+  AAA at a building, cat9000v provisioned there gets `radius server` -> ISE and a NAD in ISE.
+- Prompt `catc_onboard_switch_with_nac(switch_ip, site_path, access_port, test_mac, auth_mode)` (D9,
+  uses the ise server: `ise_get_nad`, `ise_create_nad`, `ise_find_session`, `ise_get_auth_history`,
+  `ise_why_auth_failed`, `ise_endpoint_360`, `ise_set_endpoint`, `ise_create_authz_rule`).
 
 ### Changed
 - Core pinned to v0.3.1 (`catc_get_definition(examples=True)`).
