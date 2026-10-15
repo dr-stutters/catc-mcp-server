@@ -543,7 +543,7 @@ def register(reg: ToolRegistrar) -> None:
                 "path": path,
                 "body": shown,
                 "changes": changes,
-                "effective_now": {k: clean(effective.get(k)) for k in ("aaaNetwork", "aaaClient")},
+                "effective_now": {k: visible(effective.get(k)) for k in ("aaaNetwork", "aaaClient")},
                 "note": "Devices get it when (re)provisioned; with ISE, provisioning also creates the NAD "
                 "in ISE.",
             },
