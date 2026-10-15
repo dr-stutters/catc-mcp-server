@@ -160,6 +160,10 @@
       "tier": "write",
       "title": "Create IP pool"
     },
+    "catc_create_report": {
+      "tier": "write",
+      "title": "Create report"
+    },
     "catc_create_site": {
       "tier": "write",
       "title": "Create site"
@@ -219,6 +223,10 @@
     "catc_delete_policy_server": {
       "tier": "dangerous",
       "title": "Remove an authentication and policy server"
+    },
+    "catc_delete_report": {
+      "tier": "write",
+      "title": "Delete report"
     },
     "catc_delete_sda_object": {
       "tier": "dangerous",
@@ -323,6 +331,14 @@
     "catc_get_policy_servers": {
       "tier": "read",
       "title": "List authentication and policy servers"
+    },
+    "catc_get_report_content": {
+      "tier": "read",
+      "title": "Get report content"
+    },
+    "catc_get_report_view": {
+      "tier": "read",
+      "title": "Get report view"
     },
     "catc_get_sda_fabric": {
       "tier": "read",
@@ -436,6 +452,10 @@
       "tier": "read",
       "title": "List assurance issues"
     },
+    "catc_list_itsm_instances": {
+      "tier": "read",
+      "title": "List ITSM integrations"
+    },
     "catc_list_network_profiles": {
       "tier": "read",
       "title": "List network profiles"
@@ -443,6 +463,14 @@
     "catc_list_pnp_devices": {
       "tier": "read",
       "title": "List PnP devices"
+    },
+    "catc_list_report_views": {
+      "tier": "read",
+      "title": "List report views"
+    },
+    "catc_list_reports": {
+      "tier": "read",
+      "title": "List reports"
     },
     "catc_list_ssids": {
       "tier": "read",
