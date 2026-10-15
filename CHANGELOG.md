@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+- `catc_list_event_notifications`: platform event notifications (`event/event-series`: device
+  unreachable, link/OSPF alerts, config drift, reboots, licensing, system health), newest first, with
+  type/category/domain/severity and device/site filters; audit records hidden unless asked for.
+- `catc_recent_activity(device, site, hours, sources)`: issues, assurance events, notifications and
+  the audit log for one window and scope, merged newest first with a `source` column; a failing source
+  is reported under `errors` and the rest still returned. Pull-only (ADR-003): queried when called.
+
 ### Changed
 - Core pinned to stutters-mcp-core **v0.3.0** (pull-only; no event APIs). Lists from APIs without a
   total (PnP devices, audit log) now report `next_offset` when the page was full (core 0.1.2 fix).
@@ -9,6 +17,9 @@
   endpoint page-size caps (issues 25, events 20, audit 25, device health 500) are passed per call
   with `fetch_page(max_page=...)`. The module-level `DATA_PAGER`, `EVENTS_PAGER`, `AUDIT_PAGER` and
   `DEVICE_HEALTH_PAGER` are gone.
+- `catc_list_audit_logs` takes `device` (hostname, IP, serial or id) and `site`. Catalyst Center tags
+  few audit records with a device or site, so these filters also match the record text.
+  `device_id` still works.
 
 ## 0.2.0 (2026-10-15)
 

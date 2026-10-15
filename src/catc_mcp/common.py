@@ -20,6 +20,7 @@ MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$|^([0-9A-Fa-f]{4}\.
 PAGE_ISSUES = 25  # /dna/data/api/v1/assuranceIssues (app.data_pager)
 PAGE_EVENTS = 20  # /dna/data/api/v1/assuranceEvents (app.data_pager)
 PAGE_AUDIT = 25  # /dna/data/api/v1/event/event-series/audit-logs (app.audit_pager, 0-based)
+PAGE_NOTIFICATIONS = 500  # /dna/intent/api/v1/event/event-series (app.audit_pager, 0-based; 1000 accepted)
 PAGE_DEVICE_HEALTH = 500  # /dna/intent/api/v1/device-health (app.data_pager, totalCount)
 
 DEVICE_FIELDS = [
