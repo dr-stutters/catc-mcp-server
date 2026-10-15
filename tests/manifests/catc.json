@@ -164,6 +164,10 @@
       "tier": "write",
       "title": "Create site"
     },
+    "catc_create_ssid": {
+      "tier": "write",
+      "title": "Create SSID"
+    },
     "catc_create_switching_profile": {
       "tier": "write",
       "title": "Create switching profile"
@@ -183,6 +187,10 @@
     "catc_create_virtual_network": {
       "tier": "write",
       "title": "Create virtual network"
+    },
+    "catc_create_wireless_profile": {
+      "tier": "write",
+      "title": "Create wireless profile"
     },
     "catc_delete_compliance_policy": {
       "tier": "dangerous",
@@ -220,6 +228,10 @@
       "tier": "dangerous",
       "title": "Delete site"
     },
+    "catc_delete_ssid": {
+      "tier": "write",
+      "title": "Delete SSID"
+    },
     "catc_delete_tag": {
       "tier": "write",
       "title": "Delete tag"
@@ -231,6 +243,10 @@
     "catc_delete_template_project": {
       "tier": "write",
       "title": "Delete template project"
+    },
+    "catc_delete_wireless_profile": {
+      "tier": "write",
+      "title": "Delete wireless profile"
     },
     "catc_deploy_template": {
       "tier": "dangerous",
@@ -343,6 +359,10 @@
     "catc_get_vlan_topology": {
       "tier": "read",
       "title": "VLAN topology"
+    },
+    "catc_get_wireless_controller": {
+      "tier": "read",
+      "title": "Wireless controller"
     },
     "catc_list_audit_logs": {
       "tier": "read",
@@ -459,6 +479,10 @@
     "catc_provision_devices": {
       "tier": "dangerous",
       "title": "Provision devices"
+    },
+    "catc_provision_wireless_controller": {
+      "tier": "dangerous",
+      "title": "Provision wireless controller"
     },
     "catc_recent_activity": {
       "tier": "read",
