@@ -30,3 +30,20 @@ def test_absent_only_for_not_found() -> None:
     assert lab_state.absent(ToolError("Not found (404): GET /x"))
     assert not lab_state.absent(ToolError("Authentication failed (401)"))
     assert not lab_state.absent(ToolError("Timed out waiting for task"))
+
+
+def test_pnp_dhcp_option43_and_lines() -> None:
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "pnp_dhcp", Path(__file__).parents[2] / "scripts" / "pnp_dhcp.py"
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert bytes.fromhex(mod.option43("198.18.128.11")).decode() == "5A1D;B2;K4;I198.18.128.11;J80"
+    conf = mod.conf("198.18.128.11")
+    assert "static_lease 52:54:00:cd:30:df 198.18.128.172" in conf and conf[-1].startswith("opt 43 ")
+    assert json.dumps(mod.lines("198.18.128.11"))  # serialisable for mcp_call.py
