@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastmcp import Context
 from fastmcp.tools import ToolResult
@@ -13,6 +14,7 @@ from stutters_mcp_core import (
     Plan,
     ResponseFormat,
     ToolRegistrar,
+    UpstreamError,
     get_client,
     list_result,
     preview_or_apply,
@@ -54,6 +56,32 @@ IMAGE_FIELDS = [
     "imageType",
     "id",
 ]
+
+
+async def golden_state(
+    app: CatcApp, image_id: str, site: dict[str, Any], product_ordinal: Any, roles: list[str]
+) -> dict[str, Any]:
+    """{role: {taggedGolden, inherited_from, tagged_here} | "unknown: ..."} for the preview."""
+    site_id = "-1" if str(site.get("nameHierarchy", "")).lower() == "global" else str(site["id"])
+    out: dict[str, Any] = {}
+    for role in roles:
+        path = (
+            f"/dna/intent/api/v1/image/importation/golden/site/{site_id}/family/{product_ordinal}"
+            f"/role/{quote(role)}/image/{image_id}"
+        )
+        try:
+            st = await app.get_response(path)
+        except UpstreamError as e:
+            out[role] = f"unknown: {str(e)[:120]}"
+            continue
+        st = st if isinstance(st, dict) else {}
+        inherited = st.get("inheritedSiteId")
+        out[role] = {
+            "taggedGolden": bool(st.get("taggedGolden")),
+            "inherited_from": st.get("inheritedSiteName") if inherited and inherited != site_id else None,
+            "tagged_here": bool(st.get("taggedGolden")) and (not inherited or inherited == site_id),
+        }
+    return out
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -221,6 +249,14 @@ def register(reg: ToolRegistrar) -> None:
         body = {"productNameOrdinal": prod.get("productNameOrdinal"), "deviceRoles": roles}
         action = "untagGolden" if untag else "tagGolden"
         path = f"/dna/intent/api/v1/images/{iid}/sites/{s['id']}/{action}"
+        current = await golden_state(app, iid, s, prod.get("productNameOrdinal"), roles)
+        here = [r for r, st in current.items() if isinstance(st, dict) and st.get("tagged_here")]
+        anywhere = [r for r, st in current.items() if isinstance(st, dict) and st.get("taggedGolden")]
+        blockers = []
+        if not untag and roles and set(here) == set(roles):
+            blockers.append(f"Already golden at {s.get('nameHierarchy')} for roles {', '.join(roles)}.")
+        if untag and roles and len(current) == len(roles) and not anywhere:
+            blockers.append(f"Not golden at {s.get('nameHierarchy')} for roles {', '.join(roles)}.")
         plan = Plan(
             f"{'Remove golden tag from' if untag else 'Tag as golden'} {img.get('name')} for "
             f"{prod.get('productName')} at {s.get('nameHierarchy')} (roles {', '.join(roles)})",
@@ -229,8 +265,10 @@ def register(reg: ToolRegistrar) -> None:
                 "method": "POST",
                 "path": path,
                 "body": body,
+                "current_golden_state": current,
             },
-            fingerprint={"image": img.get("id"), "golden": img.get("golden")},
+            fingerprint={"image": img.get("id"), "golden": img.get("golden"), "state": current},
+            blockers=blockers,
         )
 
         async def apply() -> Any:

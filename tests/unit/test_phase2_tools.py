@@ -701,15 +701,21 @@ async def test_tag_golden_image(api: respx.MockRouter) -> None:
         202, json={"response": {"taskId": "tg"}}
     )
     task_ok(api, "tg")
-    _, done = await preview_then_apply(
-        "catc_tag_golden_image",
-        {"image": IMG["name"], "site": "Global/AU", "product": "286315874", "device_roles": ["ACCESS"]},
-    )
+    golden = f"/dna/intent/api/v1/image/importation/golden/site/{AREA['id']}/family/286315874/role/ACCESS/image/{IMG['id']}"
+    state = {"taggedGolden": True, "inheritedSiteId": GLOBAL["id"], "inheritedSiteName": "Global"}
+    route = api.get(golden).mock(side_effect=lambda r: httpx.Response(200, json={"response": state}))
+    args = {"image": IMG["name"], "site": "Global/AU", "product": "286315874", "device_roles": ["ACCESS"]}
+    preview, done = await preview_then_apply("catc_tag_golden_image", args)
+    assert route.called
+    assert preview["preview"]["current_golden_state"]["ACCESS"]["inherited_from"] == "Global"
     assert json.loads(post.calls.last.request.content) == {
         "productNameOrdinal": 286315874,
         "deviceRoles": ["ACCESS"],
     }
     assert done["status"] == "applied"
+    state.update(inheritedSiteId=AREA["id"], inheritedSiteName="AU")
+    again = await call("catc_tag_golden_image", args, mcp_enable_writes=True)
+    assert again["status"] == "blocked" and "Already golden" in again["blockers"][0]
 
 
 # --- templates ---------------------------------------------------------------------------------
