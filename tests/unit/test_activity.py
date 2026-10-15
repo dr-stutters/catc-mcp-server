@@ -184,7 +184,7 @@ async def test_audit_logs_device_by_name_and_text(api: respx.MockRouter) -> None
     route = api.get("/dna/data/api/v1/event/event-series/audit-logs").mock(side_effect=audit)
     out = await call("catc_list_audit_logs", {"device": "10.0.0.11", "response_format": "json"})
     assert any(c.request.url.params.get("deviceId") == DEV_ID for c in route.calls)
-    assert [r["instanceId"] for r in out["results"]] == ["a1", "a2"]
+    assert [r["id"] for r in out["results"]] == ["a1", "a2"]
 
 
 async def test_recent_activity_all_sources_fail(api: respx.MockRouter) -> None:
@@ -211,9 +211,104 @@ async def test_audit_scoped_paging(api: respx.MockRouter) -> None:
 
     api.get("/dna/data/api/v1/event/event-series/audit-logs").mock(side_effect=audit)
     first = await call("catc_list_audit_logs", {"device": "10.0.0.11", "limit": 3, "response_format": "json"})
-    assert [r["instanceId"] for r in first["results"]] == ["a0", "a1", "a2"] and first["next_offset"] == 3
+    assert [r["id"] for r in first["results"]] == ["a0", "a1", "a2"] and first["next_offset"] == 3
     last = await call(
         "catc_list_audit_logs", {"device": "10.0.0.11", "limit": 5, "offset": 5, "response_format": "json"}
     )
-    assert [r["instanceId"] for r in last["results"]] == ["a5", "a6"] and "next_offset" not in last
+    assert [r["id"] for r in last["results"]] == ["a5", "a6"] and "next_offset" not in last
     assert "note" not in last
+
+
+async def test_audit_changes_only_device_names_and_times(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    rows = [
+        {
+            "instanceId": "c1",
+            "description": 'Going to deploy template "ntp"',
+            "timestamp": NOW,
+            "userId": "op",
+            "network": {"deviceId": "10.0.0.11"},
+            "category": "INFO",
+            "source": "10.1.1.1",
+        },
+        {
+            "instanceId": "n1",
+            "description": "DNS Settings not applicable for the device:10.0.0.11[x]",
+            "timestamp": NOW - 1,
+            "userId": "op",
+        },
+        {
+            "instanceId": "n2",
+            "description": "LOGIN_USER_EVENT: 'op' logged in successfully.",
+            "timestamp": NOW - 2,
+            "userId": "op",
+        },
+        {
+            "instanceId": "n3",
+            "description": "Sending notification to dna-common-service for x",
+            "timestamp": NOW - 3,
+            "userId": "SYSTEM-USER",
+        },
+    ]
+    api.get("/dna/data/api/v1/event/event-series/audit-logs").mock(
+        side_effect=lambda r: httpx.Response(
+            200, json=rows[int(r.url.params["offset"]) :][: int(r.url.params["limit"])]
+        )
+    )
+    out = await call("catc_list_audit_logs", {"changes_only": True, "response_format": "json"})
+    assert [r["id"] for r in out["results"]] == ["c1"] and "3 " in out["left_out"]
+    row = out["results"][0]
+    assert (
+        row["device"] == DEVICE["hostname"] and row["time"].startswith("20") and row["source"] == "10.1.1.1"
+    )
+    assert "category" not in row  # INFO is the default and left out
+    every = await call("catc_list_audit_logs", {"response_format": "json"})
+    assert len(every["results"]) == 4
+
+
+async def test_recent_activity_hides_internal_audit(api: respx.MockRouter) -> None:
+    api.get("/dna/data/api/v1/event/event-series/audit-logs").respond(
+        json=[
+            {"instanceId": "c1", "description": "Successfully deployed template ntp.", "timestamp": NOW},
+            {
+                "instanceId": "n1",
+                "description": "Finished executing DNS Settings flow for the device:x",
+                "timestamp": NOW - 1,
+            },
+        ]
+    )
+    out = await call("catc_recent_activity", {"sources": ["audit"], "response_format": "json"})
+    assert [r["id"] for r in out["results"]] == ["c1"]
+    assert "1 audit records left out" in out["partial"]["audit"]
+
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("DNS Settings not applicable for the device:198.18.128.153[x]", "internal"),
+        ("Finished executing WSA Configuration flow for the device:198.18.128.153[x]", "internal"),
+        ("Sending notification to dna-common-service for checking required subscriptions", "internal"),
+        ("Cisco Catalyst Center 198.18.128.11 is reachable from device 198.18.128.153", "internal"),
+        (
+            "Provisioning complete notification received for device [1.1.1.1]. Resync will begin shortly.",
+            "internal",
+        ),
+        ("LOGIN_USER_EVENT: 'mitch' logged in successfully.", "read"),
+        ("Report 'mcp-test-inv-report' downloaded", "read"),
+        ("custom resource role mcp-catc-rw retrieval succeeded for tenant", "read"),
+        ("The request to run read-only commands in devices [198.18.128.153] was received", "read"),
+        # real changes must stay visible
+        ('Going to deploy template "mcp-test-ntp"', "change"),
+        ("Successfully deployed template mcp-test-ntp.", "change"),
+        ("Request to delete device 198.18.128.175 succeeded", "change"),
+        ("The site Global/mcp-test-lab/mcp-test-fabric was deleted.", "change"),
+        ("LOGIN_USER_EVENT: 'mitch' failed to log in.", "change"),
+        ("Image cat9k.bin downloaded to device 10.0.0.1", "change"),
+        ("Resync request for device 10.0.0.1 was received", "change"),
+        ("Updating siteHierarchyId '[/a/b]' for device 10.0.0.1", "change"),
+    ],
+)
+def test_audit_kind(text: str, kind: str) -> None:
+    from catc_mcp.tools.activity import audit_kind
+
+    assert audit_kind({"description": text}) == kind
