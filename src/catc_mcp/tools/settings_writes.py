@@ -150,12 +150,15 @@ def register(reg: ToolRegistrar) -> None:
             cur = _strip_inherited(cur if isinstance(cur, dict) else {})
             local = _strip_inherited(local if isinstance(local, dict) else {})
             current[cat] = {"effective": cur, "local": local}
+            # Partial diff on purpose: the body below merges each given part into the site's own values
+            # and keeps the category's other local sub-settings, so nothing is removed.
             diff = field_changes(cur, want)
             if diff:
                 changes[cat] = diff
                 # The PUT replaces the category's object at this site, so start from the values set
-                # here (not inherited ones, which would turn into local overrides).
-                body: dict[str, Any] = {}
+                # here (not inherited ones, which would turn into local overrides), including the
+                # sub-settings this call doesn't touch (e.g. telemetry's snmpTraps when only syslogs change).
+                body: dict[str, Any] = {k: v for k, v in local.items() if v not in (None, {}, [])}
                 for key, part in want.items():
                     base = local.get(key) if isinstance(local.get(key), dict) else {}
                     body[key] = {**base, **part} if isinstance(part, dict) else part

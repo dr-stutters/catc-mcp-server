@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.3 (2026-10-15)
+
+### Fixed
+- **Write previews show what a PUT removes** (core 0.12.4 `field_changes(..., replace=True)`):
+  `catc_update_site_aaa_settings` sends each given role whole, so a dropped secondary server is now listed as
+  `"removed": true` (a read-back shared secret is never shown); `catc_update_template` and `catc_update_site` diff
+  the whole body they PUT (both start from the current object, so this is a guard: nothing is dropped today).
+- `catc_update_site_settings`: the category PUT now sends back the site's other local sub-settings (e.g. telemetry
+  SNMP trap servers when only syslog servers change) instead of leaving them out. Its preview stays a partial
+  diff, as each given part is merged into the site's values.
+
+### Changed
+- Core bumped to stutters-mcp-core 0.12.4; `tests/manifests/ise.json` refreshed from ise-mcp-server 0.7.2.
+
 ## 0.8.2 (2026-10-15)
 
 ### Fixed

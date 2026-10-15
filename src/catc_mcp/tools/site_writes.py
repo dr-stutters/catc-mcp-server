@@ -227,7 +227,8 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest("Nothing to change: give at least one new value.")
         body = {k: current.get(k) for k in EDITABLE[stype] if current.get(k) is not None}
         body.update(desired)
-        changes = field_changes(current, desired)
+        # The PUT sends the site's whole editable object: diff it against the current one (replace=True).
+        changes = field_changes({k: current.get(k) for k in EDITABLE[stype]}, body, replace=True)
         path = SITE_DETAIL_PATHS[stype].format(id=s["id"])
         blockers = []
         if name and name != s.get("name"):

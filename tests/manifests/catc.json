@@ -1,5 +1,5 @@
 {
-  "core_version": "0.12.0",
+  "core_version": "0.12.4",
   "manifest": 1,
   "prefix": "catc",
   "prompts": {
@@ -609,5 +609,5 @@
       "title": "Update template"
     }
   },
-  "version": "0.7.0"
+  "version": "0.8.3"
 }
