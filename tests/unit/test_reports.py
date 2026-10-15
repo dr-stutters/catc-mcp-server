@@ -99,9 +99,12 @@ async def test_report_content(api: respx.MockRouter) -> None:
     api.get(f"{DATA}/reports/{RID}/executions").respond(
         json={"executions": [{"executionId": "e1", "processStatus": "SUCCESS", "startTime": 5}]}
     )
-    api.get(f"{DATA}/reports/{RID}/executions/e1").respond(text="hostname\nr1\n" + "x" * 2000)
+    dl = api.get(f"{DATA}/reports/{RID}/executions/e1").respond(
+        content=("hostname\nr1\n" + "x" * 2000).encode()
+    )
     out = await call("catc_get_report_content", {"report": "inv", "max_chars": 500})
     assert out["content"].startswith("hostname\nr1") and "Cut at 500" in out["note"]
+    assert dl.calls.last.request.headers["Accept"] == "application/octet-stream"
 
 
 async def test_report_content_refuses_pdf(api: respx.MockRouter) -> None:

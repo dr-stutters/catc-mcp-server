@@ -235,7 +235,16 @@ def register(reg: ToolRegistrar) -> None:
                 raise NotFound("The report has no finished execution yet; check catc_list_reports and retry.")
             execution_id = str(max(ex, key=lambda e: e.get("startTime") or 0)["executionId"])
         eid = safe_id(execution_id, "execution id")
-        text = await app.api.get(f"{DATA}/reports/{rid}/executions/{eid}", expect="text")
+        # The download answers 406 to Accept: application/json or text/csv; it serves octet-stream.
+        raw = await app.api.get(
+            f"{DATA}/reports/{rid}/executions/{eid}",
+            headers={"Accept": "application/octet-stream"},
+            expect="bytes",
+        )
+        try:
+            text = bytes(raw or b"").decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise InvalidRequest("The execution's content is binary (not CSV/JSON text).") from e
         text = str(text or "")
         if "\x00" in text:
             raise InvalidRequest("The execution's content is binary (not CSV/JSON text).")
