@@ -4,10 +4,12 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 import respx
 from fastmcp import Client
 
 from catc_mcp.server import create_server
+from catc_mcp.tools import pnp
 
 from .conftest import make_settings
 from .test_read_tools import BLDG, DEV_ID, DEVICE, GLOBAL
@@ -173,3 +175,80 @@ async def test_mark_blocks_when_image_not_imported(api: respx.MockRouter) -> Non
     async with Client(rw()) as c:
         p = await run(c, "catc_mark_device_for_replacement", {"device": DEV_ID})
     assert p["status"] == "blocked" and "NCRM11042" in json.dumps(p["blockers"])
+
+
+async def test_claim_masks_secret_params_and_survives_contact_updates(api: respx.MockRouter) -> None:
+    contacts = iter(range(100))
+
+    def pnp(request: httpx.Request) -> httpx.Response:
+        dev = {**PNP_DEV, "deviceInfo": {**PNP_DEV["deviceInfo"], "lastContact": next(contacts)}}
+        return httpx.Response(200, json=[dev] if "serialNumber" in request.url.params else dev)
+
+    api.get("/dna/intent/api/v1/onboarding/pnp-device").mock(side_effect=pnp)
+    mock_sites(api, [GLOBAL, BLDG])
+    mock_template(api)
+    claim = api.post("/dna/intent/api/v1/onboarding/pnp-device/site-claim").respond(json={"response": "ok"})
+    args = {
+        "device": "96KJVQ53WGV",
+        "site": BLDG["nameHierarchy"],
+        "template": TPL_ID,
+        "params": {"hostname": "br1", "cli_password": "Pa55w0rd!", "snmp_ro": "comm-ro"},
+        "wait": False,
+    }
+    async with Client(rw()) as c:
+        preview = await run(c, "catc_claim_pnp_device", args)
+        text = json.dumps(preview)
+        assert "Pa55w0rd!" not in text and "comm-ro" not in text and "br1" in text
+        done = await run(c, "catc_claim_pnp_device", {**args, "confirm": preview["confirm"]})
+    assert done["status"] == "applied" and "Pa55w0rd!" not in json.dumps(done)
+    sent = json.loads(claim.calls.last.request.content)
+    assert {"key": "cli_password", "value": "Pa55w0rd!"} in sent["configInfo"]["configParameters"]
+
+
+async def test_replace_sends_resolved_serial_and_ignores_stale_error(
+    api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pnp, "RMA_POLL_SECONDS", 0.01)
+    dev = {**DEVICE, "reachabilityStatus": "Unreachable", "platformId": "C8000V", "family": "Routers"}
+    api.get("/dna/intent/api/v1/network-device").respond(json={"response": [dev]})
+    api.get(f"/dna/intent/api/v1/network-device/{DEV_ID}").respond(json={"response": dev})
+    api.get("/dna/intent/api/v1/networkDeviceConfigFiles").respond(json={"response": []})
+    mock_pnp(api, PNP_DEV)
+    stale = {
+        "id": "r1",
+        "faultyDeviceSerialNumber": "FOC1234X0AB",
+        "replacementStatus": "ERROR",
+        "replacementTime": 1,
+    }
+    done_rec = {**stale, "replacementStatus": "REPLACED", "replacementTime": 2}
+    states = [[stale], [stale], [stale], [done_rec]]
+
+    def recs(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": states.pop(0) if len(states) > 1 else states[0]})
+
+    api.get("/dna/intent/api/v1/networkDeviceReplacements").mock(side_effect=recs)
+    deploy = api.post("/dna/intent/api/v1/networkDeviceReplacements/workflow/deploy").respond(
+        json={"response": {"taskId": "t3"}}
+    )
+    task_ok(api, "t3")
+    server = create_server(
+        make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True, mcp_task_timeout=60)
+    )
+    async with Client(server) as c:
+        p = await run(
+            c, "catc_replace_device", {"faulty": DEV_ID, "replacement_serial": PNP_ID, "wait": True}
+        )
+        assert p["status"] == "preview", p
+        states[:] = [[stale], [stale], [done_rec]]
+        done = await run(
+            c,
+            "catc_replace_device",
+            {"faulty": DEV_ID, "replacement_serial": PNP_ID, "wait": True, "confirm": p["confirm"]},
+        )
+    sent = json.loads(deploy.calls.last.request.content)
+    assert sent == {
+        "type": "ROUTER",
+        "faultyDeviceSerialNumber": "FOC1234X0AB",
+        "replacementDeviceSerialNumber": "96KJVQ53WGV",
+    }
+    assert done["result"]["replacement"][0]["replacementStatus"] == "REPLACED"

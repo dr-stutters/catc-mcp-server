@@ -8,6 +8,7 @@ Catalyst Center pushes the faulty device's archived config and licences to it an
 in the inventory."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import hashlib
 import re
 from typing import Annotated, Any, Literal
 
@@ -16,7 +17,6 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 from stutters_mcp_core import (
     Confirm,
-    InvalidRequest,
     NotFound,
     Plan,
     ResponseFormat,
@@ -26,10 +26,12 @@ from stutters_mcp_core import (
     poll_until,
     preview_or_apply,
 )
+from stutters_mcp_core.formatting import MASK, is_secret_key
 from stutters_mcp_core.http import page_of
 
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, is_uuid, resolve_device, resolve_site, resolve_template
+from catc_mcp.tools.inventory import redact_config
 
 PNP = "/dna/intent/api/v1/onboarding/pnp-device"
 REPL = "/dna/intent/api/v1/networkDeviceReplacements"
@@ -51,6 +53,7 @@ REPL_FIELDS = [
     "creationTime",
     "replacementTime",
 ]
+RMA_POLL_SECONDS = 15.0
 FAMILY_TYPE = {"Routers": "ROUTER", "Switches and Hubs": "SWITCH"}
 
 
@@ -68,6 +71,21 @@ def pnp_summary(d: dict[str, Any]) -> dict[str, Any]:
         "last_contact": info.get("lastContact"),
         "error": info.get("errorDetails") and str(info.get("errorDetails"))[:300],
     }
+
+
+def stable(dev: dict[str, Any]) -> dict[str, Any]:
+    """A PnP device without the fields that change at every agent contact (for confirm tokens)."""
+    return {k: v for k, v in dev.items() if k not in ("last_contact", "onboarding")}
+
+
+def _secret_param(key: str) -> bool:
+    k = key.lower()
+    return is_secret_key(key) or any(w in k for w in ("password", "secret", "community", "snmp", "key"))
+
+
+def shown_params(params: dict[str, str] | None) -> dict[str, str]:
+    """Template variables for previews/results: values of password/secret/community/key-like names masked."""
+    return {k: (MASK if _secret_param(k) else str(v)) for k, v in (params or {}).items()}
 
 
 async def resolve_pnp_device(app: CatcApp, ref: str) -> dict[str, Any]:
@@ -169,7 +187,9 @@ def register(reg: ToolRegistrar) -> None:
         details: dict[str, Any] = {"device": dev, "site": s.get("nameHierarchy")}
         if template:
             t = await resolve_template(app, template)
-            tid = str(t.get("templateId") or t.get("id"))
+            tid = str(t.get("templateId") or t.get("id") or "")
+            if not tid:
+                raise NotFound(f"Template {template!r} has no id.")
             full = await app.get_response(f"/dna/intent/api/v1/template-programmer/template/{tid}")
             full = full if isinstance(full, dict) else {}
             if not (t.get("versionsInfo") or full.get("versionsInfo")):
@@ -186,8 +206,9 @@ def register(reg: ToolRegistrar) -> None:
             }
             details["template"] = {
                 "name": f"{t.get('projectName')}/{t.get('name')}",
-                "content": str(full.get("templateContent") or "")[:4000],
-                "params": params or {},
+                "content": redact_config(str(full.get("templateContent") or ""))[:4000],
+                "params": shown_params(params),
+                "versions": len(t.get("versionsInfo") or full.get("versionsInfo") or []),
             }
         else:
             details["note"] = (
@@ -196,14 +217,38 @@ def register(reg: ToolRegistrar) -> None:
             )
         plan = Plan(
             f"Claim PnP device {dev['serial']} ({dev.get('pid')}) to {s.get('nameHierarchy')}",
-            details={**details, "method": "POST", "path": f"{PNP}/site-claim", "body": body},
-            fingerprint={"device": dev, "site": s.get("id")},
+            details={
+                **details,
+                "method": "POST",
+                "path": f"{PNP}/site-claim",
+                "body": {
+                    **body,
+                    **(
+                        {
+                            "configInfo": {
+                                **body["configInfo"],
+                                "configParameters": [
+                                    {"key": k, "value": v} for k, v in shown_params(params).items()
+                                ],
+                            }
+                        }
+                        if "configInfo" in body
+                        else {}
+                    ),
+                },
+            },
+            fingerprint={
+                "device": stable(dev),
+                "site": s.get("id"),
+                "template": details.get("template", {}).get("content"),
+                "versions": details.get("template", {}).get("versions"),
+            },
             blockers=blockers,
         )
 
         async def apply() -> Any:
             res = await app.api.request("POST", f"{PNP}/site-claim", json=body)
-            out: dict[str, Any] = {"claimed": dev["serial"], "response": res}
+            out: dict[str, Any] = {"claimed": dev["serial"], "response": redact_config(str(res))[:300]}
             if wait:
                 final = await poll_until(
                     lambda: resolve_pnp_device(app, str(d["id"])),
@@ -224,7 +269,11 @@ def register(reg: ToolRegistrar) -> None:
                 "device": device,
                 "site": site,
                 "template": template,
-                "params": params,
+                # Secret values are bound by digest only, so audit logs never carry them.
+                "params": {
+                    k: (hashlib.sha256(str(v).encode()).hexdigest() if _secret_param(k) else v)
+                    for k, v in (params or {}).items()
+                },
                 "hostname": hostname,
                 "image": image,
                 "wait": wait,
@@ -250,7 +299,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Reset PnP device {dev['serial']}",
             details={"device": dev, "method": "POST", "path": f"{PNP}/reset", "body": body},
-            fingerprint=dev,
+            fingerprint=stable(dev),
             blockers=blockers,
         )
 
@@ -280,7 +329,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Delete PnP device {dev['serial']} ({dev.get('state')})",
             details={"device": dev, "method": "DELETE", "path": f"{PNP}/{pid}"},
-            fingerprint=dev,
+            fingerprint=stable(dev),
         )
 
         async def apply() -> Any:
@@ -347,6 +396,15 @@ def register(reg: ToolRegistrar) -> None:
         if unmark:
             if not open_rec:
                 blockers.append(f"{dev.get('hostname')} is not marked for replacement.")
+            busy = [
+                r
+                for r in open_rec
+                if r.get("replacementStatus") in ("REPLACEMENT_IN_PROGRESS", "REPLACEMENT_SCHEDULED")
+            ]
+            if busy:
+                blockers.append(
+                    f"Replacement of {dev.get('hostname')} is {busy[0].get('replacementStatus')}."
+                )
             body: list[dict[str, Any]] = [
                 {"id": r.get("id"), "faultyDeviceId": did, "replacementStatus": "NON-FAULTY"}
                 for r in open_rec
@@ -443,12 +501,13 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(f"PID differs: faulty {dev.get('platformId')}, replacement {new.get('pid')}.")
         kind = FAMILY_TYPE.get(str(dev.get("family")))
         if kind is None:
-            raise InvalidRequest(f"Replacement of {dev.get('family')} devices isn't supported by this tool.")
+            blockers.append(f"Replacement of {dev.get('family')} devices isn't supported by this tool.")
         archive = await latest_archive(app, did)
         body = {
             "type": kind,
             "faultyDeviceSerialNumber": serial,
-            "replacementDeviceSerialNumber": replacement_serial,
+            # The resolved serial: replacement_serial may also be a PnP id.
+            "replacementDeviceSerialNumber": str(new.get("serial") or replacement_serial),
         }
         plan = Plan(
             f"Replace {dev.get('hostname')} ({serial}) with {replacement_serial}",
@@ -464,11 +523,24 @@ def register(reg: ToolRegistrar) -> None:
                 "path": f"{REPL}/workflow/deploy",
                 "body": body,
             },
-            fingerprint={"recs": recs, "new": new},
+            fingerprint={"recs": recs, "new": stable(new)},
             blockers=blockers,
         )
 
         async def apply() -> Any:
+            # Earlier records (e.g. a previous ERROR) must not end the wait: only a changed one counts.
+            before = {
+                str(r.get("id")): (r.get("replacementStatus"), r.get("replacementTime"))
+                for r in await replacements(app, faultyDeviceSerialNumber=serial)
+            }
+
+            def settled(rs: list[dict[str, Any]]) -> bool:
+                return any(
+                    r.get("replacementStatus") in ("REPLACED", "ERROR")
+                    and before.get(str(r.get("id"))) != (r.get("replacementStatus"), r.get("replacementTime"))
+                    for r in rs
+                )
+
             job = await app.run_job(
                 "POST", f"{REPL}/workflow/deploy", body, ctx=ctx, what="device replacement"
             )
@@ -476,12 +548,12 @@ def register(reg: ToolRegistrar) -> None:
             if wait:
                 final = await poll_until(
                     lambda: replacements(app, faultyDeviceSerialNumber=serial),
-                    done=lambda rs: any(r.get("replacementStatus") in ("REPLACED", "ERROR") for r in rs),
+                    done=settled,
                     describe=lambda rs: ",".join(str(r.get("replacementStatus")) for r in rs),
                     timeout=max(app.settings.mcp_task_timeout, 1800),
                     ctx=ctx,
                     what="device replacement",
-                    interval=15.0,
+                    interval=RMA_POLL_SECONDS,
                 )
                 out["replacement"] = [{k: r.get(k) for k in REPL_FIELDS if r.get(k)} for r in final]
             return out
