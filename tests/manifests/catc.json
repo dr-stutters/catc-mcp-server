@@ -84,6 +84,14 @@
       "tier": "dangerous",
       "title": "Activate software image"
     },
+    "catc_add_anycast_gateway": {
+      "tier": "dangerous",
+      "title": "Add anycast gateway"
+    },
+    "catc_add_fabric_device": {
+      "tier": "dangerous",
+      "title": "Add fabric device"
+    },
     "catc_add_ise_server": {
       "tier": "dangerous",
       "title": "Add Cisco ISE to Catalyst Center"
@@ -99,6 +107,10 @@
     "catc_assign_devices_to_site": {
       "tier": "write",
       "title": "Assign devices to site"
+    },
+    "catc_assign_fabric_port": {
+      "tier": "dangerous",
+      "title": "Assign fabric edge port"
     },
     "catc_assign_profile_to_sites": {
       "tier": "write",
@@ -136,6 +148,10 @@
       "tier": "write",
       "title": "Create discovery"
     },
+    "catc_create_fabric_site": {
+      "tier": "write",
+      "title": "Create fabric site"
+    },
     "catc_create_global_credential": {
       "tier": "write",
       "title": "Create global credential"
@@ -164,6 +180,10 @@
       "tier": "write",
       "title": "Create template project"
     },
+    "catc_create_virtual_network": {
+      "tier": "write",
+      "title": "Create virtual network"
+    },
     "catc_delete_compliance_policy": {
       "tier": "dangerous",
       "title": "Delete compliance policy"
@@ -191,6 +211,10 @@
     "catc_delete_policy_server": {
       "tier": "dangerous",
       "title": "Remove an authentication and policy server"
+    },
+    "catc_delete_sda_object": {
+      "tier": "dangerous",
+      "title": "Delete SDA object"
     },
     "catc_delete_site": {
       "tier": "dangerous",

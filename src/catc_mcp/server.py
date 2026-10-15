@@ -27,6 +27,7 @@ from catc_mcp.tools import (
     pnp,
     profiles,
     prompts,
+    sda,
     settings_writes,
     site_writes,
     sites,
@@ -53,6 +54,9 @@ Workflows:
 - Day-N change: catc_create_template -> catc_commit_template -> catc_preview_template ->
   catc_deploy_template -> verify with catc_run_show_commands -> catc_run_compliance /
   catc_compare_device_configs.
+- SD-Access: provision the devices -> catc_create_fabric_site -> catc_add_fabric_device (control plane/
+  border first, then edges) -> catc_create_virtual_network -> catc_create_ip_pool (reserve at the site) ->
+  catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric.
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
   commands) -> catc_run_show_commands; catc_path_trace; catc_list_events.
 Asynchronous operations return a task id; check it with catc_get_task.
@@ -93,6 +97,7 @@ REGISTER = [
     pnp.register,
     template_writes.register,
     ops_writes.register,
+    sda.register,
     dangerous.register,
 ]
 
