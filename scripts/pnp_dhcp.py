@@ -1,4 +1,4 @@
-"""Print the cml_configure_node arguments that (re)create the PnP DHCP server of CML lab mcp-catc-pnp (D11/D23).
+"""Print the cml_configure_node arguments that (re)create the PnP DHCP server of lab mcp-catc-pnp (D23).
 
     uv run python scripts/pnp_dhcp.py [--catc 198.18.128.11]     # JSON for cml_configure_node
     # lab rebuild (rebuild-lab.sh, CatC extras):
