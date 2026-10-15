@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-15)
+
+Roadmap "Next" (D8-D11): ISE integration and site AAA, PnP claim and RMA, and the
+`catc_change_window` and `catc_onboard_switch_with_nac` prompts. 106 tools (58 read, 32 write, 16
+dangerous) and 3 prompts. Core v0.4.0 (prompt test kit: cross-server references checked against the
+ise manifest, prompt snapshots). D12 (SWIM live) moved to Later: no SWIM-importable image available.
 
 ### Added
 - Prompt `catc_change_window(template, targets, window_end, params, rollback)` (D10): baseline ->
@@ -29,7 +34,8 @@
   Error...) instead of the onboarding sub-state, and the table shows both (`state`, `onboarding`).
 
 ### Changed
-- Core pinned to v0.3.1 (`catc_get_definition(examples=True)`).
+- Core pinned to v0.4.0 (via v0.3.1: `catc_get_definition(examples=True)`); `tests/manifests`
+  (this server's and the ise server's tool manifests) and `tests/snapshots/prompts-rw`.
 
 ## 0.3.0 (2026-10-15)
 
