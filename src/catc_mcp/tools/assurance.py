@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import re
 import time
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -55,6 +56,69 @@ ISSUE_FIELDS = [
     "mostRecentOccurredTime",
     "occurrenceCount",
 ]
+
+
+# Issue attributes that repeat the top level or are Catalyst Center internals.
+ATTR_DROP = {
+    "type",
+    "scope",
+    "needState",
+    "ctProfileName",
+    "timeInMillis",
+    "timestring",
+    "status",
+    "priority",
+    "severity",
+    "category",
+    "entityType",
+    "eventSource",
+    "siteHierarchy",
+    "buildingName",
+    "areaName",
+    "deviceFamily",
+    "criticality",
+    "eventUniqueId",
+    "floorName",
+    "siteType",
+}
+
+
+PAGE_CLIENTS = 100  # /dna/data/api/v1/clients (app.data_pager); larger pages untested
+
+
+def client_row(c: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]:
+    """One client from the data API, the fields an operator scans for."""
+
+    def sub(key: str) -> dict[str, Any]:
+        v = c.get(key)
+        return v if isinstance(v, dict) else {}
+
+    nd, cn, hl, ob = sub("connectedNetworkDevice"), sub("connection"), sub("health"), sub("onboarding")
+    fail = ob.get("latestFailureReason")
+    row = {
+        "mac": c.get("macAddress"),
+        "ip": c.get("ipv4Address"),
+        "type": c.get("type"),
+        "user": c.get("username") if c.get("username") != c.get("macAddress") else None,
+        "name": c.get("name"),
+        "os": c.get("osType"),
+        "status": c.get("connectionStatus"),
+        "health": hl.get("overallScore"),
+        "device": nd.get("connectedNetworkDeviceName"),
+        "port": nd.get("interfaceName"),
+        "ssid": cn.get("ssid"),
+        "band": cn.get("band"),
+        "wlc": cn.get("wlcName"),
+        "vlan": cn.get("vlanId"),
+        "site": c.get("siteHierarchy"),
+        "last_failure": fail if fail not in (None, "SUCCESS") else None,
+        "last_seen": ago(c.get("lastUpdatedTime"), now_ms),
+    }
+    return {k: v for k, v in row.items() if v not in (None, "", -1)}
+
+
+# camelCase id-like attribute keys (siteId, deviceUuid, siteHierarchyGraphId...), not ssid/bssid.
+ID_KEY = re.compile(r"(?<=[a-z])(Id|Ids|IdList|Uuid|GraphId)$")
 
 
 def issue_attrs(i: dict[str, Any]) -> dict[str, Any]:
@@ -384,6 +448,102 @@ def register(reg: ToolRegistrar) -> None:
         detail = data.get("detail", data) if isinstance(data, dict) else data
         return object_result(detail)
 
+    @reg.read(title="List clients")
+    async def catc_list_clients(
+        ctx: Context,
+        device: Annotated[
+            str | None,
+            Field(description="Switch, WLC or AP the clients connect through (hostname, IP, serial or id)"),
+        ] = None,
+        site: Annotated[
+            str | None, Field(description="Site (id or name hierarchy; includes sites below)")
+        ] = None,
+        ssid: Annotated[str | None, Field(description="Wireless clients on this SSID")] = None,
+        client_type: Annotated[
+            Literal["Wired", "Wireless"] | None, Field(description="Wired or Wireless")
+        ] = None,
+        mac: Annotated[
+            str | None, Field(description="MAC address; '*' wildcards allowed, e.g. '52:54:00*'")
+        ] = None,
+        ip: Annotated[
+            str | None, Field(description="IPv4 address; '*' wildcards allowed, e.g. '10.10.*'")
+        ] = None,
+        connected_only: Annotated[
+            bool, Field(description="Only clients connected now (default: everything seen in the window)")
+        ] = False,
+        hours: Hours = 24,
+        limit: Annotated[int, Field(ge=1, le=500)] = 50,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        response_format: ResponseFormat = "markdown",
+    ) -> ToolResult:
+        """Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP,
+        user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last
+        onboarding failure and when it was last seen. Filter by the device they connect through, site,
+        SSID, type, MAC or IP. Then catc_client_360 for one client."""
+        app: CatcApp = get_client(ctx)
+        params: dict[str, Any] = {**window(hours), "sortBy": "lastUpdatedTime", "order": "desc"}
+        if device:
+            dev = await resolve_device(app, device)
+            name = str(dev.get("hostname") or "")
+            if "wireless controller" in str(dev.get("family") or "").lower():
+                params["wlcName"] = name
+            else:
+                params["connectedNetworkDeviceName"] = name
+        if site:
+            params["siteId"] = (await resolve_site(app, site))["id"]
+        if ssid:
+            params["ssid"] = ssid
+        if client_type:
+            params["type"] = client_type
+        if mac:
+            params["macAddress"] = mac if "*" in mac else norm_mac(mac)
+        if ip:
+            params["ipv4Address"] = ip
+        if connected_only:
+            # The API has no status filter; scan the window and keep the connected ones.
+            full = await fetch_all(
+                app.data_pager, app.api, "/dna/data/api/v1/clients", params, cap=2000, max_page=PAGE_CLIENTS
+            )
+            rows = [
+                c
+                for c in full.items
+                if isinstance(c, dict) and str(c.get("connectionStatus") or "").lower() == "connected"
+            ]
+            page = page_of(rows, limit=limit, offset=offset)
+            extra = (
+                None if full.complete else {"scan": "read the newest 2000 clients only; narrow the filters"}
+            )
+        else:
+            page = await app.data_pager.fetch_page(
+                app.api,
+                "/dna/data/api/v1/clients",
+                params,
+                limit=limit,
+                offset=offset,
+                max_page=PAGE_CLIENTS,
+            )
+            extra = None
+        page.items = [client_row(c) for c in page.items if isinstance(c, dict)]
+        return list_result(
+            page,
+            fmt=response_format,
+            columns=[
+                "mac",
+                "ip",
+                "type",
+                "user",
+                "status",
+                "health",
+                "device",
+                "port",
+                "ssid",
+                "vlan",
+                "last_failure",
+                "last_seen",
+            ],
+            extra=extra,
+        )
+
     @reg.read(title="List assurance issues")
     async def catc_list_issues(
         ctx: Context,
@@ -493,12 +653,20 @@ def register(reg: ToolRegistrar) -> None:
             for a in data.get("suggestedActions") or []
             if isinstance(a, dict)
         ]
-        if data.get("additionalAttributes"):
-            out["attributes"] = {
-                str(a.get("key")): a.get("value")
-                for a in data["additionalAttributes"]
-                if isinstance(a, dict) and a.get("value") not in (None, "", "null")
-            }
+        dup = {"nwDeviceName": out.get("device"), "managementIpAddr": out.get("device")}
+        texts = {str(out.get("description") or ""), str(out.get("summary") or "")}
+        attrs = {
+            k: v
+            for k, v in issue_attrs(data).items()
+            if v not in (None, "", "null")
+            and not k.startswith("_")
+            and k not in ATTR_DROP
+            and not ID_KEY.search(k)
+            and not (k in dup and str(v) == str(dup[k]))
+            and not (k in ("failureReason", "additionalDescription") and str(v) in texts | {"Issue"})
+        }
+        if attrs:
+            out["attributes"] = attrs
         return object_result(out)
 
     @reg.read(title="List assurance events")

@@ -194,13 +194,13 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (64)
+### Read (65)
 
 | Tool | What it does |
 |---|---|
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
 | `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
-| `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
+| `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
 | `catc_get_compliance_detail` | Compliance report for one device per category (startup vs running config, image, PSIRT, EoX, network settings, network profile, fabric): status, message, last check time, whether Catalyst Center can remediate it and, with include_diff, what differs. |
@@ -225,10 +225,11 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_system_health` | Health of the Catalyst Center appliance itself: service health events (counts by state and the ones that are not healthy), last backups and the backup target, system licence (registration/evaluation), ISE/AAA server integration status, and release version. |
 | `catc_get_task` | Status of an asynchronous Catalyst Center operation: progress, whether it finished or failed, the failure reason and any result data. |
 | `catc_get_template` | One template in full: content (CLI body), language, variables (name, type, required, default, choices), target device families/software, project and version history. |
-| `catc_get_template_deployment` | Status of one template deployment: overall status and, per device, whether the push succeeded and Catalyst Center's detailed message (e.g. the CLI line the device rejected). |
+| `catc_get_template_deployment` | Status of one template deployment: overall status and, per device, whether the push succeeded, the CLI actually pushed (realizedClis: what a rollback has to undo) and Catalyst Center's detailed message (e.g. the CLI line the device rejected). |
 | `catc_get_vlan_topology` | Without `vlan`: the VLAN names Catalyst Center knows about. |
 | `catc_get_wireless_controller` | A Catalyst 9800 WLC as Catalyst Center sees it: provisioning status, primary managed AP locations and the SSIDs deployed on it (admin status, managed by Catalyst Center or not). |
-| `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls), with category and severity. |
+| `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
+| `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
 | `catc_list_compliance_policies` | User-defined compliance policies (Provision > Compliance > Policies) with their status (ACTIVE, NO_RULES_CONFIGURED, NO_SITES_ASSIGNED...), rule and site counts. |
 | `catc_list_compliance_violations` | Compliance policy violations from the last compliance run (catc_run_compliance), per device (every violating policy, or one) or per site for one policy: rule, condition, severity and message. |
 | `catc_list_config_archive` | Configuration versions Catalyst Center has archived for a device (running and startup config, VLAN database), newest first, with when and why each was taken (first collection, scheduled, config-change syslog, user request) and the file ids. |
@@ -245,7 +246,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_list_global_credentials` | Global device credentials (CLI, SNMPv2c read/write, SNMPv3, NETCONF port, HTTP(S)) that discovery and sites use: description, type, username/port and id. |
 | `catc_list_images` | Software images known to Catalyst Center (imported into the repository, or suggested from cisco.com): name, version, product families, golden tag, integrity status and id. |
 | `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
-| `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, severity, status, category, affected entity and site, newest first. |
+| `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, the device they are about, summary, status, site and how long ago each last occurred, newest first. |
 | `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
 | `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
 | `catc_list_pnp_devices` | Plug and Play (PnP) devices waiting for or going through zero-touch onboarding: serial, platform, state, the site and workflow they're claimed to, first/last contact, and any error. |
