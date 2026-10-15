@@ -1,5 +1,6 @@
 """Live reports (D16): an Inventory / All Data CSV report filtered to Routers, run now, downloaded and
-deleted. Catalyst Center 3.2.2 on dCloud takes several minutes per execution, so the test waits up to 15 minutes."""
+deleted. Catalyst Center 3.2.2 on dCloud takes several minutes per execution, so the test waits up to
+15 minutes."""
 
 from __future__ import annotations
 
