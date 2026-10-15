@@ -512,7 +512,7 @@ async def test_device_hardware(api: respx.MockRouter) -> None:
         }
     )
     api.get("/dna/intent/api/v1/network-device/module/count").respond(json={"response": 3})
-    api.get("/dna/intent/api/v1/networkDeviceLicenses").respond(
+    lic = api.get("/dna/intent/api/v1/networkDeviceLicenses").respond(
         json={
             "response": [
                 {"managementAddress": "10.9.9.9", "licenseMode": "X"},
@@ -530,6 +530,7 @@ async def test_device_hardware(api: respx.MockRouter) -> None:
         "Gi1/0/1"
     ]
     assert out["module_count"] == 3 and out["licensing"]["licenseMode"] == "SMART_LICENSE"
+    assert lic.calls.last.request.url.params["family"] == "SWITCHES_AND_HUBS"
 
 
 # --- platform reads ----------------------------------------------------------------------------

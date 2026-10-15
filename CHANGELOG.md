@@ -19,7 +19,17 @@
   profile check, assign, provision, template deploy, verification (360, compliance, show commands,
   recent activity). Exercised live on a fresh cat9000v.
 
+- `scripts/lab_state.py seed|cleanup|status` (D5): seeds or removes the mcp-test-* lab objects the
+  live tests use (credentials, site hierarchy and settings, template project, switching profile, and
+  the discovered + provisioned CML routers), through the server's own tools.
+
 ### Changed
+- `catc_tag_golden_image` preview shows the image's current golden state per role at the site (and
+  where it is inherited from) and refuses a no-op tag/untag.
+- `catc_deploy_template` results and previews say Catalyst Center doesn't save the configuration and
+  point to `catc_compare_device_configs(compare='startup')`.
+- `catc_get_device_hardware` asks for the licence records of the device's family only.
+- `gather_sections` moved from tools/smart.py to common.py.
 - Core pinned to stutters-mcp-core **v0.3.0** (pull-only; no event APIs). Lists from APIs without a
   total (PnP devices, audit log) now report `next_offset` when the page was full (core 0.1.2 fix).
 - Pagers: one per response shape on the client (`pager`, `data_pager`, `audit_pager`); the

@@ -1,11 +1,9 @@
 """Task-oriented tools: device 360, client 360, path trace, read-only command runner."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
-import asyncio
 import json
 import re
 import time
-from collections.abc import Awaitable
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -24,7 +22,16 @@ from stutters_mcp_core import (
 )
 
 from catc_mcp.client import CatcApp, safe_id
-from catc_mcp.common import DEVICE_FIELDS, ensure_list, is_ip, norm_mac, pick, resolve_device, window
+from catc_mcp.common import (
+    DEVICE_FIELDS,
+    ensure_list,
+    gather_sections,
+    is_ip,
+    norm_mac,
+    pick,
+    resolve_device,
+    window,
+)
 from catc_mcp.tools.assurance import issue_row
 from catc_mcp.tools.inventory import redact_config
 
@@ -151,20 +158,6 @@ def summarise_trace(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-async def _gather_sections(sections: dict[str, Awaitable[Any]]) -> tuple[dict[str, Any], dict[str, str]]:
-    results = await asyncio.gather(*sections.values(), return_exceptions=True)
-    ok: dict[str, Any] = {}
-    errors: dict[str, str] = {}
-    for key, val in zip(sections, results, strict=True):
-        if isinstance(val, UpstreamError):
-            errors[key] = str(val)[:200]
-        elif isinstance(val, BaseException):
-            raise val
-        else:
-            ok[key] = val
-    return ok, errors
-
-
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Device 360")
     async def catc_device_360(
@@ -179,7 +172,7 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
         did = str(dev["id"])
-        data, errors = await _gather_sections(
+        data, errors = await gather_sections(
             {
                 "health": app.get_response(f"/dna/data/api/v1/networkDevices/{did}"),
                 "issues": app.api.get(
@@ -265,7 +258,7 @@ def register(reg: ToolRegistrar) -> None:
         its active issues and recent onboarding events. Use it for "why is this user's connection bad"."""
         app: CatcApp = get_client(ctx)
         m = norm_mac(mac)
-        data, errors = await _gather_sections(
+        data, errors = await gather_sections(
             {
                 "detail": app.api.get(
                     "/dna/intent/api/v1/client-detail",
