@@ -200,7 +200,7 @@ wheels = [
 
 [[package]]
 name = "catc-mcp-server"
-version = "0.8.1"
+version = "0.8.2"
 source = { editable = "." }
 dependencies = [
     { name = "stutters-mcp-core", extra = ["tasks"] },
@@ -216,7 +216,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "stutters-mcp-core", extras = ["tasks"], git = "https://github.com/dr-stutters/stutters-mcp-core?tag=v0.12.2" }]
+requires-dist = [{ name = "stutters-mcp-core", extras = ["tasks"], git = "https://github.com/dr-stutters/stutters-mcp-core?tag=v0.12.3" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1567,8 +1567,8 @@ wheels = [
 
 [[package]]
 name = "stutters-mcp-core"
-version = "0.12.2"
-source = { git = "https://github.com/dr-stutters/stutters-mcp-core?tag=v0.12.2#2a046a9344d7f4045f155e18443ae719d5aaedea" }
+version = "0.12.3"
+source = { git = "https://github.com/dr-stutters/stutters-mcp-core?tag=v0.12.3#bd70383d7b588ead717db245a6b91529d74f9a1b" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
