@@ -372,8 +372,14 @@ def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Path trace", idempotent=False)
     async def catc_path_trace(
         ctx: Context,
-        source_ip: Annotated[str | None, Field(description="Source host or interface IP")] = None,
-        dest_ip: Annotated[str | None, Field(description="Destination host or interface IP")] = None,
+        source_ip: Annotated[
+            str | None,
+            Field(description="Source host or interface IP, or a managed device name (its management IP)"),
+        ] = None,
+        dest_ip: Annotated[
+            str | None,
+            Field(description="Destination IP, or a managed device name (its management IP)"),
+        ] = None,
         protocol: Annotated[
             Literal["TCP", "UDP"] | None, Field(description="Protocol (both checked when omitted)")
         ] = None,
@@ -396,8 +402,15 @@ def register(reg: ToolRegistrar) -> None:
         if flow_analysis_id:
             fid = safe_id(flow_analysis_id, "flow analysis id")
         else:
-            if not source_ip or not dest_ip or not is_ip(source_ip) or not is_ip(dest_ip):
-                raise InvalidRequest("Give source_ip and dest_ip as IP addresses (or a flow_analysis_id).")
+            if not source_ip or not dest_ip:
+                raise InvalidRequest(
+                    "Give source_ip and dest_ip (IPs or device names), or a flow_analysis_id."
+                )
+            # A device name stands for its management IP (a loopback or host IP traces a data path).
+            if not is_ip(source_ip):
+                source_ip = str((await resolve_device(app, source_ip))["managementIpAddress"])
+            if not is_ip(dest_ip):
+                dest_ip = str((await resolve_device(app, dest_ip))["managementIpAddress"])
             body: dict[str, Any] = {"sourceIP": source_ip, "destIP": dest_ip, "periodicRefresh": False}
             if protocol:
                 body["protocol"] = protocol

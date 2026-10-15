@@ -158,7 +158,8 @@ def register(reg: ToolRegistrar) -> None:
         """Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS,
         NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the
         device credentials the site uses (shown as 'TYPE:description', never secrets). With
-        inherited=true, values set on parent sites are included. Change them with
+        inherited=true, values set on parent sites are included (inherited_from names the site that
+        sets them). Change them with
         catc_update_site_settings and catc_assign_site_credentials."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
@@ -181,6 +182,14 @@ def register(reg: ToolRegistrar) -> None:
                 raise r
             else:
                 out["settings"][c] = r
+        for cat in out["settings"].values():
+            if isinstance(cat, dict):
+                for v in cat.values():
+                    if isinstance(v, dict) and "inheritedSiteId" in v:
+                        v.pop("inheritedSiteId")
+                        name = v.pop("inheritedSiteName", None)
+                        if name and name != s.get("name"):
+                            v["inherited_from"] = name
         creds = out["settings"].get("credentials")
         if isinstance(creds, dict):
             known = {str(x.get("id")): x for x in await all_credentials(app)}

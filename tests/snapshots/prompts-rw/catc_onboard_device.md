@@ -17,10 +17,9 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 
 1. Is it already managed? Call `catc_get_device` with "198.18.128.170". A device that exists and is Reachable/Managed skips to
    step 5; one that exists but is unreachable is reported instead of rediscovered.
-2. Credentials: call `catc_list_global_credentials`. Use the CLI credential
-   "mcp-test-cli" and SNMP credential
-   "mcp-test-snmp-ro". If one is missing, ask the user for the values and create
-   it with `catc_create_global_credential` (secrets are never echoed back).
+2. Credentials: call `catc_list_global_credentials`. Use the CLI credential "mcp-test-cli" and the SNMPv2c read credential "mcp-test-snmp-ro". If one is missing,
+   ask the user for the values and create it with `catc_create_global_credential`
+   (secrets are never echoed back).
 3. Discover: call `catc_create_discovery` with name "onboard-198.18.128.170",
    ip_ranges=["198.18.128.170"], discovery_type "Range" (a single address is sent as a
    one-address range; the "Single" type finds nothing on 3.2.x), global_credentials naming the
@@ -55,8 +54,8 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 9. Verify:
    - `catc_device_360` for each of ["198.18.128.170"]: reachability, site, provisioning state, health
      (health can take ~5 minutes to appear for a new device);
-   - `catc_run_compliance` for the device, then `catc_get_compliance_summary`;
-     NETWORK_SETTINGS should be compliant after provisioning;
+   - `catc_run_compliance` for the device, then `catc_get_compliance_detail`
+     for it; NETWORK_SETTINGS should be compliant after provisioning;
    - `catc_run_show_commands` with
      "show running-config | include ntp|logging host|ip domain|banner" to see what was pushed.
      Catalyst Center doesn't save the config: suggest "write memory" or a template if the user

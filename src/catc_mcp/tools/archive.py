@@ -21,11 +21,17 @@ from stutters_mcp_core import (
 from stutters_mcp_core.http import fetch_all, page_of
 
 from catc_mcp.client import CatcApp, safe_id
-from catc_mcp.common import resolve_device
+from catc_mcp.common import ago, resolve_device
 from catc_mcp.tools.inventory import DeviceRef, redact_config
 
 ARCHIVE = "/dna/intent/api/v1/networkDeviceConfigFiles"
 FileType = Literal["RUNNINGCONFIG", "STARTUPCONFIG", "VLAN"]
+
+
+ARCHIVE_NOTE = (
+    "Catalyst Center archives a new version a few minutes after a config change syslog (or after "
+    "catc_resync_devices): a change newer than the 'to' version is not in this diff yet."
+)
 
 
 def _when(ms: Any) -> str | None:
@@ -136,7 +142,11 @@ def register(reg: ToolRegistrar) -> None:
                         {
                             "device": dev.get("hostname"),
                             "note": "Only one running-config version is archived; nothing to compare yet.",
-                            "latest": {"id": new.get("id"), "created": _when(new.get("createdTime"))},
+                            "latest": {
+                                "id": new.get("id"),
+                                "created": _when(new.get("createdTime")),
+                                "age": ago(new.get("createdTime")),
+                            },
                         }
                     )
                 old = running[1]
@@ -171,6 +181,8 @@ def register(reg: ToolRegistrar) -> None:
                 "identical": not diff,
                 "lines_added": added,
                 "lines_removed": removed,
+                "newest_version_age": ago(new.get("createdTime")),
+                "archive_note": ARCHIVE_NOTE,
                 "diff": "\n".join(diff[:max_lines]),
                 **(
                     {"truncated": f"diff cut at {max_lines} of {len(diff)} lines; raise max_lines"}

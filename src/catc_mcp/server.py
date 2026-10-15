@@ -62,8 +62,20 @@ Workflows:
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
   locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
   catc_get_wireless_controller.
+- Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
+  settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then
+  re-provision (catc_provision_devices). Use templates for everything else.
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
-  commands) -> catc_run_show_commands; catc_path_trace; catc_list_events.
+  commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Issues stay 'active' for
+  hours after the problem clears: check last_seen and the live state before calling one current.
+- What changed / who did it: catc_recent_activity (device or site, merged issues, syslog, notifications,
+  audit), catc_list_audit_logs(changes_only=true), catc_compare_device_configs (config diff; the
+  archive lags a few minutes behind a change).
+- Roll back a template deploy: catc_get_template_deployment shows the CLI pushed per device; write a
+  negation template ('no ...' lines), commit, preview and deploy it (prompt catc_change_window).
+- Clients: catc_list_clients (by switch/WLC/AP, site, SSID, VLAN), then catc_client_360 for one.
+- Health: catc_get_network_health -> catc_list_device_health (health='POOR'); software per device:
+  catc_list_devices or catc_list_device_images.
 Asynchronous operations return a task id; check it with catc_get_task.
 Anything not covered: catc_search_spec -> catc_get_definition -> catc_api_call.
 """.strip()

@@ -1,6 +1,7 @@
 """Configuration templates (Template Editor): reads and preview."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastmcp import Context
@@ -137,10 +138,16 @@ def register(reg: ToolRegistrar) -> None:
             out["templateParams"] = [param_summary(p) for p in out["templateParams"] if isinstance(p, dict)]
         versions = ref.get("versionsInfo") or []
         out["versions"] = [
-            pick(v, ["version", "versionTime", "versionComment", "author", "id"])
+            {
+                **pick(v, ["version", "versionComment", "author", "id"]),
+                "committed": ms_text(v.get("versionTime")),
+            }
             for v in versions
             if isinstance(v, dict)
         ]
+        for key in ("createTime", "lastUpdateTime", "latestVersionTime"):
+            if key in out:
+                out[key] = ms_text(out[key])
         return object_result(out)
 
     @reg.read(title="Preview template", idempotent=True)
@@ -172,11 +179,19 @@ def register(reg: ToolRegistrar) -> None:
     register_deployments(reg)
 
 
+def ms_text(ms: Any) -> Any:
+    """Epoch milliseconds -> 'YYYY-MM-DD HH:MM:SS UTC' (other values unchanged)."""
+    if isinstance(ms, bool) or not isinstance(ms, int | float):
+        return ms
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 DEPLOY_DEVICE_FIELDS = [
     "name",
     "ipAddress",
     "status",
     "detailedStatusMessage",
+    "realizedClis",
     "startTime",
     "endTime",
     "deviceId",
@@ -222,7 +237,8 @@ def register_deployments(reg: ToolRegistrar) -> None:
         ],
     ) -> ToolResult:
         """Status of one template deployment: overall status and, per device, whether the push
-        succeeded and Catalyst Center's detailed message (e.g. the CLI line the device rejected). Use it
+        succeeded, the CLI actually pushed (realizedClis: what a rollback has to undo) and Catalyst
+        Center's detailed message (e.g. the CLI line the device rejected). Use it
         after catc_deploy_template with wait=false, or to re-check an earlier deployment."""
         app: CatcApp = get_client(ctx)
         dep = safe_id(deployment_id, "deployment id")
