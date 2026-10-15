@@ -15,23 +15,11 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
-from stutters_mcp_core.http import page_of
+from stutters_mcp_core.http import fetch_all, page_of
 
 from catc_mcp.client import CatcApp, exec_summary, safe_id, task_summary
-from catc_mcp.common import PAGE_AUDIT, pick, resolve_device, resolve_site, window
-from catc_mcp.tools.activity import AUDIT_SCAN_CAP, fetch_audit
-
-AUDIT_FIELDS = [
-    "timestamp",
-    "userId",
-    "category",
-    "severity",
-    "domain",
-    "name",
-    "description",
-    "source",
-    "instanceId",
-]
+from catc_mcp.common import PAGE_AUDIT, resolve_device, resolve_site, window
+from catc_mcp.tools.activity import AUDIT_SCAN_CAP, audit_kind, audit_rows, fetch_audit
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -108,14 +96,22 @@ def register(reg: ToolRegistrar) -> None:
             float, Field(gt=0, le=720, description="Look-back window in hours (default 24)")
         ] = 24,
         include_system: Annotated[bool, Field(description="Include system-generated records")] = False,
+        changes_only: Annotated[
+            bool,
+            Field(
+                description="Only changes: leave out logins, reads (retrievals, downloads, show commands) "
+                "and Catalyst Center's internal provisioning steps. Use it for 'who changed what'."
+            ),
+        ] = False,
         limit: Annotated[int, Field(ge=1, le=500)] = 50,
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """Catalyst Center audit log, newest first: who did what and when (logins, provisioning,
-        template deploys, configuration changes, API calls), with category and severity. Useful for
-        "what changed recently" questions. A device or site filter keeps the records Catalyst Center
-        tagged with it plus those whose text names it (most records carry no device/site tag)."""
+        template deploys, configuration changes, API calls) with the device it concerns. For "who
+        changed what" pass changes_only=true: one provisioning alone writes dozens of internal records.
+        A device or site filter keeps the records Catalyst Center tagged with it plus those whose text
+        names it (most records carry no device/site tag). Times are UTC."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {**window(hours), "isSystemEvents": str(include_system).lower()}
         if user:
@@ -130,7 +126,26 @@ def register(reg: ToolRegistrar) -> None:
             params["deviceId"] = safe_id(device_id, "device id")
         st = await resolve_site(app, site) if site else None
         extra: dict[str, Any] | None = None
-        if dev is None and st is None:
+        if changes_only and dev is None and st is None:
+            scan = await fetch_all(
+                app.audit_pager,
+                app.api,
+                "/dna/data/api/v1/event/event-series/audit-logs",
+                params,
+                cap=AUDIT_SCAN_CAP,
+                max_page=PAGE_AUDIT,
+            )
+            rows = [r for r in scan.items if isinstance(r, dict) and audit_kind(r) == "change"]
+            page = page_of(rows, limit=limit, offset=offset)
+            extra = {
+                "left_out": f"{len(scan.items) - len(rows)} logins, reads and internal steps in the window"
+            }
+            if not scan.complete:
+                extra["scan"] = (
+                    f"Read the newest {AUDIT_SCAN_CAP} records of the window only; "
+                    "narrow `hours` for older ones."
+                )
+        elif dev is None and st is None:
             page = await app.audit_pager.fetch_page(
                 app.api,
                 "/dna/data/api/v1/event/event-series/audit-logs",
@@ -140,15 +155,26 @@ def register(reg: ToolRegistrar) -> None:
                 max_page=PAGE_AUDIT,
             )
         else:
-            rows, more, truncated = await fetch_audit(app, params, device=dev, site=st, cap=offset + limit)
+            cap = AUDIT_SCAN_CAP if changes_only else offset + limit
+            rows, more, truncated = await fetch_audit(app, params, device=dev, site=st, cap=cap)
+            if changes_only:
+                kept = [r for r in rows if audit_kind(r) == "change"]
+                extra = {"left_out": f"{len(rows) - len(kept)} logins, reads and internal steps"}
+                rows = kept
             page = page_of(rows, limit=limit, offset=offset)
-            if more or truncated:
+            if (more or truncated) and not changes_only:
                 page.total = None
                 page.more = True
             if truncated:
                 extra = {
-                    "note": f"Device/site text matching scanned the newest {AUDIT_SCAN_CAP} records "
-                    "only; narrow `hours` for older ones."
+                    **(extra or {}),
+                    "scan": f"Device/site text matching scanned the newest {AUDIT_SCAN_CAP} records "
+                    "only; narrow `hours` for older ones.",
                 }
-        page.items = [pick(r, AUDIT_FIELDS) for r in page.items if isinstance(r, dict)]
-        return list_result(page, fmt=response_format, extra=extra)
+        page.items = await audit_rows(app, [r for r in page.items if isinstance(r, dict)])
+        return list_result(
+            page,
+            fmt=response_format,
+            columns=["time", "user", "device", "what", "category", "severity", "source", "id"],
+            extra=extra,
+        )

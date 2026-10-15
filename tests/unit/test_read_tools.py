@@ -454,7 +454,7 @@ async def test_issues_filters_and_paging(api: respx.MockRouter) -> None:
 async def test_audit_logs_zero_based(api: respx.MockRouter) -> None:
     route = api.get("/dna/data/api/v1/event/event-series/audit-logs").respond(json=fixture("audit_logs.json"))
     out = await call("catc_list_audit_logs", {"limit": 3, "response_format": "json"})
-    assert out["returned"] == 3 and out["results"][0]["userId"] == "admin"
+    assert out["returned"] == 3 and out["results"][0]["user"] == "admin"
     assert route.calls.last.request.url.params["offset"] == "0"
 
 
