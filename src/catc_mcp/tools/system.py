@@ -15,9 +15,11 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
+from stutters_mcp_core.http import page_of
 
 from catc_mcp.client import CatcApp, exec_summary, safe_id, task_summary
-from catc_mcp.common import PAGE_AUDIT, pick, window
+from catc_mcp.common import PAGE_AUDIT, pick, resolve_device, resolve_site, window
+from catc_mcp.tools.activity import AUDIT_SCAN_CAP, fetch_audit
 
 AUDIT_FIELDS = [
     "timestamp",
@@ -93,7 +95,15 @@ def register(reg: ToolRegistrar) -> None:
         text: Annotated[
             str | None, Field(description="Description contains this text (case-insensitive)")
         ] = None,
-        device_id: Annotated[str | None, Field(description="Only records about this device id")] = None,
+        device: Annotated[
+            str | None, Field(description="Only records about this device (hostname, IP, serial or id)")
+        ] = None,
+        site: Annotated[
+            str | None, Field(description="Only records about this site (hierarchy or id)")
+        ] = None,
+        device_id: Annotated[
+            str | None, Field(description="Deprecated: same as `device` with a device id")
+        ] = None,
         hours: Annotated[
             float, Field(gt=0, le=720, description="Look-back window in hours (default 24)")
         ] = 24,
@@ -104,7 +114,8 @@ def register(reg: ToolRegistrar) -> None:
     ) -> ToolResult:
         """Catalyst Center audit log, newest first: who did what and when (logins, provisioning,
         template deploys, configuration changes, API calls), with category and severity. Useful for
-        "what changed recently" questions."""
+        "what changed recently" questions. A device or site filter keeps the records Catalyst Center
+        tagged with it plus those whose text names it (most records carry no device/site tag)."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {**window(hours), "isSystemEvents": str(include_system).lower()}
         if user:
@@ -113,15 +124,25 @@ def register(reg: ToolRegistrar) -> None:
             params["category"] = category
         if text:
             params["description"] = text
-        if device_id:
-            params["deviceId"] = safe_id(device_id, "device id")
-        page = await app.audit_pager.fetch_page(
-            app.api,
-            "/dna/data/api/v1/event/event-series/audit-logs",
-            params,
-            limit=limit,
-            offset=offset,
-            max_page=PAGE_AUDIT,
-        )
+        ref = device or (safe_id(device_id, "device id") if device_id else None)
+        dev = await resolve_device(app, ref) if ref else None
+        st = await resolve_site(app, site) if site else None
+        extra: dict[str, Any] | None = None
+        if dev is None and st is None:
+            page = await app.audit_pager.fetch_page(
+                app.api,
+                "/dna/data/api/v1/event/event-series/audit-logs",
+                params,
+                limit=limit,
+                offset=offset,
+                max_page=PAGE_AUDIT,
+            )
+        else:
+            rows, complete = await fetch_audit(app, params, device=dev, site=st, cap=offset + limit + 1)
+            page = page_of(rows, limit=limit, offset=offset)
+            if not complete:
+                page.total = None
+                page.more = len(rows) > offset + limit
+                extra = {"note": f"Device/site matching scanned the newest {AUDIT_SCAN_CAP} records only."}
         page.items = [pick(r, AUDIT_FIELDS) for r in page.items if isinstance(r, dict)]
-        return list_result(page, fmt=response_format)
+        return list_result(page, fmt=response_format, extra=extra)

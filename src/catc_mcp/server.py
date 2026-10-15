@@ -11,6 +11,7 @@ from stutters_mcp_core.spec import SpecSource, bundled
 from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
 from catc_mcp.tools import (
+    activity,
     archive,
     assurance,
     compliance,
@@ -63,6 +64,7 @@ SPEC = ServerSpec(
 
 REGISTER = [
     system.register,
+    activity.register,
     sites.register,
     inventory.register,
     assurance.register,
