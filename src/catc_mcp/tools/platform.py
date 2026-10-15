@@ -187,8 +187,8 @@ def register(reg: ToolRegistrar) -> None:
     ) -> ToolResult:
         """SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the
         fabric devices at each with their roles (control plane, border, edge) and border settings,
-        layer 3 virtual networks and anycast gateways (VN, IP pool, VLAN). Empty when SD-Access isn't
-        deployed."""
+        layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the
+        ids catc_delete_sda_object takes. Empty when SD-Access isn't deployed."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {}
         if site:
@@ -226,6 +226,13 @@ def register(reg: ToolRegistrar) -> None:
                         {"fabricId": fid},
                         cap=2000,
                     ),
+                    "ports": fetch_all(
+                        app.pager,
+                        app.api,
+                        "/dna/intent/api/v1/sda/portAssignments",
+                        {"fabricId": fid},
+                        cap=2000,
+                    ),
                 }
             )
             entry: dict[str, Any] = {
@@ -236,15 +243,35 @@ def register(reg: ToolRegistrar) -> None:
             }
             if "devices" in sec:
                 entry["devices"] = [
-                    {"networkDeviceId": d.get("networkDeviceId"), "roles": d.get("deviceRoles")}
+                    {
+                        "networkDeviceId": d.get("networkDeviceId"),
+                        "roles": d.get("deviceRoles"),
+                        "id": d.get("id"),
+                    }
                     for d in sec["devices"].items
                     if isinstance(d, dict)
                 ]
             if "gateways" in sec:
                 entry["anycast_gateways"] = [
-                    pick(g, ["virtualNetworkName", "ipPoolName", "vlanId", "vlanName", "trafficType"])
+                    pick(g, ["virtualNetworkName", "ipPoolName", "vlanId", "vlanName", "trafficType", "id"])
                     for g in sec["gateways"].items
                     if isinstance(g, dict)
+                ]
+            if "ports" in sec:
+                entry["port_assignments"] = [
+                    pick(
+                        p,
+                        [
+                            "networkDeviceId",
+                            "interfaceName",
+                            "connectedDeviceType",
+                            "dataVlanName",
+                            "voiceVlanName",
+                            "id",
+                        ],
+                    )
+                    for p in sec["ports"].items
+                    if isinstance(p, dict)
                 ]
             if errors:
                 entry["unavailable"] = errors
