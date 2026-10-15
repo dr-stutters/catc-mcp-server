@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-15)
+
+Roadmap "Now" (D1-D6): pull-only activity lookups, network profiles, compliance policy authoring,
+hardening, the lab seed/cleanup script and the `catc_onboard_device` prompt. 95 tools (56 read, 30
+write, 9 dangerous) and 1 prompt. Core v0.3.0.
 
 ### Added
 - `catc_list_event_notifications`: platform event notifications (`event/event-series`: device
