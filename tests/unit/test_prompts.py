@@ -1,13 +1,24 @@
 """Workflow prompts: core prompt contract, rendering and tier gating (D6)."""
 
+from pathlib import Path
+
 import pytest
 from fastmcp import Client
 from mcp.shared.exceptions import MCPError
-from stutters_mcp_core.testing import assert_prompt_contract
+from stutters_mcp_core.testing import (
+    assert_inbound_references,
+    assert_prompt_contract,
+    assert_prompt_snapshots,
+    load_tool_manifests,
+)
 
 from catc_mcp.server import create_server
 
 from .conftest import make_settings
+
+TESTS = Path(__file__).resolve().parents[1]
+MANIFESTS = TESTS / "manifests"
+SNAPSHOTS = TESTS / "snapshots" / "prompts-rw"
 
 SAMPLES = {
     "catc_onboard_device": {
@@ -38,8 +49,14 @@ SAMPLES = {
 
 async def test_prompt_contract_all_tiers() -> None:
     server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    # Cross-server references (ise_* in the NAC prompt) must exist in the ise server's manifest.
+    manifests = load_tool_manifests(MANIFESTS)
     await assert_prompt_contract(
-        server, "catc", samples=SAMPLES, known_prefixes={"cml", "ise", "fmc", "catc"}
+        server,
+        "catc",
+        samples=SAMPLES,
+        known_prefixes={"cml", "ise", "fmc", "catc"},
+        external_tools={k: v for k, v in manifests.items() if k != "catc"},
     )
 
 
@@ -169,3 +186,14 @@ async def test_nac_prompt_rejects_bad_arguments(bad: dict[str, str]) -> None:
     async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
         with pytest.raises(MCPError):
             await c.get_prompt("catc_onboard_switch_with_nac", args)
+
+
+async def test_prompt_snapshots() -> None:
+    """Rendered prompts match tests/snapshots (UPDATE_PROMPT_SNAPSHOTS=1 accepts a change)."""
+    server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    await assert_prompt_snapshots(server, SNAPSHOTS, samples=SAMPLES)
+
+
+async def test_other_servers_reference_existing_catc_tools() -> None:
+    server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    await assert_inbound_references(server, "catc", MANIFESTS)

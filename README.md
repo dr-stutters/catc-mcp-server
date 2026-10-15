@@ -147,6 +147,19 @@ assign → provision → template deploy → verification, preview-first at ever
 archive) → per-device preview → rails (≤ 10 devices, window end) → deploy → deployment status → CLI
 check → config diff → compliance → issue diff → a written rollback plan (negation template or the
 pre-change archive). Without the dangerous tier it stops after the rails with a reviewed change plan.
+`catc_onboard_switch_with_nac` (write tier, uses the **ise** server too) checks the ISE integration
+(`catc_get_policy_servers`), sets the site's client AAA to ISE, onboards and provisions the switch,
+confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
+the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_auth_failed`,
+`ise_endpoint_360`, `catc_client_360`).
+
+- **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
+  `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
+  NAD in ISE; deleting the device later does **not** remove that NAD).
+- **Zero-touch / RMA:** `catc_list_pnp_devices(state='Unclaimed')` → `catc_claim_pnp_device` (day-0
+  template from the *Onboarding Configuration* project; `hostname` is a blocked template command, pass
+  it to the claim). RMA: `catc_mark_device_for_replacement` (the faulty device must be unreachable and
+  its image imported in SWIM) → `catc_replace_device`.
 
 - `catc_run_show_commands` is **read tier** but only accepts `show ...` commands; after a `|` only
   include/exclude/begin/section/count filters are allowed (regex alternatives such as
@@ -158,7 +171,7 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (56)
+### Read (58)
 
 | Tool | What it does |
 |---|---|
@@ -179,6 +192,7 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 | `catc_get_network_health` | Overall network health score and the healthy/unhealthy device counts per category (access, distribution, core, router, wireless), plus a per-site health summary. |
 | `catc_get_network_profile` | One network profile: its type, the Day-N CLI templates attached to it and the sites it is assigned to (by name, including inherited child sites). |
 | `catc_get_physical_topology` | Physical (CDP/LLDP-derived) topology: devices and the links between them with port names, link status and addresses. |
+| `catc_get_policy_servers` | Authentication and policy servers known to Catalyst Center (System > Settings > Authentication and Policy Servers): plain RADIUS/TACACS servers and integrated Cisco ISE, with protocol, ports, state, pxGrid, and per ISE node its role (PRIMARY/SECONDARY/PXGRID), FQDN and certificate trust state; plus the ISE integration status (each step, and the certificate waiting to be accepted, if any). |
 | `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge) and border settings, layer 3 virtual networks and anycast gateways (VN, IP pool, VLAN). |
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
@@ -196,6 +210,7 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 | `catc_list_device_images` | Software image status per network device: the image it runs, whether that matches the golden image for its site and role (COMPLIANT / NON_COMPLIANT / UNKNOWN when no golden image is set), compatibility, and the status of the last image update. |
 | `catc_list_device_interfaces` | Interfaces of one device with oper/admin status, description, IPv4 address, VLAN, port mode, speed/duplex and MAC. |
 | `catc_list_device_modules` | Hardware modules of one device (line cards, supervisors, power supplies, fans, transceivers) with part number, serial number and operational state. |
+| `catc_list_device_replacements` | Devices marked for replacement (RMA) and replacement workflows: faulty device name, serial and platform, the replacement serial, status (MARKED_FOR_REPLACEMENT -> READY_FOR_REPLACEMENT -> REPLACEMENT_IN_PROGRESS -> REPLACED or ERROR) and times. |
 | `catc_list_devices` | List network devices in the Catalyst Center inventory with hostname, management IP, platform, software version, role, reachability and serial. |
 | `catc_list_discoveries` | Discovery jobs with their type (range/CDP/LLDP/single), IP ranges, status, condition and number of devices found. |
 | `catc_list_discovery_devices` | Devices found by one discovery with reachability, the failure reason when unreachable, and CLI/SNMP/NETCONF credential status: the place to look when a discovery 'found nothing'. |
@@ -219,7 +234,7 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 
-### Write (30)
+### Write (32)
 
 | Tool | What it does |
 |---|---|
@@ -244,29 +259,38 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 | `catc_delete_template` | Delete a configuration template and all its versions. |
 | `catc_delete_template_project` | Delete a template project together with every template in it. |
 | `catc_detach_template_from_profile` | Detach a Day-N CLI template from network profiles. |
+| `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |
+| `catc_update_site_aaa_settings` | Set a site's AAA network settings (Design > Network Settings > AAA): which server devices use for administrator login (network) and for 802.1X/MAB endpoints (client), as ISE or plain AAA, RADIUS or TACACS. |
 | `catc_update_site_settings` | Change a site's network settings (Design > Network Settings): DNS servers and domain, NTP, DHCP servers, banner, time zone, and telemetry (external syslog/SNMP trap servers, Catalyst Center as collector, wired client data collection). |
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (9)
+### Dangerous (16)
 
 | Tool | What it does |
 |---|---|
+| `catc_accept_ise_certificate` | Answer Catalyst Center's 'trust this ISE certificate?' step of the ISE integration (or retry a failed integration). |
 | `catc_activate_image` | Install and activate a software image on a device (distributing it first if needed). |
+| `catc_add_ise_server` | Integrate Cisco ISE with Catalyst Center as the AAA and policy server: CatC connects to ISE (ERS over 443, pxGrid 8910), discovers its nodes and, after you accept ISE's certificate, trusts it. |
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
+| `catc_claim_pnp_device` | Claim an Unclaimed Plug and Play device to a site: Catalyst Center pushes the day-0 onboarding template (with its variables), optionally an image, then adds the device to the inventory at that site. |
 | `catc_delete_compliance_policy` | Delete a user compliance policy with its rules, conditions and site assignments; its violations disappear from the compliance results. |
 | `catc_delete_device` | Remove a device from the Catalyst Center inventory. |
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |
+| `catc_delete_pnp_device` | Remove a device from the Plug and Play list (not from the inventory). |
+| `catc_delete_policy_server` | Remove an authentication and policy server (plain AAA or the integrated ISE) from Catalyst Center. |
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices. |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
 | `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |
+| `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
+| `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
 
 ## API spec
 
