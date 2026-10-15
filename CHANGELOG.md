@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.0 (2026-10-15)
+
+Roadmap items found during overnight 2 (D21-D24). 125 tools, 4 prompts.
+
+### Added
+- **Background tasks (D21)**: depends on `stutters-mcp-core[tasks]`; with `MCP_TASKS=true` the ten long tools
+  (discovery, provisioning, template deploy, SWIM, WLC provisioning, PnP claim, RMA, fabric device, anycast
+  gateway) run as MCP background tasks. Live: a discovery as a task.
+- **Prompt `catc_decommission_device` (D22)** (dangerous tier, with ise): config copy, the un-provision = delete
+  effects, untagging, delete with explicit clean_config, then the ISE NAD Catalyst Center leaves behind.
+- **PnP lab rebuild (D23)**: `scripts/pnp_dhcp.py` (udhcpd + option 43 on mcp-catc-pnp, wired into the suite
+  rebuild) and docs/pnp.md (option 43, CML autoinstall suppression, NCOB02066 claim hang, RMA needs SWIM).
+- **Discovery explains missing devices (D24)**: `not_found` addresses and a note on serial collisions (CML
+  cat9000v CMLUADP), reachability and credentials.
+
 ## 0.6.0 (2026-10-15)
 
 Later items D13 (first slice), D14 and D16: 125 tools (64 read, 40 write, 21 dangerous), 3 prompts.
