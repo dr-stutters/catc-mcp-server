@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.0 (2026-10-15)
+
+Operator-eyes quality pass (D25-D30): 12 operator tasks run against the live lab through the tools only;
+wrong answers and dead ends fixed. 126 tools (65 read, 40 write, 21 dangerous), 4 prompts.
+
+### Fixed
+- **Ghost devices and stale issues (D25)**: `catc_list_device_health` left in health records of devices deleted
+  from the inventory ('which devices are unhealthy' named 3 deleted switches); they are now left out and named.
+  Issue rows name their device, show `last_seen` and mark devices no longer in the inventory;
+  `catc_device_360` groups repeated issues and warns that an old issue may already have cleared (OSPF_Down was
+  reported 'active' while the adjacency was FULL).
+- **Template deploys target only applicable devices (D26)**: by site/tag, devices outside the template's device
+  families are skipped and listed (a Routers template by site previewed the WLC, which CatC then refuses).
+- **Audit log (D27)**: readable UTC times, device column, severity, `changes_only=true`; `catc_recent_activity`
+  lists changes only (before: 118 of 120 rows were internal provisioning chatter).
+
+### Added
+- **`catc_list_clients` (D29)**: wired/wireless clients by device/WLC, site, SSID, type, MAC, IP, connected_only.
+- **Guidance (D28)**: instructions for settings vs templates, stale issues, what changed / who did it,
+  template rollback, clients, health; onboarding prompt fixes; archive age note in `catc_compare_device_configs`.
+- **Outputs (D30)**: `catc_get_issue` without internal attributes (3.7 -> 2.2 KB); deployments keep the realized
+  CLI; readable times (templates, WLC, 360 compliance); site settings `inherited_from`; `catc_path_trace` takes
+  device names.
+
 ## 0.7.0 (2026-10-15)
 
 Roadmap items found during overnight 2 (D21-D24). 125 tools, 4 prompts.
