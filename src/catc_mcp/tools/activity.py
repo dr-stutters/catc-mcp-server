@@ -312,17 +312,17 @@ AUDIT_INTERNAL = re.compile(
             r"^Sending (message|notification)",
             r"Telemetry Receiver is already configured",
             r"(Deleting existing|Configuring) Telemetry subscriptions",
-            r"is reachable from device",
-            r"Resync will begin shortly",
+            r"^Cisco Catalyst Center \S+ is reachable from device",
+            r"^Provisioning complete notification received for device .* Resync will begin shortly",
             r"^Service request processing completed",
-            r"^Updating siteHierarchyId",
         ]
     ),
     re.IGNORECASE,
 )
 # Reads and sessions: logins, retrievals, downloads, show commands.
 AUDIT_READ = re.compile(
-    r"LOGIN_USER_EVENT|logged (in|out)|retrieval succeeded|\bdownloaded\b|"
+    r"LOGIN_USER_EVENT: .* logged in successfully|logged out|retrieval succeeded|"
+    r"^Report '.*' downloaded$|downloaded successfully|"
     r"request to run read-only commands|^Fetch(ed|ing)\b|^Get(ting)?\b",
     re.IGNORECASE,
 )
@@ -375,6 +375,7 @@ async def audit_rows(app: CatcApp, records: list[dict[str, Any]]) -> list[dict[s
                     "device": names.get(str(dev), dev) if dev else None,
                     "what": _short(r.get("description") or r.get("name"), 300),
                     "category": r.get("category") if r.get("category") not in (None, "INFO") else None,
+                    "severity": r.get("severity") if r.get("severity") not in (None, 1, "1") else None,
                     "source": r.get("source") if r.get("source") not in (None, "NA") else None,
                     "id": r.get("instanceId"),
                 }
@@ -425,8 +426,10 @@ async def _audit(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: d
         "sortBy": "timestamp",
         "order": "desc",
     }
-    found, more, truncated = await fetch_audit(app, params, device=dev, site=site)
+    found, more, truncated = await fetch_audit(app, params, device=dev, site=site, cap=AUDIT_SCAN_CAP)
     kept = [r for r in found if audit_kind(r) == "change"]
+    more = more or len(kept) > SOURCE_CAP
+    kept = kept[:SOURCE_CAP]
     names = await device_names_by_ip(app, [audit_device(r) for r in kept])
     rows = [
         _row(
@@ -436,12 +439,13 @@ async def _audit(app: CatcApp, hours: float, dev: dict[str, Any] | None, site: d
             device=names.get(str(audit_device(r)), audit_device(r)),
             user=r.get("userId") or r.get("userName"),
             type=r.get("category") if r.get("category") != "INFO" else None,
+            severity=r.get("severity") if r.get("severity") not in (None, 1, "1") else None,
             id=r.get("instanceId"),
         )
         for r in kept
     ]
     notes = []
-    if hidden := len(found) - len(kept):
+    if hidden := sum(1 for r in found if audit_kind(r) != "change"):
         notes.append(
             f"{hidden} audit records left out (logins, reads and Catalyst Center's internal provisioning "
             "steps; catc_list_audit_logs shows everything)"

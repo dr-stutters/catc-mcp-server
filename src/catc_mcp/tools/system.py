@@ -137,12 +137,13 @@ def register(reg: ToolRegistrar) -> None:
             )
             rows = [r for r in scan.items if isinstance(r, dict) and audit_kind(r) == "change"]
             page = page_of(rows, limit=limit, offset=offset)
-            extra = {"left_out": f"{len(scan.items) - len(rows)} logins, reads and internal steps"}
+            extra = {
+                "left_out": f"{len(scan.items) - len(rows)} logins, reads and internal steps in the window"
+            }
             if not scan.complete:
-                page.total = None
-                page.more = True
-                extra["note"] = (
-                    f"Scanned the newest {AUDIT_SCAN_CAP} records only; narrow `hours` for older ones."
+                extra["scan"] = (
+                    f"Read the newest {AUDIT_SCAN_CAP} records of the window only; "
+                    "narrow `hours` for older ones."
                 )
         elif dev is None and st is None:
             page = await app.audit_pager.fetch_page(
@@ -161,19 +162,19 @@ def register(reg: ToolRegistrar) -> None:
                 extra = {"left_out": f"{len(rows) - len(kept)} logins, reads and internal steps"}
                 rows = kept
             page = page_of(rows, limit=limit, offset=offset)
-            if more or truncated:
+            if (more or truncated) and not changes_only:
                 page.total = None
                 page.more = True
             if truncated:
                 extra = {
                     **(extra or {}),
-                    "note": f"Device/site text matching scanned the newest {AUDIT_SCAN_CAP} records "
+                    "scan": f"Device/site text matching scanned the newest {AUDIT_SCAN_CAP} records "
                     "only; narrow `hours` for older ones.",
                 }
         page.items = await audit_rows(app, [r for r in page.items if isinstance(r, dict)])
         return list_result(
             page,
             fmt=response_format,
-            columns=["time", "user", "device", "what", "category", "source", "id"],
+            columns=["time", "user", "device", "what", "category", "severity", "source", "id"],
             extra=extra,
         )

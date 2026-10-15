@@ -280,3 +280,35 @@ async def test_recent_activity_hides_internal_audit(api: respx.MockRouter) -> No
     out = await call("catc_recent_activity", {"sources": ["audit"], "response_format": "json"})
     assert [r["id"] for r in out["results"]] == ["c1"]
     assert "1 audit records left out" in out["partial"]["audit"]
+
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("DNS Settings not applicable for the device:198.18.128.153[x]", "internal"),
+        ("Finished executing WSA Configuration flow for the device:198.18.128.153[x]", "internal"),
+        ("Sending notification to dna-common-service for checking required subscriptions", "internal"),
+        ("Cisco Catalyst Center 198.18.128.11 is reachable from device 198.18.128.153", "internal"),
+        (
+            "Provisioning complete notification received for device [1.1.1.1]. Resync will begin shortly.",
+            "internal",
+        ),
+        ("LOGIN_USER_EVENT: 'mitch' logged in successfully.", "read"),
+        ("Report 'mcp-test-inv-report' downloaded", "read"),
+        ("custom resource role mcp-catc-rw retrieval succeeded for tenant", "read"),
+        ("The request to run read-only commands in devices [198.18.128.153] was received", "read"),
+        # real changes must stay visible
+        ('Going to deploy template "mcp-test-ntp"', "change"),
+        ("Successfully deployed template mcp-test-ntp.", "change"),
+        ("Request to delete device 198.18.128.175 succeeded", "change"),
+        ("The site Global/mcp-test-lab/mcp-test-fabric was deleted.", "change"),
+        ("LOGIN_USER_EVENT: 'mitch' failed to log in.", "change"),
+        ("Image cat9k.bin downloaded to device 10.0.0.1", "change"),
+        ("Resync request for device 10.0.0.1 was received", "change"),
+        ("Updating siteHierarchyId '[/a/b]' for device 10.0.0.1", "change"),
+    ],
+)
+def test_audit_kind(text: str, kind: str) -> None:
+    from catc_mcp.tools.activity import audit_kind
+
+    assert audit_kind({"description": text}) == kind
