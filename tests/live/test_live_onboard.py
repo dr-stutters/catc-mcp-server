@@ -17,6 +17,7 @@ from fastmcp.exceptions import ToolError
 
 from catc_mcp.client import CatcApp
 
+from .conftest import require_reachable
 from .test_live_writes import RUN, apply, call, raw  # noqa: F401 - raw is a fixture
 
 pytestmark = pytest.mark.live
@@ -33,6 +34,7 @@ async def _creds_present(c: Client) -> bool:  # type: ignore[type-arg]
 
 
 async def test_onboard_switch_with_profile_template(lab_rw: Client, raw: CatcApp) -> None:  # type: ignore[type-arg]  # noqa: F811
+    require_reachable(SW, "sw2 of CML lab mcp-catc-onboard")
     if not await _creds_present(lab_rw):
         pytest.skip("mcp-test-cli / mcp-test-snmp-ro global credentials missing (scripts/lab_state.py seed)")
     with contextlib.suppress(ToolError):

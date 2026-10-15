@@ -44,4 +44,8 @@ def api() -> Iterator[respx.MockRouter]:
         )
         router.get("/dna/intent/api/v1/network-device/count").respond(json={"response": 0})
         router.get("/dna/intent/api/v1/sites/count").respond(json={"response": {"count": 1}})
+        router.get("/dna/intent/api/v1/networkDeviceConfigFiles").respond(json={"response": []})
+        router.get("/dna/system/api/v1/user").respond(
+            json={"response": {"users": [{"username": "admin", "roleList": ["SUPER-ADMIN-ROLE"]}]}}
+        )
         yield router

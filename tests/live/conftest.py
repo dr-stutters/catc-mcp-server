@@ -35,3 +35,14 @@ async def lab_rw(lab_rw_settings: Settings) -> AsyncIterator[Client[Any]]:
     server: FastMCP[Any] = create_server(lab_rw_settings)
     async with Client(server) as c:
         yield c
+
+
+def require_reachable(ip: str, what: str, port: int = 22) -> None:
+    """Skip when a CML lab device isn't reachable (its lab is stopped), instead of failing mid-test."""
+    import socket
+
+    try:
+        with socket.create_connection((ip, port), timeout=5):
+            return
+    except OSError:
+        pytest.skip(f"{what} ({ip}) is not reachable on port {port}: start its CML lab first")
