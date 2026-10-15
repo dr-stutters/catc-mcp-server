@@ -634,8 +634,12 @@ async def test_sda_fabric(api: respx.MockRouter) -> None:
     api.get("/dna/intent/api/v1/sda/layer3VirtualNetworks").respond(
         json={"response": [{"virtualNetworkName": "CORP", "fabricIds": [fid]}]}
     )
+    api.get("/dna/intent/api/v1/sda/portAssignments").respond(
+        json={"response": [{"id": "pa1", "interfaceName": "GigabitEthernet1/0/3", "dataVlanName": "CORP_VLAN"}]}
+    )
     out = await call("catc_get_sda_fabric")
     site = out["fabric_sites"][0]
+    assert site["port_assignments"][0]["id"] == "pa1"
     assert site["site"] == BLDG["nameHierarchy"] and site["devices"][0]["hostname"] == DEVICE["hostname"]
     assert (
         site["anycast_gateways"][0]["vlanId"] == 1021
