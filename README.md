@@ -87,6 +87,7 @@ claude mcp add --transport http catc http://cortex:8034/mcp --header "Authorizat
 | `MCP_DRY_RUN`, `MCP_CHANGE_WINDOW`, `MCP_MAX_BLAST_RADIUS`, `MCP_TWO_PERSON_TOOLS`, `MCP_DENY_TOOLS` | off | Safety rails (core G7; see Safety rails) |
 | `CATC_INSTANCES` | | Several Catalyst Centers in one server (`CATC_<NAME>_URL`, ...): every tool gets `instance` |
 | `MCP_METRICS` | `false` | Prometheus `/metrics` on the HTTP port |
+| `MCP_TASKS` / `MCP_TASKS_URL` | `false` / `memory://` | Run the long tools as MCP background tasks: `catc_create_discovery`, `catc_provision_devices`, `catc_deploy_template`, `catc_distribute_image`, `catc_activate_image`, `catc_provision_wireless_controller`, `catc_claim_pnp_device`, `catc_replace_device`, `catc_add_fabric_device`, `catc_add_anycast_gateway` (clients without task support call them normally) |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `MCP_HOST` / `MCP_PORT` / `MCP_PATH` | `0.0.0.0` / `8000` / `/mcp` | HTTP listener |
 | `MCP_AUTH_TOKENS` / `MCP_AUTH_TOKENS_FILE` | | `name:sha256:<hex>` entries; **required** for HTTP |

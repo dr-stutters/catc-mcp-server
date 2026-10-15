@@ -347,7 +347,7 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Provision wireless controller")
+    @reg.dangerous(title="Provision wireless controller", task=True)
     async def catc_provision_wireless_controller(
         ctx: Context,
         device: Annotated[str, Field(description="Catalyst 9800 WLC (hostname, IP, serial or id)")],

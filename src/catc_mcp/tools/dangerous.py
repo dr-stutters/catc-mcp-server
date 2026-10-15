@@ -91,7 +91,7 @@ UNSAVED_NOTE = (
 
 
 def register(reg: ToolRegistrar) -> None:
-    @reg.dangerous(title="Deploy template")
+    @reg.dangerous(title="Deploy template", task=True)
     async def catc_deploy_template(
         ctx: Context,
         template: TemplateRef,
@@ -224,7 +224,7 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Provision devices")
+    @reg.dangerous(title="Provision devices", task=True)
     async def catc_provision_devices(
         ctx: Context,
         devices: Devices,
@@ -359,7 +359,7 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
-    @reg.dangerous(title="Distribute software image")
+    @reg.dangerous(title="Distribute software image", task=True)
     async def catc_distribute_image(
         ctx: Context, device: DeviceRef, image: ImageRef, wait: Wait = True, confirm: Confirm = None
     ) -> dict[str, Any]:
@@ -367,7 +367,7 @@ def register(reg: ToolRegistrar) -> None:
         activating it. Preview-first. Activate it later with catc_activate_image."""
         return await _swim(ctx, "catc_distribute_image", device, image, wait, confirm, activate=False)
 
-    @reg.dangerous(title="Activate software image")
+    @reg.dangerous(title="Activate software image", task=True)
     async def catc_activate_image(
         ctx: Context, device: DeviceRef, image: ImageRef, wait: Wait = True, confirm: Confirm = None
     ) -> dict[str, Any]:
