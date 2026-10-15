@@ -15,13 +15,10 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
-from stutters_mcp_core.http import OffsetLimit
 
 from catc_mcp.client import CatcApp, exec_summary, safe_id, task_summary
-from catc_mcp.common import pick, window
+from catc_mcp.common import PAGE_AUDIT, pick, window
 
-# Audit log: bare JSON list, 0-based offset, at most 25 records per request.
-AUDIT_PAGER = OffsetLimit(items=None, max_page=25)
 AUDIT_FIELDS = [
     "timestamp",
     "userId",
@@ -118,8 +115,13 @@ def register(reg: ToolRegistrar) -> None:
             params["description"] = text
         if device_id:
             params["deviceId"] = safe_id(device_id, "device id")
-        page = await AUDIT_PAGER.fetch_page(
-            app.api, "/dna/data/api/v1/event/event-series/audit-logs", params, limit=limit, offset=offset
+        page = await app.audit_pager.fetch_page(
+            app.api,
+            "/dna/data/api/v1/event/event-series/audit-logs",
+            params,
+            limit=limit,
+            offset=offset,
+            max_page=PAGE_AUDIT,
         )
         page.items = [pick(r, AUDIT_FIELDS) for r in page.items if isinstance(r, dict)]
         return list_result(page, fmt=response_format)
