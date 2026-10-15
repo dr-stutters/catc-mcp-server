@@ -14,7 +14,19 @@
   AAA at a building, cat9000v provisioned there gets `radius server` -> ISE and a NAD in ISE.
 - Prompt `catc_onboard_switch_with_nac(switch_ip, site_path, access_port, test_mac, auth_mode)` (D9,
   uses the ise server: `ise_get_nad`, `ise_create_nad`, `ise_find_session`, `ise_get_auth_history`,
-  `ise_why_auth_failed`, `ise_endpoint_360`, `ise_set_endpoint`, `ise_create_authz_rule`).
+  `ise_why_auth_failed`, `ise_endpoint_360`, `ise_set_endpoint`, `ise_create_authz_rule`). Live: closed-mode MAB on a cat9000v
+  port, rejected (15039) until the endpoint was registered in ISE, then Authorized/PermitAccess.
+- PnP and RMA (D11): dangerous `catc_claim_pnp_device` (site claim with a day-0 onboarding template
+  and variables, optional image; waits for Provisioned), `catc_reset_pnp_device`,
+  `catc_delete_pnp_device`; `catc_list_device_replacements`, `catc_mark_device_for_replacement`
+  (write; blocks reachable devices and images missing from the repository, NCRM11042) and dangerous
+  `catc_replace_device` (preview: both serials/PIDs and the config archive version restored). Live:
+  a blank cat8000v claimed from PnP to mcp-test-floor1 with a day-0 template, Managed afterwards;
+  RMA is mock-only (needs the faulty device's image imported, i.e. D12's image).
+
+### Fixed
+- `catc_list_pnp_devices`: the `state` filter now filters the device state (Unclaimed, Provisioned,
+  Error...) instead of the onboarding sub-state, and the table shows both (`state`, `onboarding`).
 
 ### Changed
 - Core pinned to v0.3.1 (`catc_get_definition(examples=True)`).
