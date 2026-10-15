@@ -24,7 +24,7 @@ from stutters_mcp_core import (
     list_result,
     preview_or_apply,
 )
-from stutters_mcp_core.http import Page, fetch_all
+from stutters_mcp_core.http import fetch_all, page_of
 
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, is_uuid, pick, resolve_device, resolve_site
@@ -171,19 +171,33 @@ def condition_summary(c: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in out.items() if v not in (None, "")}
 
 
-def violation_row(v: dict[str, Any]) -> dict[str, Any]:
-    keep = ["severity", "message", "ruleName", "conditionName", "networkDeviceName", "deviceName", "id"]
-    row = pick(v, keep)
-    for k in ("violationMessage", "description", "violation"):
-        if v.get(k) and "message" not in row:
-            row["message"] = v[k]
-    return row
+def violation_rows(v: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flat violation rows. The device view nests them per rule ({ruleName, violations: [...]},
+    3.2.2); the site view is already flat."""
+    nested = v.get("violations")
+    if isinstance(nested, list):
+        base = {"rule": v.get("ruleName")}
+        out = [{**base, **violation_rows(x)[0]} for x in nested if isinstance(x, dict)]
+        out += [{**base, "error": str(e)[:300]} for e in v.get("errors") or []]
+        return out
+    row = {
+        "rule": v.get("ruleName"),
+        "device": v.get("hostname"),
+        "address": v.get("managementAddress"),
+        "severity": v.get("severity"),
+        "message": v.get("violationMessage"),
+        "condition_seq": v.get("sequenceNumber"),
+    }
+    return [{k: x for k, x in row.items() if x not in (None, "")}]
 
 
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="List compliance policies")
     async def catc_list_compliance_policies(
-        ctx: Context, response_format: ResponseFormat = "markdown"
+        ctx: Context,
+        limit: Annotated[int, Field(ge=1, le=500)] = 50,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """User-defined compliance policies (Provision > Compliance > Policies) with their status
         (ACTIVE, NO_RULES_CONFIGURED, NO_SITES_ASSIGNED...), rule and site counts. Use
@@ -193,7 +207,7 @@ def register(reg: ToolRegistrar) -> None:
             pick(p, ["name", "status", "rulesCount", "sitesCount", "source", "description", "id"])
             for p in await list_policies(app)
         ]
-        return list_result(Page(rows, 0, len(rows)), fmt=response_format)
+        return list_result(page_of(rows, limit=limit, offset=offset), fmt=response_format)
 
     @reg.read(title="Get compliance policy")
     async def catc_get_compliance_policy(ctx: Context, policy: PolicyRef) -> dict[str, Any]:
@@ -237,6 +251,8 @@ def register(reg: ToolRegistrar) -> None:
         site: Annotated[
             str | None, Field(description="With policy and no device: violations at this site")
         ] = None,
+        limit: Annotated[int, Field(ge=1, le=500)] = 100,
+        offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """Compliance policy violations from the last compliance run (catc_run_compliance), per
@@ -264,26 +280,26 @@ def register(reg: ToolRegistrar) -> None:
                 pid = safe_id(str(p.get("id") or p.get("policyId")), "policy id")
                 path = f"/dna/intent/api/v1/compliance/networkDevices/{did}/detail/policys/{pid}/violations"
                 page = await fetch_all(app.pager, app.api, path, cap=1000)
+                name = p.get("name") or p.get("policyName")
                 for v in page.items:
                     if isinstance(v, dict):
-                        rows.append(
-                            {
-                                "policy": p.get("name") or p.get("policyName"),
-                                "device": dev.get("hostname"),
-                                **violation_row(v),
-                            }
-                        )
+                        rows += [
+                            {"policy": name, "device": dev.get("hostname"), **r} for r in violation_rows(v)
+                        ]
         elif pol is not None and site:
             st = await resolve_site(app, site)
             sid, pid = safe_id(str(st["id"]), "site id"), safe_id(str(pol["id"]), "policy id")
             path = f"/dna/intent/api/v1/compliance/sites/{sid}/policys/{pid}/violations"
             page = await fetch_all(app.pager, app.api, path, cap=1000)
             rows = [
-                {"policy": pol.get("name"), **violation_row(v)} for v in page.items if isinstance(v, dict)
+                {"policy": pol.get("name"), **r}
+                for v in page.items
+                if isinstance(v, dict)
+                for r in violation_rows(v)
             ]
         else:
             raise InvalidRequest("Give a device (optionally with policy), or a policy and a site.")
-        return list_result(Page(rows, 0, len(rows)), fmt=response_format)
+        return list_result(page_of(rows, limit=limit, offset=offset), fmt=response_format)
 
     @reg.write(title="Create compliance policy")
     async def catc_create_compliance_policy(
