@@ -40,6 +40,7 @@ AREA, BLDG, FLOOR = (
 CREDS = ("mcp-test-cli", "mcp-test-snmp-ro", "mcp-test-snmp-rw")
 PROJECT, PROFILE, DISCOVERY = "mcp-test-dayn", "mcp-test-sw-profile", "mcp-test-disc-routers"
 ROUTERS = ("198.18.128.152", "198.18.128.153")
+WLC = "198.18.128.173"  # CML lab mcp-catc-wlc (D14)
 TEMPLATES = {
     "mcp-test-loopback": (
         "Routers",
@@ -269,6 +270,36 @@ async def seed(c: Client, devices: bool) -> None:  # type: ignore[type-arg]
         sys.exit("The routers did not become Managed; is the catc-routers CML lab running?")
     say("assign: " + await write(c, "catc_assign_devices_to_site", {"devices": list(ROUTERS), "site": BLDG}))
     say("provision: " + await write(c, "catc_provision_devices", {"devices": list(ROUTERS), "site": BLDG}))
+    await seed_wlc(c)
+
+
+async def seed_wlc(c: Client) -> None:  # type: ignore[type-arg]
+    """D14: discover the 9800-CL of CML lab mcp-catc-wlc when it is running (the wireless live test assigns
+    and provisions it itself)."""
+    import socket
+
+    try:
+        socket.create_connection((WLC, 22), timeout=5).close()
+    except OSError:
+        say(f"wlc {WLC}: not reachable (start CML lab mcp-catc-wlc to seed it), skipped")
+        return
+    if await exists(c, "catc_get_device", {"device": WLC}):
+        say(f"wlc {WLC}: in inventory")
+        return
+    say(
+        f"wlc {WLC}: "
+        + await write(
+            c,
+            "catc_create_discovery",
+            {
+                "name": "mcp-test-disc-wlc",
+                "ip_ranges": [WLC],
+                "global_credentials": list(CREDS),
+                "netconf_port": 830,
+                "wait": True,
+            },
+        )
+    )
 
 
 async def cleanup(c: Client, keep_devices: bool) -> None:  # type: ignore[type-arg]

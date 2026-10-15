@@ -38,6 +38,7 @@ from catc_mcp.tools import (
     template_writes,
     templates,
     topology,
+    wireless,
 )
 
 INSTRUCTIONS = """
@@ -57,6 +58,9 @@ Workflows:
 - SD-Access: provision the devices -> catc_create_fabric_site -> catc_add_fabric_device (control plane/
   border first, then edges) -> catc_create_virtual_network -> catc_create_ip_pool (reserve at the site) ->
   catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric.
+- Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
+  locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
+  catc_get_wireless_controller.
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
   commands) -> catc_run_show_commands; catc_path_trace; catc_list_events.
 Asynchronous operations return a task id; check it with catc_get_task.
@@ -98,6 +102,7 @@ REGISTER = [
     template_writes.register,
     ops_writes.register,
     sda.register,
+    wireless.register,
     dangerous.register,
 ]
 
