@@ -207,3 +207,22 @@ async def test_two_person_on_provision(api: respx.MockRouter) -> None:
         with as_caller("bob"):
             done = await run(c, "catc_provision_devices", {**args, "confirm": out["confirm"]})
     assert done["status"] == "applied" and post.call_count == 1
+
+
+async def test_truncated_tag_refused(api: respx.MockRouter) -> None:
+    mock_template(api)
+    api.get("/dna/intent/api/v1/tag").respond(json={"response": [TAG]})
+    from stutters_mcp_core.http import paging
+
+    async def partial(*a: Any, **k: Any) -> Any:
+        return paging.Page(items=[{"id": DEV_ID}], offset=0, total=99999)
+
+    import catc_mcp.safety as safety
+
+    orig = safety.fetch_all
+    safety.fetch_all = partial  # type: ignore[assignment]
+    try:
+        with pytest.raises(ToolError, match="Narrow the selection"):
+            await preview("catc_deploy_template", {"template": TID, "tag": "access"})
+    finally:
+        safety.fetch_all = orig

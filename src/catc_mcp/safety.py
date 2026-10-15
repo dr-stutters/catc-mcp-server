@@ -31,18 +31,35 @@ async def _devices_by_id(app: CatcApp, ids: list[str]) -> list[dict[str, Any]]:
     return out
 
 
+class TargetsTruncated(InvalidRequest):
+    pass
+
+
+TRUNCATED = (
+    "The target list is larger than the server reads in one go, so the device count would be wrong. "
+    "Narrow the selection (a smaller site, a tag, or a device list)."
+)
+
+
 async def site_devices(app: CatcApp, site: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every device assigned to the site or any site below it (Global: the whole inventory)."""
+    """Every device assigned to the site or any site below it (Global: the whole inventory). Refuses
+    (TargetsTruncated) rather than undercount when a list is partial."""
     if site.get("type") == "global":
         page = await fetch_all(app.pager, app.api, "/dna/intent/api/v1/network-device", {}, cap=5000)
+        if not page.complete:
+            raise TargetsTruncated(TRUNCATED)
         return [d for d in page.items if isinstance(d, dict)]
     prefix = str(site.get("nameHierarchy")) + "/"
-    sites, _ = await all_sites(app)
+    sites, complete = await all_sites(app)
+    if not complete:
+        raise TargetsTruncated(TRUNCATED)
     ids: list[str] = []
     for s in [site, *(c for c in sites if str(c.get("nameHierarchy", "")).startswith(prefix))]:
         if s.get("type") not in ("building", "floor", "area"):
             continue
         assigned = await fetch_all(app.pager, app.api, ASSIGNED, {"siteId": s["id"]})
+        if not assigned.complete:
+            raise TargetsTruncated(TRUNCATED)
         ids += [str(a["deviceId"]) for a in assigned.items if isinstance(a, dict) and a.get("deviceId")]
     return await _devices_by_id(app, sorted(set(ids)))
 
@@ -51,6 +68,8 @@ async def tag_devices(app: CatcApp, tag: dict[str, Any]) -> list[dict[str, Any]]
     page = await fetch_all(
         app.pager, app.api, f"/dna/intent/api/v1/tag/{tag['id']}/member", {"memberType": "networkdevice"}
     )
+    if not page.complete:
+        raise TargetsTruncated(TRUNCATED)
     ids = [str(m.get("id") or m.get("instanceUuid")) for m in page.items if isinstance(m, dict)]
     return await _devices_by_id(app, sorted({i for i in ids if i and i != "None"}))
 

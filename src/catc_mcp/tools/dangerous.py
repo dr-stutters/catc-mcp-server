@@ -59,6 +59,13 @@ def iso_ms(value: Any) -> str | None:
         return None
 
 
+def _version_key(v: dict[str, Any]) -> float:
+    try:
+        return float(v.get("version") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def deploy_outcome(progress: Any) -> dict[str, Any]:
     """Interpret a template deploy task's progress text: deployment id and non-applicable targets."""
     text = str(progress or "")
@@ -118,12 +125,12 @@ def register(reg: ToolRegistrar) -> None:
         ref = await resolve_template(app, template)
         tid = str(ref.get("templateId") or ref.get("id"))
         devs, targeting = await resolve_targets(app, devices, site, tag)
-        blockers = device_limit_blockers(app, len(devs))
         if not devs:
             raise InvalidRequest(f"No devices to deploy to ({targeting}).")
+        blockers = device_limit_blockers(app, len(devs))
         versions = [v for v in ensure_list(ref.get("versionsInfo")) if isinstance(v, dict)]
-        latest = max(versions, key=lambda v: float(v.get("version") or 0), default={})
-        if not ensure_list(ref.get("versionsInfo")):
+        latest = max(versions, key=_version_key, default={})
+        if not versions:
             blockers.append(
                 "The template has never been committed; commit it with catc_commit_template first."
             )
@@ -469,7 +476,11 @@ def register(reg: ToolRegistrar) -> None:
             running = [f for f in files if f.get("fileType") == "RUNNINGCONFIG"]
             archive = {
                 "versions": len({f.get("versionId") for f in files}),
-                "latest_running_config": iso_ms(running[0].get("createdTime")) if running else None,
+                "latest_running_config": (
+                    iso_ms(max(running, key=lambda f: f.get("createdTime") or 0).get("createdTime"))
+                    if running
+                    else None
+                ),
                 "keep_a_copy_with": "catc_get_device_config (running config) before confirming",
             }
         effects = [

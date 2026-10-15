@@ -105,6 +105,21 @@ def main() -> int:
     c = Catc(e)
     roles = {r["name"]: r for r in c.call("GET", "/dna/system/api/v2/roles")["response"]}
     users = {u["username"]: u for u in c.call("GET", "/dna/system/api/v1/user")["response"]["users"]}
+    builtin = {
+        "SUPER-ADMIN-ROLE",
+        "NETWORK-ADMIN-ROLE",
+        "OBSERVER-ROLE",
+        "SUPER-ADMIN",
+        "NW-ADMIN",
+        "OBSERVER",
+    }
+    for prefix, _ in USERS:
+        name = e.get(prefix + "USERNAME")
+        if not name:
+            continue
+        # Never touch the admin this script runs as, or any account holding a built-in role.
+        if name == e.get("CATC_USERNAME") or set(users.get(name, {}).get("roleList") or []) & builtin:
+            sys.exit(f"{prefix}USERNAME={name} is the admin account or holds a built-in role; refusing.")
 
     if a.delete:
         for prefix, _ in USERS:
@@ -151,11 +166,19 @@ def main() -> int:
     for role in ROLES:
         gname = group_name(role)
         if gname in groups:
-            print(f"access group {gname}: up to date")
+            info = groups[gname]["accessGroupInfo"]
+            scopes = [(r.get("srcResourceId"), r.get("type")) for r in info.get("resourceGroups") or []]
+            if info.get("role") != [role] or scopes != [("*", "site")]:
+                print(
+                    f"access group {gname}: role/scope drifted ({info.get('role')}, {scopes}); "
+                    "fix it in the GUI"
+                )
+            else:
+                print(f"access group {gname}: up to date")
             continue
         print(f"access group {gname}: create (role {role}, scope Global)")
         if not a.check:
-            made = c.call(
+            c.call(
                 "POST",
                 "/dna/system/api/v1/accessGroups",
                 {
@@ -165,14 +188,21 @@ def main() -> int:
                     "resourceGroups": [{"name": "Global", "srcResourceId": "*", "type": "site"}],
                 },
             )
-            groups[gname] = made
+    if not a.check:  # re-read: the POST answer isn't guaranteed to carry the new id
+        groups = {
+            g["accessGroupInfo"]["name"]: g
+            for g in c.call("GET", "/dna/system/api/v1/accessGroups")["response"]
+        }
 
     for prefix, role in USERS:
         name, password = e.get(prefix + "USERNAME"), e.get(prefix + "PASSWORD")
         if not name or not password:
             print(f"user ({prefix}USERNAME): not configured in .env, skipped")
             continue
-        group_id = groups.get(group_name(role), {}).get("id", "")
+        group_id = groups.get(group_name(role), {}).get("id")
+        if not group_id:
+            print(f"user {name}: access group {group_name(role)} not there yet (--check), skipped")
+            continue
         want = {"roleList": [role], "accessGroups": [group_id]}
         if name in users:
             have = {k: users[name].get(k) for k in want}

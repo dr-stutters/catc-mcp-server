@@ -1,10 +1,11 @@
-"""Live safety-rail tests (D19, D20) on r1/r2 of the CML `catc-routers` recipe (provisioned at mcp-test-bldg by
-scripts/lab_state.py seed).
+"""Live safety-rail tests (D19, D20) on r1/r2 of the CML `catc-routers` recipe (provisioned at
+mcp-test-bldg by scripts/lab_state.py seed).
 
-- D19: a template deploy to r1+r2 is blocked at CATC_MAX_DEVICES_PER_CHANGE=1 and allowed for r1 alone; a tag
-  target expands to its members; MCP_MAX_BLAST_RADIUS blocks too; outside MCP_CHANGE_WINDOW the confirm is refused.
-- D20: deleting (un-provisioning) r2 with clean_config=false states every effect, removes r2 from the inventory but
-  leaves its configuration; r2 is then re-onboarded (discovery -> assign -> provision) as the seed left it.
+- D19: a template deploy to r1+r2 is blocked at CATC_MAX_DEVICES_PER_CHANGE=1 and allowed for r1 alone;
+  a tag target expands to its members; MCP_MAX_BLAST_RADIUS blocks too; outside MCP_CHANGE_WINDOW the
+  confirm is refused.
+- D20: deleting (un-provisioning) r2 with clean_config=false states every effect, removes r2 from the
+  inventory but leaves its configuration; r2 is then re-onboarded (discovery -> assign -> provision).
 """
 
 from __future__ import annotations
@@ -56,7 +57,9 @@ async def test_deploy_device_limit(routers: dict[str, Any]) -> None:  # noqa: F8
             out = await call(c, "catc_deploy_template", {"template": TEMPLATE, "tag": tag, "params": PARAMS})
             assert out["status"] == "preview" and out["blast_radius"] == 2
             assert out["preview"]["targets"] == {"by": "tag", "tag": tag}
-            out = await call(c, "catc_deploy_template", {"template": TEMPLATE, "site": BLDG, "params": PARAMS})
+            out = await call(
+                c, "catc_deploy_template", {"template": TEMPLATE, "site": BLDG, "params": PARAMS}
+            )
             assert out["blast_radius"] == 2 and out["preview"]["targets"]["site"] == BLDG
         finally:
             await apply(c, "catc_delete_tag", {"tag": tag, "remove_members": True})

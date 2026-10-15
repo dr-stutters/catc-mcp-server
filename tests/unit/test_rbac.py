@@ -31,7 +31,8 @@ def test_permissions_tier() -> None:
     assert rbac.permissions_tier(perms(rbac.READ)) == "ro"
     assert rbac.permissions_tier(perms(rbac.WRITE)) == "rw"
     assert rbac.permissions_tier(perms(rbac.DANGEROUS)) == "dangerous"
-    assert rbac.permissions_tier([{"id": "Policy.Application Policy", "privilege": "Write"}]) == "dangerous"
+    assert rbac.permissions_tier([{"id": "Policy.Application Policy", "privilege": "Write"}]) == "admin"
+    assert rbac.permissions_tier([{"id": "Network Operations.PnP", "privilege": "Write"}]) == "dangerous"
     assert rbac.permissions_tier([]) == "ro"
 
 
@@ -73,3 +74,12 @@ async def test_status_account_unavailable(api: respx.MockRouter) -> None:
     api.get("/dna/system/api/v1/user").respond(403, json={"response": {"message": "denied"}})
     out = await status(make_settings())
     assert "unavailable" in out["account"] and out["devices"] == 0
+
+
+async def test_status_unknown_role(api: respx.MockRouter) -> None:
+    api.get("/dna/system/api/v1/user").respond(
+        json={"response": {"users": [{"username": "x", "roleList": ["gone"]}]}}
+    )
+    api.get("/dna/system/api/v2/roles/gone").respond(404, json={"response": {"message": "no"}})
+    out = await status(make_settings(username="x"))
+    assert out["account"]["role_tier"] == "unknown" and "warning" not in out["account"]

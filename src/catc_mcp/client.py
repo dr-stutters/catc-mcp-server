@@ -241,7 +241,12 @@ class CatcApp:
             if role in BUILTIN_TIERS:
                 tiers[role] = BUILTIN_TIERS[role]
                 continue
-            detail = await self.get_response(f"/dna/system/api/v2/roles/{quote(role, safe='')}")
+            # Custom roles' v2 id is their name (checked on 3.2.2).
+            try:
+                detail = await self.get_response(f"/dna/system/api/v2/roles/{quote(role, safe='')}")
+            except UpstreamError:
+                tiers[role] = "unknown"
+                continue
             perms = detail.get("permissions", []) if isinstance(detail, dict) else []
             tiers[role] = permissions_tier(perms)
         s = self.settings

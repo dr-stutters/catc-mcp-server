@@ -75,17 +75,21 @@ BUILTIN_TIERS = {
     "OBSERVER": "ro",
     "OBSERVER-ROLE": "ro",
 }
-TIER_ORDER = {"ro": 0, "rw": 1, "dangerous": 2, "admin": 3}
+TIER_ORDER = {"unknown": -1, "ro": 0, "rw": 1, "dangerous": 2, "admin": 3}
 _WRITE_GRANTS = {k for k, v in WRITE.items() if v == "Write"}
+_DANGEROUS_GRANTS = {k for k, v in DANGEROUS.items() if v == "Write"}
 
 
 def permissions_tier(permissions: list[dict[str, Any]]) -> str:
     """The server tier a custom role's permission list amounts to: `ro` (no Write), `rw` (Write only where
-    the write role has it) or `dangerous` (Write anywhere else)."""
+    the write role has it), `dangerous` (Write only where the dangerous role has it) or `admin` (Write
+    anywhere else, e.g. System Administration)."""
     writes = {str(p.get("id")) for p in permissions if str(p.get("privilege", "")).lower() == "write"}
     if not writes:
         return "ro"
-    return "rw" if writes <= _WRITE_GRANTS else "dangerous"
+    if writes <= _WRITE_GRANTS:
+        return "rw"
+    return "dangerous" if writes <= _DANGEROUS_GRANTS else "admin"
 
 
 def enabled_tier(writes: bool, dangerous: bool) -> str:
@@ -95,7 +99,7 @@ def enabled_tier(writes: bool, dangerous: bool) -> str:
 def account_check(role_tiers: dict[str, str], enabled: str) -> dict[str, Any]:
     """Status block: the account's roles, the tier they amount to, and a warning when it exceeds what the
     server has enabled (least privilege) or falls short of it (tools Catalyst Center will refuse)."""
-    tier = max(role_tiers.values(), key=TIER_ORDER.__getitem__) if role_tiers else "unknown"
+    tier = max(role_tiers.values(), key=lambda t: TIER_ORDER.get(t, -1)) if role_tiers else "unknown"
     out: dict[str, Any] = {"roles": sorted(role_tiers), "role_tier": tier, "enabled_tier": enabled}
     if tier == "unknown":
         return out
