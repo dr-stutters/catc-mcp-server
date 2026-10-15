@@ -301,6 +301,14 @@ def register(reg: ToolRegistrar) -> None:
             if len(ip_ranges) != 1 or not is_ip(ip_ranges[0]):
                 raise InvalidRequest("A Single discovery takes exactly one IP address.")
             sent_type, ips = "Range", f"{ip_ranges[0].strip()}-{ip_ranges[0].strip()}"
+        elif discovery_type in ("Range", "Multi Range"):
+            # Ranges must be 'first-last'; a bare address is rejected ("IPAddress for Range
+            # Discovery is invalid"), so send it as a one-address range.
+            parts = [x.strip() for r in ip_ranges for x in r.split(",") if x.strip()]
+            bad = [x for x in parts if not all(is_ip(a) for a in x.split("-", 1))]
+            if bad:
+                raise InvalidRequest(f"Not an IP or 'first-last' range: {', '.join(bad)}")
+            ips = ",".join(x if "-" in x else f"{x}-{x}" for x in parts)
         body: dict[str, Any] = {
             "name": name,
             "discoveryType": sent_type,
