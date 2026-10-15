@@ -87,6 +87,7 @@ async def test_deploy_template_applies_and_polls_deployment(api: respx.MockRoute
         and "aaa new-model" in preview["preview"]["rendered_cli_first_device"]
     )
     assert done["result"]["deployment"]["status"] == "SUCCESS"
+    assert "does not save" in done["result"]["note"]
     body = json.loads(post.calls.last.request.content)
     assert body["targetInfo"] == [{"id": DEV_ID, "type": "MANAGED_DEVICE_UUID", "params": {"a": 1}}]
 

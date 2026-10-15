@@ -19,8 +19,7 @@ from stutters_mcp_core import (
 from stutters_mcp_core.http import Page, fetch_all
 
 from catc_mcp.client import CatcApp, safe_id
-from catc_mcp.common import ensure_list, pick, resolve_site
-from catc_mcp.tools.smart import _gather_sections
+from catc_mcp.common import ensure_list, gather_sections, pick, resolve_site
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -36,7 +35,7 @@ def register(reg: ToolRegistrar) -> None:
         (registration/evaluation), ISE/AAA server integration status, and release version. Use it when
         tools time out or data looks stale, before upgrades, or to check backups."""
         app: CatcApp = get_client(ctx)
-        data, errors = await _gather_sections(
+        data, errors = await gather_sections(
             {
                 "health": app.api.get("/dna/intent/api/v1/diagnostics/system/health", {"summary": "false"}),
                 "backups": app.get_response("/dna/system/api/v1/backups", {"limit": 5}),
@@ -213,7 +212,7 @@ def register(reg: ToolRegistrar) -> None:
         out: list[dict[str, Any]] = []
         for f in fabrics:
             fid = str(f.get("id"))
-            sec, errors = await _gather_sections(
+            sec, errors = await gather_sections(
                 {
                     "devices": fetch_all(
                         app.pager,

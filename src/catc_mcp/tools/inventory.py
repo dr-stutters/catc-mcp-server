@@ -75,6 +75,21 @@ def redact_config(text: str) -> str:
     return "\n".join(out)
 
 
+LICENCE_FAMILIES = {
+    "Routers": "ROUTERS",
+    "Switches and Hubs": "SWITCHES_AND_HUBS",
+    "Wireless Controller": "WIRELESS_CONTROLLER",
+    "Unified AP": "UNIFIED_AP",
+}
+
+
+def licence_filter(dev: dict[str, Any]) -> dict[str, str]:
+    """Narrow the licence list to the device's family (the API has no device filter; records are
+    matched on the management address afterwards)."""
+    fam = LICENCE_FAMILIES.get(str(dev.get("family")))
+    return {"family": fam} if fam else {}
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="List network devices")
     async def catc_list_devices(
@@ -283,7 +298,9 @@ def register(reg: ToolRegistrar) -> None:
             app.get_response(f"/dna/intent/api/v1/network-device/{did}/poe"),
             app.get_response(f"/dna/intent/api/v1/network-device/{did}/interface/poe-detail"),
             app.get_response("/dna/intent/api/v1/network-device/module/count", {"deviceId": did}),
-            fetch_all(app.pager, app.api, "/dna/intent/api/v1/networkDeviceLicenses", cap=5000),
+            fetch_all(
+                app.pager, app.api, "/dna/intent/api/v1/networkDeviceLicenses", licence_filter(dev), cap=5000
+            ),
             return_exceptions=True,
         )
         stack, poe, poe_ports, modules, licences = results
