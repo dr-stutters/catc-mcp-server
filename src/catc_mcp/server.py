@@ -27,6 +27,7 @@ from catc_mcp.tools import (
     pnp,
     profiles,
     prompts,
+    reports,
     sda,
     settings_writes,
     site_writes,
@@ -103,6 +104,7 @@ REGISTER = [
     ops_writes.register,
     sda.register,
     wireless.register,
+    reports.register,
     dangerous.register,
 ]
 
