@@ -122,14 +122,15 @@ def _exec_failed(e: dict[str, Any]) -> str | bool:
     return False
 
 
-def data_total(body: Any) -> Any:
+def data_total(body: Any) -> int | None:
     """Total of an Assurance list: `page.count` (data API) or `totalCount` (device-health)."""
     if not isinstance(body, dict):
         return None
     page = body.get("page")
     if isinstance(page, dict) and page.get("count") is not None:
-        return page["count"]
-    return body.get("totalCount")
+        return int(page["count"])
+    total = body.get("totalCount")
+    return int(total) if isinstance(total, int | float | str) and str(total).isdigit() else None
 
 
 class CatcApp:
@@ -159,9 +160,10 @@ class CatcApp:
         self.pager = OffsetLimit(items="response", one_based=True, max_page=500)
         # Assurance lists: like the Intent API but with a total (`page.count` on the data API,
         # `totalCount` on device-health).
-        self.data_pager = OffsetLimit(items="response", total=data_total, one_based=True, max_page=500)
+        # Defaults are the strictest cap seen on that shape; call sites pass their own `max_page=`.
+        self.data_pager = OffsetLimit(items="response", total=data_total, one_based=True, max_page=20)
         # Audit log: a bare JSON list with a 0-based offset and no total.
-        self.audit_pager = OffsetLimit(items=None, max_page=500)
+        self.audit_pager = OffsetLimit(items=None, max_page=25)
         self._version: str | None = None
 
     async def _login(self, client: ApiClient) -> Token:

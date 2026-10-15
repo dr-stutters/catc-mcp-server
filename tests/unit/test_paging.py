@@ -1,4 +1,5 @@
-"""Per-endpoint page caps through `fetch_page(max_page=...)` and lists without a total (D1)."""
+"""Per-endpoint page caps through `fetch_page(max_page=...)` (D1), plus regression tests for the core
+0.1.2 fix: lists without a total keep `next_offset` when the page was full."""
 
 from typing import Any
 
@@ -42,9 +43,7 @@ async def test_event_page_cap_20(api: respx.MockRouter) -> None:
     route = api.get("/dna/data/api/v1/assuranceEvents").mock(
         side_effect=lambda r: _numbered(r, total=45, one_based=True, envelope="page")
     )
-    out = await call(
-        "catc_list_events", {"device_family": "Routers", "limit": 45, "response_format": "json"}
-    )
+    out = await call("catc_list_events", {"device_family": "Routers", "limit": 45, "response_format": "json"})
     limits = [int(c.request.url.params["limit"]) for c in route.calls]
     assert limits == [20, 20, 5]
     assert out["returned"] == 45
@@ -61,6 +60,14 @@ async def test_device_health_cap_500_and_total(api: respx.MockRouter) -> None:
     out = await call("catc_list_device_health", {"limit": 500, "offset": 100, "response_format": "json"})
     assert [int(c.request.url.params["limit"]) for c in route.calls] == [500]
     assert out["total"] == 700 and out["next_offset"] == 600
+
+
+async def test_audit_short_last_page(api: respx.MockRouter) -> None:
+    api.get("/dna/data/api/v1/event/event-series/audit-logs").mock(
+        side_effect=lambda r: _numbered(r, total=100, one_based=False, envelope=None)
+    )
+    out = await call("catc_list_audit_logs", {"limit": 30, "offset": 90, "response_format": "json"})
+    assert out["returned"] == 10 and "next_offset" not in out
 
 
 async def test_audit_zero_based_cap_25_without_total(api: respx.MockRouter) -> None:
