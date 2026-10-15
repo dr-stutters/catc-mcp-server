@@ -7,12 +7,11 @@ expanded set (the sites and everything below them). Remediation stays on catc_ap
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
-import contextlib
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
 from fastmcp.tools import ToolResult
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from stutters_mcp_core import (
     Confirm,
     InvalidRequest,
@@ -20,6 +19,7 @@ from stutters_mcp_core import (
     Plan,
     ResponseFormat,
     ToolRegistrar,
+    UpstreamError,
     get_client,
     list_result,
     preview_or_apply,
@@ -61,6 +61,12 @@ class ConditionSpec(BaseModel):
         None,
         description="Regex starting the config blocks to test one by one, e.g. '^interface GigabitEthernet'",
     )
+
+    @model_validator(mode="after")
+    def _command_scope(self) -> "ConditionSpec":
+        if self.scope == "DEVICE_COMMAND_OUTPUT" and not self.show_command:
+            raise ValueError("scope DEVICE_COMMAND_OUTPUT needs show_command")
+        return self
 
 
 class RuleSpec(BaseModel):
@@ -116,8 +122,9 @@ def rule_body(r: RuleSpec) -> dict[str, Any]:
 
 def task_id_of(job: dict[str, Any]) -> str | None:
     """The new object's id from a task's `data` ("id=<uuid>")."""
-    data = str(job.get("data") or "")
-    return data.split("=", 1)[1] if data.startswith("id=") else (data or None)
+    data = str(job.get("data") or "").strip()
+    value = data.split("=", 1)[1].strip() if data.startswith("id=") else data
+    return value if is_uuid(value) else None
 
 
 async def list_policies(app: CatcApp) -> list[dict[str, Any]]:
@@ -135,7 +142,19 @@ async def resolve_policy(app: CatcApp, ref: str) -> dict[str, Any]:
     found = [p for p in await list_policies(app) if str(p.get("name", "")).lower() == ref.lower()]
     if not found:
         raise NotFound(f"No compliance policy {ref!r}. Use catc_list_compliance_policies.")
+    if len(found) > 1:
+        raise InvalidRequest(f"Policy name {ref!r} is ambiguous; use its id.")
     return found[0]
+
+
+def root_ids(ids: list[str], names: dict[str, str]) -> list[str]:
+    """The ids not below another id in the set (siteAssignments PUT takes root sites)."""
+    paths = {i: names.get(i, i) for i in ids}
+    return [
+        i
+        for i, path in paths.items()
+        if not any(j != i and path.startswith(other + "/") for j, other in paths.items())
+    ]
 
 
 async def assigned_site_ids(app: CatcApp, policy_id: str) -> list[str]:
@@ -277,6 +296,8 @@ def register(reg: ToolRegistrar) -> None:
                     if isinstance(p, dict)
                 ]
             for p in pols:
+                if not (p.get("id") or p.get("policyId")):
+                    continue
                 pid = safe_id(str(p.get("id") or p.get("policyId")), "policy id")
                 path = f"/dna/intent/api/v1/compliance/networkDevices/{did}/detail/policys/{pid}/violations"
                 page = await fetch_all(app.pager, app.api, path, cap=1000)
@@ -327,7 +348,7 @@ def register(reg: ToolRegistrar) -> None:
             "description": description,
         }
         bodies = [(rule_body(r), [condition_body(c) for c in r.conditions]) for r in rules]
-        st = [await resolve_site(app, s) for s in sites or []]
+        st = list({str(x["id"]): x for x in [await resolve_site(app, s) for s in sites or []]}.values())
         blockers = []
         if any(str(p.get("name", "")).lower() == name.lower() for p in await list_policies(app)):
             blockers.append(f"A compliance policy named {name!r} already exists.")
@@ -354,10 +375,13 @@ def register(reg: ToolRegistrar) -> None:
             )
             pid = task_id_of(job)
             if not pid:
-                found = [p for p in await list_policies(app) if p.get("name") == name]
+                found = [
+                    p for p in await list_policies(app) if str(p.get("name", "")).lower() == name.lower()
+                ]
                 pid = str(found[0]["id"]) if found else None
             if not pid:
                 raise NotFound(f"Policy {name!r} was created but its id wasn't returned; check the list.")
+            pid = safe_id(pid, "policy id")
             try:
                 for rb, cbs in bodies:
                     rjob = await app.run_job("POST", f"{CP}/{pid}/rules", rb, ctx=ctx, what="create rule")
@@ -376,9 +400,14 @@ def register(reg: ToolRegistrar) -> None:
                         ctx=ctx,
                         what="assign",
                     )
-            except Exception:
-                with contextlib.suppress(Exception):
+            except Exception as err:
+                try:
                     await app.run_job("DELETE", f"{CP}/{pid}", ctx=ctx, what="roll back policy")
+                except Exception as rollback:
+                    raise UpstreamError(
+                        f"{err}. Rolling back also failed ({rollback}): delete policy {name!r} ({pid}) "
+                        "with catc_delete_compliance_policy."
+                    ) from err
                 raise
             final = await resolve_policy(app, pid)
             return pick(final, ["name", "id", "status", "rulesCount", "sitesCount"])
@@ -411,25 +440,43 @@ def register(reg: ToolRegistrar) -> None:
         current = await assigned_site_ids(app, pid)
         names = await site_map(app)
         targets = [await resolve_site(app, s) for s in sites]
-        tids = [str(s["id"]) for s in targets]
+        tids = list(dict.fromkeys(str(s["id"]) for s in targets))
+        roots = root_ids(current, names)
+
+        def under(i: str, root: str) -> bool:
+            a, b = names.get(i, i), names.get(root, root)
+            return a == b or a.startswith(b + "/")
+
+        blockers: list[str] = []
         if mode == "replace":
-            new = tids
+            new = root_ids(tids, names)
         elif mode == "add":
-            new = list(dict.fromkeys([*current, *tids]))
+            new = root_ids([*roots, *tids], names)
         else:
-            prefixes = [str(s.get("nameHierarchy")) for s in targets]
-            new = [
-                i
-                for i in current
-                if not any(names.get(i, "") == px or names.get(i, "").startswith(px + "/") for px in prefixes)
-            ]
-        before = sorted(names.get(i, i) for i in current)
-        after = sorted(names.get(i, i) for i in new)
+            new = [r for r in roots if not any(under(r, t) for t in tids)]
+            covered = [t for t in tids if any(under(t, r) for r in new)]
+            if covered:
+                blockers.append(
+                    "Can't remove "
+                    + ", ".join(names.get(t, t) for t in covered)
+                    + ": covered by an assigned parent site. Remove the parent and add back the other "
+                    "children, or use mode='replace'."
+                )
+
+        def expand(ids: list[str]) -> list[str]:
+            return sorted(n for i, n in names.items() if any(under(i, r) for r in ids))
+
+        if set(new) == set(roots):
+            blockers.append("No change: the site list would stay the same.")
         plan = Plan(
             f"Set the sites of compliance policy {p.get('name')} ({mode})",
-            details={"current": before, "after": after},
+            details={
+                "current": sorted(names.get(i, i) for i in current),
+                "assigned_roots_after": sorted(names.get(i, i) for i in new),
+                "after_including_children": expand(new),
+            },
             fingerprint={"policy": pid, "current": sorted(current), "new": sorted(new)},
-            blockers=["No change: the site list would stay the same."] if set(new) == set(current) else [],
+            blockers=blockers,
         )
 
         async def apply() -> Any:

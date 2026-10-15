@@ -152,20 +152,42 @@ async def test_assign_modes(api: respx.MockRouter) -> None:
     sites(api)
     api.get(CP).respond(json={"response": [{"id": PID, "name": "p"}]})
     api.get(f"{CP}/{PID}/siteAssignments").respond(json={"response": {"siteIds": [LAB["id"], CHILD["id"]]}})
-    added = await call(
-        "catc_assign_compliance_policy", {"policy": "p", "sites": ["Global/Other"]}, mcp_enable_writes=True
+    put = api.put(f"{CP}/{PID}/siteAssignments").respond(202, json={"response": {"taskId": "t-a"}})
+    task(api, "t-a")
+    added, _ = await preview_then_apply(
+        "catc_assign_compliance_policy", {"policy": "p", "sites": ["Global/Other"]}
     )
-    assert added["preview"]["after"] == ["Global/Lab", "Global/Lab/B1", "Global/Other"]
+    assert added["preview"]["assigned_roots_after"] == ["Global/Lab", "Global/Other"]
+    assert added["preview"]["after_including_children"] == ["Global/Lab", "Global/Lab/B1", "Global/Other"]
+    # Only root sites are sent (the GET returns the expanded set).
+    assert sorted(json.loads(put.calls.last.request.content)["siteIds"]) == sorted([LAB["id"], OTHER["id"]])
     removed = await call(
         "catc_assign_compliance_policy",
         {"policy": "p", "sites": ["Global/Lab"], "mode": "remove"},
         mcp_enable_writes=True,
     )
-    assert removed["preview"]["after"] == []
+    assert removed["preview"]["after_including_children"] == []
+    child = await call(
+        "catc_assign_compliance_policy",
+        {"policy": "p", "sites": ["Global/Lab/B1"], "mode": "remove"},
+        mcp_enable_writes=True,
+    )
+    assert child["status"] == "blocked" and "covered by an assigned parent" in child["blockers"][0]
     same = await call(
         "catc_assign_compliance_policy", {"policy": "p", "sites": ["Global/Lab"]}, mcp_enable_writes=True
     )
     assert same["status"] == "blocked"
+
+
+async def test_rollback_failure_is_reported(api: respx.MockRouter) -> None:
+    sites(api)
+    api.get(CP).respond(json={"response": []})
+    api.post(CP).respond(202, json={"response": {"taskId": "t-pol"}})
+    api.post(f"{CP}/{PID}/rules").respond(500, json={"message": "rule boom"})
+    api.delete(f"{CP}/{PID}").respond(500, json={"message": "delete boom"})
+    task(api, "t-pol", f"id={PID}")
+    with pytest.raises(ToolError, match="Rolling back also failed"):
+        await preview_then_apply("catc_create_compliance_policy", {"name": "p", "rules": RULES})
 
 
 async def test_device_violations(api: respx.MockRouter) -> None:

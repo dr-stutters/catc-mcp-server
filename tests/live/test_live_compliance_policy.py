@@ -99,4 +99,5 @@ async def test_policy_violation_and_fix(lab_rw: Client, routers: dict[str, Any])
             await _deploy(lab_rw, proj, "mcp-test-http-restore", "ip http server\n")
         with contextlib.suppress(Exception):
             await apply(lab_rw, "catc_delete_template_project", {"project": proj})
-        await apply(lab_rw, "catc_delete_compliance_policy", {"policy": policy})
+        with contextlib.suppress(Exception):
+            await apply(lab_rw, "catc_delete_compliance_policy", {"policy": policy})
