@@ -324,3 +324,25 @@ async def test_secret_without_role_is_rejected(api: respx.MockRouter) -> None:
             raise_on_error=False,
         )
     assert res.is_error and SECRET not in str(res.content)
+
+
+async def test_update_site_aaa_preview_shows_removed_secondary(api: respx.MockRouter) -> None:
+    """Core 0.12.4 replace=True: the role is sent whole, so a dropped secondary server is listed as removed,
+    and a read-back shared secret is never shown as a removal."""
+    mock_sites(api, [GLOBAL, AREA])
+    api.get("/dna/intent/api/v1/authentication-policy-servers").respond(json={"response": [ISE_SERVER]})
+    net = {
+        "serverType": "ISE",
+        "protocol": "RADIUS",
+        "primaryServerIp": "198.18.134.35",
+        "secondaryServerIp": "198.18.134.36",
+        "pan": "198.18.134.35",
+        "sharedSecret": "read-back-secret",
+    }
+    mock_aaa(api, {"aaaNetwork": net}, {"aaaNetwork": net})
+    args = {"site": "Global/AU", "network": {"server_type": "ISE", "primary": "198.18.134.35"}}
+    async with Client(rw()) as c:
+        preview = await run(c, "catc_update_site_aaa_settings", args)
+    changes = preview["preview"]["changes"]["aaaNetwork"]
+    assert changes == {"secondaryServerIp": {"from": "198.18.134.36", "to": None, "removed": True}}
+    assert "read-back-secret" not in json.dumps(preview)

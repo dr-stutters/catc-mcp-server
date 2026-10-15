@@ -182,11 +182,13 @@ def register(reg: ToolRegistrar) -> None:
         desired = {
             k: v for k, v in {"templateContent": content, "description": description}.items() if v is not None
         }
-        body = {k: v for k, v in current.items() if k not in ("validationErrors",)}
-        body.update(desired)
+        sendable = {k: v for k, v in current.items() if k not in ("validationErrors",)}
+        body = {**sendable, **desired}
+        # The PUT sends the whole template: diff what is sent against what is there (replace=True).
+        changes = field_changes(sendable, body, replace=True)
         plan = Plan(
             f"Update template {current.get('projectName')}/{current.get('name')}",
-            details={"method": "PUT", "path": f"{TP}/template", "changes": field_changes(current, desired)},
+            details={"method": "PUT", "path": f"{TP}/template", "changes": changes},
             fingerprint={"content": current.get("templateContent"), "updated": current.get("lastUpdateTime")},
         )
 
