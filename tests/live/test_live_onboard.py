@@ -52,7 +52,7 @@ async def test_onboard_switch_with_profile_template(lab_rw: Client, raw: CatcApp
     assert "`catc_create_discovery`" in text and "`catc_provision_devices`" in text
 
     profile, proj, tpl = f"mcp-test-sw-{RUN}", f"mcp-test-d3-{RUN}", "mcp-test-d3-loop"
-    disc = f"mcp-onboard-{SW}"
+    disc = f"mcp-test-onboard-{RUN}"
     profile_id = None
     try:
         # D3: a switching profile with a Day-N template, assigned to the building.

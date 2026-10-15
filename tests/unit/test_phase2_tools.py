@@ -213,6 +213,28 @@ async def test_discovery_named_credentials_single_and_summary(api: respx.MockRou
     ]
 
 
+async def test_discovery_multi_range_mix_and_bad_entry(api: respx.MockRouter) -> None:
+    mock_creds(api)
+    api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
+    preview = await call(
+        "catc_create_discovery",
+        {
+            "name": "d",
+            "ip_ranges": ["10.0.0.1", "10.0.0.5-10.0.0.9,10.0.0.20"],
+            "discovery_type": "Multi Range",
+        },
+        mcp_enable_writes=True,
+    )
+    assert (
+        preview["preview"]["body"]["ipAddressList"]
+        == "10.0.0.1-10.0.0.1,10.0.0.5-10.0.0.9,10.0.0.20-10.0.0.20"
+    )
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Not an IP"):
+        await call("catc_create_discovery", {"name": "d", "ip_ranges": ["sw1.lab"]}, mcp_enable_writes=True)
+
+
 async def test_discovery_needs_a_cli_credential(api: respx.MockRouter) -> None:
     mock_creds(api, [CREDS[1]])
     api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})

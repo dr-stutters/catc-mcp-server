@@ -42,3 +42,10 @@ async def test_onboard_prompt_renders() -> None:
 async def test_onboard_prompt_hidden_read_only() -> None:
     async with Client(create_server(make_settings())) as c:
         assert "catc_onboard_device" not in {p.name for p in await c.list_prompts()}
+
+
+async def test_onboard_prompt_range_acts_on_all_devices() -> None:
+    args = {**SAMPLES["catc_onboard_device"], "ip_or_range": "10.0.0.1-10.0.0.2"}
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        text = (await c.get_prompt("catc_onboard_device", args)).messages[0].content.text  # type: ignore[union-attr]
+    assert "devices=DEVICES" in text and "not just the first" in text

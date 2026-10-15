@@ -5,8 +5,7 @@ provisioning flow offers for devices at that site. The provisioning API (`/sda/p
 catc_provision_devices) pushes network settings only: on 3.2.2 it does not apply the profile's
 templates (checked live), so deploy them with catc_deploy_template after provisioning.
 
-Templates attached to a network profile are what provisioning applies to devices at the profile's
-sites. Switching profiles can be created through the API (`/sda/switchNetworkProfiles`, or the UI's
+Switching profiles can be created through the API (`/sda/switchNetworkProfiles`, or the UI's
 internal `/api/v1/siteprofile` when the SDA package is absent); routing and wireless ones are created
 once in the UI (Design > Network Profiles)."""
 
@@ -22,6 +21,7 @@ from stutters_mcp_core import (
     NotFound,
     Plan,
     ToolRegistrar,
+    UpstreamError,
     get_client,
     preview_or_apply,
 )
@@ -93,6 +93,24 @@ async def site_names(app: CatcApp, ids: list[str]) -> list[str]:
     return sorted(str(by_id.get(i, i)) for i in ids)
 
 
+def unique_by_id(objs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return list({str(o["id"]): o for o in objs}.values())
+
+
+async def run_each(app: CatcApp, ctx: Context, paths: list[str], what: str) -> None:
+    """DELETE each path in turn; on a failure say which ones were done and which are left."""
+    done: list[str] = []
+    for i, path in enumerate(paths):
+        try:
+            await app.run_job("DELETE", path, ctx=ctx, what=what)
+        except Exception as e:
+            raise UpstreamError(
+                f"{what} failed at {path}: {e}. Done: {done or 'none'}; not attempted: "
+                f"{paths[i + 1 :] or 'none'}. Preview again to retry the rest."
+            ) from e
+        done.append(path)
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Get network profile")
     async def catc_get_network_profile(ctx: Context, profile: ProfileRef) -> dict[str, Any]:
@@ -134,16 +152,14 @@ def register(reg: ToolRegistrar) -> None:
         )
 
         async def apply() -> Any:
+            # Fall back only when the SDA endpoint itself is missing, not on a later task-poll 404.
             try:
-                job = await app.run_job(
-                    "POST", SWITCH_PROFILES, [{"profileName": name}], ctx=ctx, what="create profile"
-                )
+                sent = await app.api.request("POST", SWITCH_PROFILES, json=[{"profileName": name}])
                 via = SWITCH_PROFILES
             except NotFound:
-                job = await app.run_job(
-                    "POST", SITE_PROFILE, site_profile_body(name), ctx=ctx, what="create profile"
-                )
+                sent = await app.api.request("POST", SITE_PROFILE, json=site_profile_body(name))
                 via = SITE_PROFILE
+            job = await app.wait_job(sent, ctx=ctx, what="create profile")
             created = [p for p in await list_profiles(app) if p.get("name") == name]
             return {"name": name, "profile_id": created[0].get("id") if created else None, "via": via, **job}
 
@@ -162,8 +178,10 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         tool = "catc_detach_template_from_profile" if detach else "catc_attach_template_to_profile"
         t = await resolve_template(app, template)
+        if not (t.get("templateId") or t.get("id")):
+            raise NotFound(f"Template {template!r} has no id.")
         tid = str(t.get("templateId") or t.get("id"))
-        targets = [await resolve_profile(app, p) for p in profiles]
+        targets = unique_by_id([await resolve_profile(app, p) for p in profiles])
         current = await template_profile_ids(app, tid)
         todo = [p for p in targets if (str(p["id"]) in current) == detach]
         skipped = [str(p["name"]) for p in targets if p not in todo]
@@ -183,7 +201,11 @@ def register(reg: ToolRegistrar) -> None:
                 "profiles": [str(p["name"]) for p in todo],
                 "unchanged": skipped,
             },
-            fingerprint=sorted(current),
+            fingerprint={
+                "template": tid,
+                "targets": sorted(str(p["id"]) for p in todo),
+                "current": sorted(current),
+            },
             blockers=blockers,
             side_effects=[]
             if detach
@@ -193,17 +215,26 @@ def register(reg: ToolRegistrar) -> None:
         async def apply() -> Any:
             ids = [str(p["id"]) for p in todo]
             if detach:
-                for pid in ids:
-                    await app.run_job(
-                        "DELETE", f"{TPL}/{tid}/networkProfilesForSites/{pid}", ctx=ctx, what="detach"
-                    )
+                await run_each(app, ctx, [f"{TPL}/{tid}/networkProfilesForSites/{i}" for i in ids], "detach")
             else:
                 body = {"items": [{"profileId": i} for i in ids]}
                 await app.run_job(
                     "POST", f"{TPL}/{tid}/networkProfilesForSites/bulk", body, ctx=ctx, what="attach"
                 )
-            after = await template_profile_ids(app, tid)
-            return {"template": t.get("name"), "attached_to": sorted(after.values())}
+            try:
+                after = await template_profile_ids(app, tid)
+            except Exception:
+                return {
+                    "template": t.get("name"),
+                    "attached_to": "unknown (re-read failed; the change was sent)",
+                }
+            out: dict[str, Any] = {"template": t.get("name"), "attached_to": sorted(after.values())}
+            missing = [i for i in ids if (i in after) == detach]
+            if missing:
+                out["warning"] = (
+                    f"Not reflected yet for profile ids {missing}; check catc_get_network_profile."
+                )
+            return out
 
         return await preview_or_apply(
             ctx,
@@ -251,7 +282,7 @@ def register(reg: ToolRegistrar) -> None:
         tool = "catc_unassign_profile_from_sites" if unassign else "catc_assign_profile_to_sites"
         p = await resolve_profile(app, profile)
         pid = str(p["id"])
-        targets = [await resolve_site(app, s) for s in sites]
+        targets = unique_by_id([await resolve_site(app, s) for s in sites])
         current = await profile_site_ids(app, pid)
         todo = [s for s in targets if (str(s["id"]) in current) == unassign]
         skipped = [str(s.get("nameHierarchy")) for s in targets if s not in todo]
@@ -271,22 +302,26 @@ def register(reg: ToolRegistrar) -> None:
                 "sites": [str(s.get("nameHierarchy")) for s in todo],
                 "unchanged": skipped,
             },
-            fingerprint=sorted(current),
+            fingerprint={
+                "profile": pid,
+                "targets": sorted(str(s["id"]) for s in todo),
+                "current": sorted(current),
+            },
             blockers=blockers,
         )
 
         async def apply() -> Any:
             ids = [str(s["id"]) for s in todo]
             if unassign:
-                for sid in ids:
-                    await app.run_job("DELETE", f"{NP}/{pid}/siteAssignments/{sid}", ctx=ctx, what="unassign")
+                await run_each(app, ctx, [f"{NP}/{pid}/siteAssignments/{i}" for i in ids], "unassign")
             else:
                 body = {"items": [{"id": i} for i in ids]}
                 await app.run_job("POST", f"{NP}/{pid}/siteAssignments/bulk", body, ctx=ctx, what="assign")
-            return {
-                "profile": p.get("name"),
-                "sites": await site_names(app, await profile_site_ids(app, pid)),
-            }
+            try:
+                sites_now = await site_names(app, await profile_site_ids(app, pid))
+            except Exception:
+                return {"profile": p.get("name"), "sites": "unknown (re-read failed; the change was sent)"}
+            return {"profile": p.get("name"), "sites": sites_now}
 
         return await preview_or_apply(
             ctx, tool=tool, args={"profile": profile, "sites": sites}, confirm=confirm, plan=plan, apply=apply

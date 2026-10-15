@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+import pytest
 import respx
 
 from .test_read_tools import call
@@ -141,3 +142,61 @@ async def test_create_switching_profile_falls_back_to_siteprofile(api: respx.Moc
     _, done = await apply("catc_create_switching_profile", {"name": "new-sw"})
     assert json.loads(route.calls.last.request.content)["namespace"] == "switching"
     assert done["result"]["profile_id"] == PID and done["result"]["via"] == "/api/v1/siteprofile"
+
+
+async def test_attach_token_refused_when_target_changes(api: respx.MockRouter) -> None:
+    """The confirm token binds the resolved profile ids, not just the names."""
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    from catc_mcp.server import create_server
+
+    from .conftest import make_settings
+
+    base(api)
+    api.get(f"/dna/intent/api/v1/templates/{TID}/networkProfilesForSites").respond(json={"response": []})
+    profiles = list(PROFILES)
+    api.get(NP).mock(side_effect=lambda r: respx.MockResponse(json={"response": profiles}))
+    args = {"template": "proj/banner", "profiles": ["mcp-sw"]}
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        preview = (await c.call_tool("catc_attach_template_to_profile", args)).structured_content
+        profiles[0] = {"id": "dddddddd-1111-2222-3333-444444444444", "name": "mcp-sw", "type": "Switching"}
+        with pytest.raises(ToolError):
+            await c.call_tool("catc_attach_template_to_profile", {**args, "confirm": preview["confirm"]})
+
+
+async def test_unassign_partial_failure_reports_progress(api: respx.MockRouter) -> None:
+    base(api)
+    site2 = {"id": "cccccccc-1111-2222-3333-555555555555", "nameHierarchy": "Global/NZ", "name": "NZ"}
+    api.get("/dna/intent/api/v1/sites").mock(
+        side_effect=lambda r: respx.MockResponse(
+            json={
+                "response": [
+                    s for s in (SITE, site2) if s["nameHierarchy"] == r.url.params.get("nameHierarchy")
+                ]
+                or [SITE, site2]
+            }
+        )
+    )
+    api.get(f"{NP}/{PID}/siteAssignments").respond(
+        json={"response": [{"id": SITE["id"]}, {"id": site2["id"]}]}
+    )
+    api.delete(f"{NP}/{PID}/siteAssignments/{SITE['id']}").respond(202, json={"response": {"taskId": "t1"}})
+    api.delete(f"{NP}/{PID}/siteAssignments/{site2['id']}").respond(500, json={"message": "boom"})
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Done: .*" + SITE["id"]):
+        await apply(
+            "catc_unassign_profile_from_sites", {"profile": "mcp-sw", "sites": ["Global/AU", "Global/NZ"]}
+        )
+
+
+async def test_create_switching_profile_no_fallback_on_500(api: respx.MockRouter) -> None:
+    api.get(NP).respond(json={"response": []})
+    api.post("/dna/intent/api/v1/sda/switchNetworkProfiles").respond(500, json={"message": "no"})
+    internal = api.post("/api/v1/siteprofile")
+    from fastmcp.exceptions import ToolError
+
+    with pytest.raises(ToolError):
+        await apply("catc_create_switching_profile", {"name": "x"})
+    assert not internal.called

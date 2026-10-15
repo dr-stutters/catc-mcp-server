@@ -31,10 +31,22 @@ def register(reg: ToolRegistrar) -> None:
         (waiting for the job), put it at a site (creating the hierarchy if needed), check the site's
         network settings, provision it, then verify with a device 360, a compliance run and show
         commands. Every write is preview-first and waits for the user's approval."""
-        first = ip_or_range.split("-")[0].strip()
+        target = ip_or_range.strip()
+        first = target.split("-")[0].strip()
+        if "-" in target:
+            devs = "DEVICES"
+            devs_note = (
+                f"DEVICES below means the management IPs of every device the discovery of {target} "
+                "found and that is Managed (step 4); act on all of them, not just the first."
+            )
+            check = f"Call {tool_ref('catc_list_devices')} and look for addresses in {target}."
+        else:
+            devs = f'["{first}"]'
+            devs_note = ""
+            check = f'Call {tool_ref("catc_get_device")} with "{first}".'
         creds = ", ".join(c for c in (cli_credential, snmp_credential) if c) or "(none named)"
         provision_step = (
-            f"""8. Provision: call {tool_ref("catc_provision_devices")} with devices=["{first}"] and
+            f"""8. Provision: call {tool_ref("catc_provision_devices")} with devices={devs} and
    site="{site_path}". Show the preview (it pushes the site's network settings: DNS, NTP, banner,
    syslog/SNMP trap/telemetry collectors) and wait for approval. Provisioning takes about 90
    seconds. It does not apply the Day-N templates of the site's network profile: if step 6 found
@@ -44,19 +56,19 @@ def register(reg: ToolRegistrar) -> None:
             if provision
             else "8. Provisioning was not requested: skip it; say the device is assigned, not provisioned."
         )
-        return f"""Onboard {ip_or_range} into Catalyst Center at {site_path}. Credentials requested: {creds}.
+        return f"""Onboard {target} into Catalyst Center at {site_path}. Credentials requested: {creds}.
 Work through the steps in order. Every write tool is preview-first: show the preview, wait for the
 user's approval, then repeat the call with the confirm token. Stop and report if a step fails.
 
-1. Is it already managed? Call {tool_ref("catc_get_device")} with "{first}". If it exists and is
-   Reachable/Managed, skip to step 5; if it exists but is unreachable, report that instead of
-   rediscovering it.
+{devs_note}
+1. Is it already managed? {check} A device that exists and is Reachable/Managed skips to
+   step 5; one that exists but is unreachable is reported instead of rediscovered.
 2. Credentials: call {tool_ref("catc_list_global_credentials")}. Use the CLI credential
    "{cli_credential or "<ask the user which one>"}" and SNMP credential
    "{snmp_credential or "<optional>"}". If one is missing, ask the user for the values and create
    it with {tool_ref("catc_create_global_credential")} (secrets are never echoed back).
-3. Discover: call {tool_ref("catc_create_discovery")} with name "mcp-onboard-{first}",
-   ip_ranges=["{ip_or_range}"], discovery_type "Range" (a single address is sent as a
+3. Discover: call {tool_ref("catc_create_discovery")} with name "onboard-{first}",
+   ip_ranges=["{target}"], discovery_type "Range" (a single address is sent as a
    one-address range; the "Single" type finds nothing on 3.2.x), global_credentials naming the
    credentials from step 2, and wait=true. One switch takes about 3 minutes, two routers about 13.
    If it times out, follow it with {tool_ref("catc_list_discoveries")} and
@@ -77,11 +89,11 @@ user's approval, then repeat the call with the confirm token. Stop and report if
    right level. Also show any network profile on the site and its templates with
    {tool_ref("catc_list_network_profiles")} / {tool_ref("catc_get_network_profile")}: those are the
    Day-N templates meant for this site (deployed in step 8).
-7. Assign: call {tool_ref("catc_assign_devices_to_site")} with devices=["{first}"] and
+7. Assign: call {tool_ref("catc_assign_devices_to_site")} with devices={devs} and
    site="{site_path}".
 {provision_step}
 9. Verify:
-   - {tool_ref("catc_device_360")} for "{first}": reachability, site, provisioning state, health
+   - {tool_ref("catc_device_360")} for each of {devs}: reachability, site, provisioning state, health
      (health can take ~5 minutes to appear for a new device);
    - {tool_ref("catc_run_compliance")} for the device, then {tool_ref("catc_get_compliance_summary")};
      NETWORK_SETTINGS should be compliant after provisioning;
