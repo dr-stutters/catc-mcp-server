@@ -1,7 +1,9 @@
 """Workflow prompts owned by this server (core `@reg.prompt`, BUILDING-A-SERVER §5a)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import ipaddress
 import json
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -12,6 +14,7 @@ from catc_mcp.common import norm_mac
 
 # Devices per change (roadmap D19's CATC_MAX_DEVICES_PER_CHANGE default).
 MAX_DEVICES_PER_CHANGE = 10
+PORT_RE = re.compile(r"[A-Za-z][A-Za-z\-]*\d+(/\d+){0,3}(\.\d+)?")
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -271,22 +274,34 @@ with the confirm token. Keep a short log of each step's result for the summary.
         its NAD in ISE, deploy an 802.1X/MAB access-port template, then verify the first
         authentication in ISE and Catalyst Center. Needs the ise MCP server too. Every write is
         preview-first."""
-        if any(ord(ch) < 32 for ch in switch_ip + site_path + access_port + test_mac):
-            raise ValueError("Arguments must not contain control characters.")
-        mac = norm_mac(test_mac)
+        texts = (switch_ip, site_path, access_port, test_mac, cli_credential, snmp_credential)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        try:
+            ip = str(ipaddress.ip_address(switch_ip.strip()))
+        except ValueError as exc:
+            raise ValueError(f"switch_ip must be an IP address: {exc}") from exc
         port = access_port.strip()
+        if not PORT_RE.fullmatch(port):
+            raise ValueError(
+                f"access_port must be an interface name such as GigabitEthernet1/0/2, not {port!r}."
+            )
+        mac = norm_mac(test_mac)
+        switch_ip = ip
         closed_line = "\n        access-session closed" if auth_mode == "closed" else ""
         creds = ", ".join(c for c in (cli_credential, snmp_credential) if c) or "(ask the user)"
         return f"""Onboard switch {switch_ip} at {site_path} with 802.1X/MAB ({auth_mode} mode) on {port}, and
 prove it with test endpoint {mac}. This needs both the catc and the ise MCP servers; if the ise
-tools are missing, say so and stop after step 6. Every write is preview-first: show the preview,
+tools are missing, say so and stop after step 5. Every write is preview-first: show the preview,
 wait for approval, then repeat the call with the confirm token. Stop and report on any failure.
 
 1. ISE integration: {tool_ref("catc_get_policy_servers")}. An ISE entry must exist with its nodes
-   TRUSTED and the integration COMPLETE. If none, ask the user for the ISE PAN IP/FQDN, a
-   super-admin login and a RADIUS shared secret and run {tool_ref("catc_add_ise_server")}; when it
+   TRUSTED and the integration COMPLETE. If none, it has to be added with
+   {tool_ref("catc_add_ise_server")} (ISE PAN IP/FQDN, a super-admin login, a RADIUS shared secret;
+   suggest the user enters the secrets themselves rather than pasting them into the chat); when it
    stops at WAITING_USER_INPUT show the certificate fingerprints and, after the user confirms them,
-   {tool_ref("catc_accept_ise_certificate")}. ISE needs ERS and the pxGrid persona.
+   {tool_ref("catc_accept_ise_certificate")}. ISE needs ERS and the pxGrid persona. Both tools are
+   dangerous tier: if they are missing here, stop and say ISE must be integrated first.
 2. Site AAA: {tool_ref("catc_get_site_settings")} with categories ["aaa"] for "{site_path}". Set
    client (endpoint) AAA to ISE with {tool_ref("catc_update_site_aaa_settings")}:
    client={{"server_type": "ISE", "protocol": "RADIUS", "primary": "<ISE PSN IP from step 1>"}}.
@@ -334,8 +349,15 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
         spanning-tree portfast
         service-policy type control subscriber MCP-NAC
    then {tool_ref("catc_commit_template")}, {tool_ref("catc_preview_template")} against the switch,
-   and {tool_ref("catc_deploy_template")} to ["{switch_ip}"]. Check with
-   "show running-config interface {port}" that the access-session lines are there.
+   and {tool_ref("catc_deploy_template")} to ["{switch_ip}"]. If the deploy fails because the switch
+   asks "This operation will permanently convert all relevant authentication commands ... Do you
+   wish to continue?" (it is still in legacy mode), tell the user, and with their approval add these
+   lines right after "dot1x system-auth-control", commit and deploy again (a switch already in
+   new-style mode rejects the convert command, so only add it when asked):
+       #INTERACTIVE
+       authentication convert-to new-style<IQ>Do you wish to continue<R>yes
+       #ENDS_INTERACTIVE
+   Check with "show running-config interface {port}" that the access-session lines are there.
 8. First authentication: have the endpoint {mac} send traffic on {port} (MAB starts on the first
    frame). Then:
    - {tool_ref("catc_run_show_commands")} "show access-session interface {port} details";
@@ -346,7 +368,7 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
      the MAB rule permits) or a rule for it ({tool_ref("ise_create_authz_rule")}), then bounce the
      port by re-triggering traffic and check again;
    - {tool_ref("ise_endpoint_360")} with mac "{mac}" (profile, group, history);
-   - {tool_ref("catc_client_360")} with "{mac}" (Catalyst Center's view: switch, port, VLAN,
+   - {tool_ref("catc_client_360")} with mac "{mac}" (Catalyst Center's view: switch, port, VLAN,
      health; it can take ~5 minutes to show up).
 9. Summary: switch onboarded (site, provisioning), AAA/ISE config on the switch, NAD in ISE,
    the port template, and the endpoint's authentication result in both products. In monitor mode

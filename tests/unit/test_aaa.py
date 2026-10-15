@@ -275,3 +275,52 @@ async def test_update_site_aaa_inherit_blocked_without_parent_value(api: respx.M
     async with Client(rw()) as c:
         out = await run(c, "catc_update_site_aaa_settings", {"site": "Global/AU", "inherit": ["client"]})
     assert out["status"] == "blocked" and "no parent site sets client AAA" in json.dumps(out["blockers"])
+
+
+async def test_read_back_secret_never_previewed_or_resent(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL, AREA])
+    api.get("/dna/intent/api/v1/authentication-policy-servers").respond(json={"response": [ISE_SERVER]})
+    net = {
+        "serverType": "ISE",
+        "protocol": "RADIUS",
+        "primaryServerIp": "198.18.134.35",
+        "pan": "198.18.134.35",
+        "sharedSecret": "read-back-secret",
+    }
+    put = mock_aaa(api, {"aaaNetwork": net}, {"aaaNetwork": net})
+    args = {"site": "Global/AU", "client": {"server_type": "ISE", "primary": "198.18.134.35"}}
+    async with Client(rw()) as c:
+        preview = await run(c, "catc_update_site_aaa_settings", args)
+        assert "read-back-secret" not in json.dumps(preview)
+        await run(c, "catc_update_site_aaa_settings", {**args, "confirm": preview["confirm"]})
+    sent = json.loads(put.calls.last.request.content)
+    assert (
+        "sharedSecret" not in sent["aaaNetwork"] and sent["aaaClient"]["primaryServerIp"] == "198.18.134.35"
+    )
+
+
+async def test_changed_secret_invalidates_confirm_token(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL, AREA])
+    api.get("/dna/intent/api/v1/authentication-policy-servers").respond(json={"response": [ISE_SERVER]})
+    put = mock_aaa(api, {}, {})
+    ise = {"server_type": "ISE", "primary": "198.18.134.35"}
+    args = {"site": "Global/AU", "client": ise, "client_shared_secret": SECRET}
+    async with Client(rw()) as c:
+        preview = await run(c, "catc_update_site_aaa_settings", args)
+        res = await c.call_tool(
+            "catc_update_site_aaa_settings",
+            {**args, "client_shared_secret": "other", "confirm": preview["confirm"]},
+            raise_on_error=False,
+        )
+    assert put.call_count == 0
+    assert res.is_error or (res.structured_content or {}).get("status") != "applied"
+
+
+async def test_secret_without_role_is_rejected(api: respx.MockRouter) -> None:
+    async with Client(rw()) as c:
+        res = await c.call_tool(
+            "catc_update_site_aaa_settings",
+            {"site": "Global/AU", "inherit": ["client"], "client_shared_secret": SECRET},
+            raise_on_error=False,
+        )
+    assert res.is_error and SECRET not in str(res.content)

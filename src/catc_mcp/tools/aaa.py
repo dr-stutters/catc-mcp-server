@@ -116,6 +116,12 @@ def _ip(name: str, v: str | None) -> str | None:
         raise InvalidRequest(f"{name}: {v!r} is not an IP address.") from e
 
 
+def _no_secrets(v: Any) -> Any:
+    if isinstance(v, dict):
+        return {k: _no_secrets(x) for k, x in v.items() if k not in ("sharedSecret", "password")}
+    return v
+
+
 def _digest(secrets: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(secrets, sort_keys=True).encode()).hexdigest()
 
@@ -306,9 +312,13 @@ def register(reg: ToolRegistrar) -> None:
             raise NotFound("No ISE integration in progress; add one with catc_add_ise_server.")
         if retry and st.get("status") != "FAILED":
             blockers.append(f"The integration is {st.get('status')}, not FAILED; nothing to retry.")
+        if retry and not accept:
+            raise InvalidRequest("retry=true retries the integration; leave accept at true.")
         if not retry and not st.get("certificate_to_accept"):
             blockers.append(f"No certificate is waiting to be accepted (status {st.get('status')}).")
-        sid = safe_id(str(st.get("server_id")), "server id")
+        if not st.get("server_id"):
+            raise NotFound("The integration status names no server id; see catc_get_policy_servers.")
+        sid = safe_id(str(st["server_id"]), "server id")
         payload: dict[str, Any] = {} if retry else {"isCertAcceptedByUser": accept}
         action = "Retry the ISE integration" if retry else ("Trust" if accept else "Reject")
         plan = Plan(
@@ -363,6 +373,8 @@ def register(reg: ToolRegistrar) -> None:
         match = [r for r in rows if ref in (r.get("ipAddress"), r.get("instanceUuid"), r.get("id"))]
         if not match:
             raise NotFound(f"No authentication and policy server {ref!r}; see catc_get_policy_servers.")
+        if len(match) > 1:
+            raise InvalidRequest(f"{ref!r} matches {len(match)} servers; give the id.")
         row = server_row(match[0])
         sid = safe_id(str(row["id"]), "server id")
         plan = Plan(
@@ -423,6 +435,10 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest("A role can't be both set and inherited.")
         if client is not None and client.protocol != "RADIUS":
             raise InvalidRequest("Client (endpoint) AAA must use RADIUS.")
+        if (network_shared_secret is not None and network is None) or (
+            client_shared_secret is not None and client is None
+        ):
+            raise InvalidRequest("A shared secret needs the matching network/client server settings.")
         s = await resolve_site(app, site)
         sid = safe_id(str(s["id"]), "site id")
         path = AAA_PATH.format(id=sid)
@@ -431,8 +447,9 @@ def register(reg: ToolRegistrar) -> None:
             local = await app.get_response(path, {"_inherited": "false"})
         except UpstreamError as e:
             raise UpstreamError(f"Can't read the AAA settings of {s.get('nameHierarchy')}: {e}") from e
-        effective = effective if isinstance(effective, dict) else {}
-        local = local if isinstance(local, dict) else {}
+        # Secrets are write-only: never carry one read back (or its mask) into a preview or a PUT.
+        effective = _no_secrets(effective) if isinstance(effective, dict) else {}
+        local = _no_secrets(local) if isinstance(local, dict) else {}
 
         servers = await policy_servers(app)
         ise_ips = {

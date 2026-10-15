@@ -138,10 +138,7 @@ def register(reg: ToolRegistrar) -> None:
         ctx: Context,
         state: Annotated[
             str | None,
-            Field(
-                description="Onboarding state, e.g. 'Unclaimed', 'Planned', 'Onboarding', "
-                "'Provisioned', 'Error'"
-            ),
+            Field(description="Device state: 'Unclaimed', 'Planned', 'Onboarding', 'Provisioned', 'Error'"),
         ] = None,
         serial: Annotated[str | None, Field(description="Serial number")] = None,
         limit: Annotated[int, Field(ge=1, le=500)] = 50,
@@ -155,7 +152,7 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {"limit": limit, "offset": offset}
         if state:
-            params["onbState"] = state
+            params["state"] = state
         if serial:
             params["serialNumber"] = serial
         data = await app.api.get("/dna/intent/api/v1/onboarding/pnp-device", params)
@@ -169,7 +166,8 @@ def register(reg: ToolRegistrar) -> None:
                     "serial": info.get("serialNumber"),
                     "pid": info.get("pid"),
                     "hostname": info.get("hostname"),
-                    "state": info.get("onbState") or info.get("state"),
+                    "state": info.get("state"),
+                    "onboarding": info.get("onbState"),
                     "site": (info.get("location") or {}).get("siteId") or info.get("siteName"),
                     "workflow": info.get("workflowName"),
                     "error": info.get("errorDetails") and str(info.get("errorDetails"))[:200],
