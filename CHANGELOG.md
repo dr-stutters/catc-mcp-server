@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1 (2026-10-15)
+
+### Changed
+- Core bumped to stutters-mcp-core 0.12.2: `<prefix>_status` reports `server.server_version`; a list's
+  "output truncated" warning is kept next to a tool's own `note`.
+- `catc_search_spec` / `catc_get_definition` descriptions use Catalyst Center examples ('network device',
+  '/dna/intent/api/v1/network-device/{id}') via the new `ServerSpec` options.
+
 ## 0.8.0 (2026-10-15)
 
 Operator-eyes quality pass (D25-D30): 12 operator tasks run against the live lab through the tools only;
