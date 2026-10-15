@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Prompt `catc_change_window(template, targets, window_end, params, rollback)` (D10): baseline ->
+  preview -> safety rails -> deploy -> status -> verify -> diff -> compliance -> issue diff -> rollback
+  plan. Live-tested on r1 + r2 (`tests/live/test_live_change_window.py`, deploy and negation rollback).
+
+### Changed
+- Core pinned to v0.3.1 (`catc_get_definition(examples=True)`).
+
 ## 0.3.0 (2026-10-15)
 
 Roadmap "Now" (D1-D6): pull-only activity lookups, network profiles, compliance policy authoring,
