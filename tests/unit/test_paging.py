@@ -58,8 +58,9 @@ async def test_device_health_cap_500_and_total(api: respx.MockRouter) -> None:
 
     route = api.get("/dna/intent/api/v1/device-health").mock(side_effect=health)
     out = await call("catc_list_device_health", {"limit": 500, "offset": 100, "response_format": "json"})
-    assert [int(c.request.url.params["limit"]) for c in route.calls] == [500]
-    assert out["total"] == 700 and out["next_offset"] == 600
+    # read whole (pages of 500) so that leaving out deleted devices keeps offsets consistent
+    assert all(int(c.request.url.params["limit"]) <= 500 for c in route.calls)
+    assert out["total"] == 700 and out["next_offset"] == 600 and out["returned"] == 500
 
 
 async def test_audit_short_last_page(api: respx.MockRouter) -> None:
