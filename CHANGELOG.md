@@ -2,6 +2,32 @@
 
 ## 0.9.0 (unreleased)
 
+### Added
+- **`catc-mcp-server check` preflight (D32, #68; core C21).** Runs without an MCP client: the token login
+  (`POST /dna/system/api/v1/auth/token`) and the Intent API, TLS trust, credentials (a static `CATC_TOKEN` warns:
+  it is never renewed), the API user's roles against the enabled tiers (built-in roles by name, custom roles by
+  their permissions, as in `catc_status`; fails when writes/dangerous are on without them, warns on an
+  administrator role or when the roles can't be read), the Catalyst Center release against the bundled API spec
+  (3.2.2 tested; 2.3.7 minimum) and the ISE integration (ok when ACTIVE, otherwise a warning; never a failure).
+  Text or `--json`, `--strict`, `--instance`; exit 1 on a failure; every `CATC_INSTANCES` Catalyst Center.
+  `serve --http` / `serve --stdio`. README quickstart for a release wheel (`uvx --from`) and for the image, with
+  Claude Code / Claude Desktop config. PyPI publishing stays open (deferred).
+- **Published image (D33, #69; core C22).** `release.yml` calls core `publish-image.yml`:
+  `ghcr.io/dr-stutters/catc-mcp-server` for amd64 and arm64, cosign keyless signature, SPDX SBOM attestation;
+  `<version>` + `latest` on releases, `<version>-rcN` + `rc` on pre-release tags. `docker-compose.yml` pulls it
+  (`MCP_IMAGE_TAG`; `--build` still builds locally).
+- **Shared-host guide and example (D34, #70).** `docs/deploying.md` (read-only defaults, per-user tokens and the
+  audit log, the token and API rate limits every caller shares, the D19 rails for teams, several Catalyst Centers
+  with `CATC_INSTANCES`, Caddy TLS, the least-privilege account step by step, upgrades and verifying signatures)
+  and `examples/shared-host/` (server + Caddy, and a test override with two mocked Catalyst Centers). Contract
+  tests pin the tier defaults (`tests/unit/test_tier_defaults.py`).
+
+### Changed
+- Bundled core v0.14.0.
+- **`docker-compose.yml` no longer enables writes.** It used to set `MCP_ENABLE_WRITES=true`; the server it starts
+  is now read-only. Operators who want the write tier set `MCP_ENABLE_WRITES=true` (and
+  `MCP_ENABLE_DANGEROUS=true` for the dangerous tier) in `.env`.
+
 ### Changed
 - **stutters-mcp-core is bundled into the package (D31, #67; core C20 / ADR-005).** The wheel, sdist and image
   carry core v0.13.0 (with the `tasks` extra's dependencies) as `catc_mcp._core`, so installing needs no git

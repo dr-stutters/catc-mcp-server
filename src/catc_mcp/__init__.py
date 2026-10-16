@@ -12,11 +12,12 @@ except ModuleNotFoundError as e:  # a source tree or git checkout without the bu
     ) from None
 
 from catc_mcp.config import Settings
+from catc_mcp.preflight import preflight
 from catc_mcp.server import SPEC, create_server
 
 
 def main() -> None:
-    run_cli(SPEC, Settings, create_server)
+    run_cli(SPEC, Settings, create_server, preflight=preflight)
 
 
 __all__ = ["SPEC", "Settings", "create_server", "main"]

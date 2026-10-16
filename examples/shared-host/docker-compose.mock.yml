@@ -1,0 +1,34 @@
+# Test override: two mocked Catalyst Centers ("default" and "lab") and a throwaway token, no real CatC needed.
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.mock.yml exec catc-mcp-server catc-mcp-server check
+#   curl -k https://localhost:8444/health
+# The mocks speak plain HTTP, so check warns about it; never use these values for a real deployment.
+services:
+  catc-mcp-server:
+    environment:
+      CATC_URL: http://catc-a:8080
+      CATC_USERNAME: mcp-catc-ro
+      CATC_PASSWORD: mock-password
+      CATC_INSTANCES: lab
+      CATC_LAB_URL: http://catc-b:8080
+      CATC_LAB_USERNAME: mcp-catc-ro
+      CATC_LAB_PASSWORD: mock-password
+      # token "mock-alice-token" (sha256 below): for this demo only
+      MCP_AUTH_TOKENS: alice:sha256:049308f729cc1bfad7f268a823b2dbe01c91fc414963c1357de2d5fa036599cb
+    depends_on:
+      - catc-a
+      - catc-b
+  caddy:
+    ports: !override
+      - "${MCP_HTTPS_PORT:-8444}:443"
+      - "${MCP_HTTP_PORT:-8089}:80"
+  catc-a:
+    image: python:3.12-slim
+    command: ["python", "/mock/appliance.py", "/mock/routes.json", "8080", "catc-a"]
+    volumes:
+      - ./mock:/mock:ro
+  catc-b:
+    image: python:3.12-slim
+    command: ["python", "/mock/appliance.py", "/mock/routes.json", "8080", "catc-b"]
+    volumes:
+      - ./mock:/mock:ro

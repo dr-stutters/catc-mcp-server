@@ -226,15 +226,17 @@ class CatcApp:
                 out["account"] = {"unavailable": str(e)[:200]}
         return out
 
-    async def account(self) -> dict[str, Any]:
-        """The API account's roles and the server tier they amount to (rbac.account_check)."""
+    async def role_tiers(self) -> dict[str, str] | None:
+        """The API account's roles and the server tier each amounts to (rbac.BUILTIN_TIERS for built-in
+        roles, rbac.permissions_tier for custom ones; "unknown" when a role can't be read), or None when
+        the account is not a local user (external/AAA login). Needs System Administration Read."""
         users = await self.get_response("/dna/system/api/v1/user")
         users = users.get("users", []) if isinstance(users, dict) else []
         me = next(
             (u for u in users if isinstance(u, dict) and u.get("username") == self.settings.username), None
         )
         if me is None:
-            return {"unavailable": "the account is not a local user (external/AAA login?)"}
+            return None
         tiers: dict[str, str] = {}
         for role in me.get("roleList") or []:
             role = str(role)
@@ -249,6 +251,13 @@ class CatcApp:
                 continue
             perms = detail.get("permissions", []) if isinstance(detail, dict) else []
             tiers[role] = permissions_tier(perms)
+        return tiers
+
+    async def account(self) -> dict[str, Any]:
+        """The API account's roles and the server tier they amount to (rbac.account_check)."""
+        tiers = await self.role_tiers()
+        if tiers is None:
+            return {"unavailable": "the account is not a local user (external/AAA login?)"}
         s = self.settings
         return account_check(tiers, enabled_tier(s.mcp_enable_writes, s.mcp_enable_dangerous))
 
