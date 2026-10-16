@@ -1,11 +1,11 @@
-"""Live wireless flow (D14) on CML lab `mcp-catc-wlc` (labs/mcp-catc-wlc.yaml): Catalyst 9800-CL
-mcp-catc-wlc 198.18.128.173, discovered into Catalyst Center (the test assigns it to mcp-test-bldg).
+"""Live wireless flow (D14) on a Catalyst 9800 WLC (CATC_LIVE_WLC, its management IP; a 9800-CL is
+enough), discovered into Catalyst Center (the test assigns it to CATC_LIVE_BUILDING).
 
 SSIDs mcp-test-catc-psk (WPA2-PSK) and mcp-test-catc-dot1x (WPA2-Enterprise) -> wireless profile ->
-assigned to mcp-test-floor1 -> WLC provisioned with that floor as its managed AP location -> `show wlan
+assigned to CATC_LIVE_FLOOR -> WLC provisioned with that floor as its managed AP location -> `show wlan
 summary` on the WLC lists both WLANs -> profile and SSIDs removed again. The WLANs stay on the WLC
 (Catalyst Center doesn't remove them when the design objects go; fixed names keep re-runs from piling
-up). No APs: CML has no CAPWAP AP.
+up). No APs needed.
 """
 
 from __future__ import annotations
@@ -17,23 +17,23 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from .conftest import require_reachable
+from .conftest import BUILDING, FLOOR, live_env, need, require_reachable
 from .test_live_writes import apply, call
 
 pytestmark = pytest.mark.live
 
-WLC = "198.18.128.173"
-BLDG = "Global/mcp-test-lab/mcp-test-bldg"
-FLOOR = f"{BLDG}/mcp-test-floor1"
+WLC = live_env("CATC_LIVE_WLC")
+BLDG = BUILDING
 PSK, DOT1X, PROFILE = "mcp-test-catc-psk", "mcp-test-catc-dot1x", "mcp-test-wl-profile"
 
 
 async def test_wireless_design_and_wlc_provisioning(lab_rw: Client[Any]) -> None:
-    require_reachable(WLC, "the 9800-CL of CML lab mcp-catc-wlc")
+    need("CATC_LIVE_WLC", "CATC_LIVE_BUILDING", "CATC_LIVE_FLOOR")
+    require_reachable(WLC, "CATC_LIVE_WLC")
     try:
         await call(lab_rw, "catc_get_device", {"device": WLC})
     except ToolError:
-        pytest.skip("the WLC is not in the inventory (catc_create_discovery for 198.18.128.173)")
+        pytest.skip(f"the WLC is not in the inventory (catc_create_discovery for {WLC})")
     try:
         out = await call(
             lab_rw,

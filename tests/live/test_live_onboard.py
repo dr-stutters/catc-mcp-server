@@ -1,10 +1,10 @@
-"""D3 + D6 live: onboard a fresh CML switch through the `catc_onboard_device` prompt's steps, with a
+"""D3 + D6 live: onboard a fresh switch through the `catc_onboard_device` prompt's steps, with a
 switching profile whose Day-N template provisioning must apply.
 
-Needs the `mcp-catc-onboard` CML lab (one cat9000v-uadp, mcp-catc-sw2 198.18.128.170, CLI
-netadmin, SNMP mcp-ro/mcp-rw like catc-routers) and the mcp-test-cli / mcp-test-snmp-ro global
-credentials. Skips when the switch can't be reached. Leaves nothing behind: the switch is deleted
-from the inventory (with its pushed config), and the profile, template project and discovery are
+Needs a switch that is not in the inventory yet (CATC_LIVE_ONBOARD_SWITCH, its management IP), reachable
+with the mcp-test-cli / mcp-test-snmp-ro global credentials, and the building CATC_LIVE_BUILDING
+(docs/live-tests.md). Skips when unset or the switch can't be reached. Leaves nothing behind: the switch
+is deleted from the inventory (with its pushed config), and the profile, template project and discovery are
 removed."""
 
 import asyncio
@@ -17,13 +17,13 @@ from fastmcp.exceptions import ToolError
 
 from catc_mcp.client import CatcApp
 
-from .conftest import require_reachable
+from .conftest import BUILDING, live_env, need, require_reachable
 from .test_live_writes import RUN, apply, call, raw  # noqa: F401 - raw is a fixture
 
 pytestmark = pytest.mark.live
 
-SW = "198.18.128.170"
-SITE = "Global/mcp-test-lab/mcp-test-bldg"
+SW = live_env("CATC_LIVE_ONBOARD_SWITCH")
+SITE = BUILDING
 LOOP = "Loopback88"
 
 
@@ -34,9 +34,10 @@ async def _creds_present(c: Client) -> bool:  # type: ignore[type-arg]
 
 
 async def test_onboard_switch_with_profile_template(lab_rw: Client, raw: CatcApp) -> None:  # type: ignore[type-arg]  # noqa: F811
-    require_reachable(SW, "sw2 of CML lab mcp-catc-onboard")
+    need("CATC_LIVE_ONBOARD_SWITCH", "CATC_LIVE_BUILDING")
+    require_reachable(SW, "CATC_LIVE_ONBOARD_SWITCH")
     if not await _creds_present(lab_rw):
-        pytest.skip("mcp-test-cli / mcp-test-snmp-ro global credentials missing (scripts/lab_state.py seed)")
+        pytest.skip("mcp-test-cli / mcp-test-snmp-ro global credentials missing (docs/live-tests.md)")
     with contextlib.suppress(ToolError):
         await call(lab_rw, "catc_get_device", {"device": SW})
         pytest.skip(f"{SW} is already in the inventory; delete it first")

@@ -1,8 +1,8 @@
 """Phase 2 live tests: onboarding objects (credentials, network settings, IP pools) on throwaway
-mcp-test-* sites, and device workflows against the CML routers of the cml-mcp-server `catc-routers`
-recipe (r1 198.18.128.152, r2 198.18.128.153), which must be discovered and reachable. The device
-tests skip themselves when they aren't (start the lab with
-`uv run --directory ../cml-mcp-server python scripts/recipes.py start catc-routers`)."""
+mcp-test-* sites, and device workflows against two managed IOS-XE routers CATC_LIVE_ROUTER1 /
+CATC_LIVE_ROUTER2 (OSPF neighbours over GigabitEthernet2; docs/live-tests.md). The device tests skip
+themselves when those are unset or not Managed and Reachable. The path trace runs between
+CATC_LIVE_PATH_TRACE ('source,dest'; default the two routers)."""
 
 import contextlib
 import json
@@ -15,20 +15,27 @@ from fastmcp.exceptions import ToolError
 
 from catc_mcp.client import CatcApp
 
+from .conftest import ROUTER1, ROUTER2, live_env, need
 from .test_live_writes import apply, call, raw  # noqa: F401 - raw is a fixture
 
 pytestmark = pytest.mark.live
 RUN = uuid.uuid4().hex[:6]
-R1, R2 = "198.18.128.152", "198.18.128.153"
-R1_LOOPBACK, R2_LOOPBACK = "10.255.255.1", "10.255.255.2"
+R1, R2 = ROUTER1, ROUTER2
+TRACE_SRC, _, TRACE_DST = live_env("CATC_LIVE_PATH_TRACE", f"{R1},{R2}").partition(",")
 
 
 @pytest.fixture
 async def routers(lab_rw: Client) -> dict[str, Any]:  # type: ignore[type-arg]
-    out = await call(lab_rw, "catc_list_devices", {"ip": "198.18.128.15.*", "response_format": "json"})
-    found = {d["managementIpAddress"]: d for d in out["results"]}
-    if any(found.get(ip, {}).get("reachabilityStatus") != "Reachable" for ip in (R1, R2)):
-        pytest.skip("CML routers r1/r2 are not managed and reachable (start the catc-routers recipe)")
+    """The two routers' inventory records, by management IP (skips unless both are Reachable)."""
+    need("CATC_LIVE_ROUTER1", "CATC_LIVE_ROUTER2")
+    found: dict[str, Any] = {}
+    for ip in (R1, R2):
+        try:
+            found[ip] = await call(lab_rw, "catc_get_device", {"device": ip})
+        except ToolError:
+            pytest.skip(f"{ip} is not in the Catalyst Center inventory")
+        if found[ip].get("reachabilityStatus") != "Reachable":
+            pytest.skip(f"{ip} is not Reachable in Catalyst Center")
     return found
 
 
@@ -89,9 +96,9 @@ async def test_credentials_and_site_assignment(lab_rw: Client, area: str, raw: C
 async def test_site_settings_update(lab_rw: Client, area: str) -> None:  # type: ignore[type-arg]
     args = {
         "site": area,
-        "dns_servers": ["198.18.133.1"],
+        "dns_servers": ["192.0.2.53"],
         "domain_name": "mcp-test.lab",
-        "ntp_servers": ["198.18.128.1"],
+        "ntp_servers": ["192.0.2.123"],
         "banner": f"mcp-test {RUN}",
         "syslog_servers": ["192.0.2.55"],
     }
@@ -104,7 +111,7 @@ async def test_site_settings_update(lab_rw: Client, area: str) -> None:  # type:
         "catc_get_site_settings",
         {"site": area, "categories": ["dns", "ntp", "banner"], "inherited": False},
     )
-    assert got["settings"]["dns"]["dns"]["dnsServers"] == ["198.18.133.1"]
+    assert got["settings"]["dns"]["dns"]["dnsServers"] == ["192.0.2.53"]
     assert got["settings"]["banner"]["banner"]["message"] == f"mcp-test {RUN}"
     again = await call(lab_rw, "catc_update_site_settings", args)
     assert again["status"] == "blocked"
@@ -149,7 +156,7 @@ async def test_platform_reads(lab_rw: Client) -> None:  # type: ignore[type-arg]
     assert "fabric_sites" in fabric
 
 
-# --- device workflows (CML routers) -----------------------------------------------------------
+# --- device workflows (CATC_LIVE_ROUTER1/2) ----------------------------------------------------
 
 
 async def test_device_troubleshooting_reads(lab_rw: Client, routers: dict[str, Any]) -> None:  # type: ignore[type-arg]
@@ -170,7 +177,7 @@ async def test_device_troubleshooting_reads(lab_rw: Client, routers: dict[str, A
     assert len(outputs) == 2
     for out in outputs.values():
         assert not out["show ip ospf neighbor"].startswith("show ")  # echo stripped
-    trace = await call(lab_rw, "catc_path_trace", {"source_ip": R1_LOOPBACK, "dest_ip": R2_LOOPBACK})
+    trace = await call(lab_rw, "catc_path_trace", {"source_ip": TRACE_SRC, "dest_ip": TRACE_DST})
     assert trace["status"] in ("COMPLETED", "FAILED")
     if trace["status"] == "COMPLETED":
         assert trace["hops"][0]["ip"] == R1
