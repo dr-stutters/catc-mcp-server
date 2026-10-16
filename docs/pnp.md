@@ -8,26 +8,37 @@ Center 3.2.2-75131 with CML lab `mcp-catc-pnp` (`tests/live/test_live_pnp.py`).
 
 | Node | What | Address |
 |---|---|---|
-| `dhcp` (Alpine) | busybox `udhcpd`, one lease for pnp1's MAC, option 43 → Catalyst Center | 198.18.128.171 (static) |
-| `pnp1` (cat8000v, empty day-0) | the device that onboards through PnP | DHCP 198.18.128.172 |
-| `mgmt-sw`, `ext` | unmanaged switch, bridge to 198.18.128.0/18 | |
+| `dhcp` (Alpine) | busybox `udhcpd`, one lease for pnp1's MAC, option 43 → Catalyst Center | 192.0.2.2 (static) |
+| `pnp1` (cat8000v, empty day-0) | the device that onboards through PnP | DHCP 192.0.2.100 |
+| `mgmt-sw`, `ext` | unmanaged switch, bridge to the management network (192.0.2.0/24 here) | |
 
 The DHCP server is runtime state: the config file survives a lab stop/start on the node's disk, but `udhcpd` isn't
-started at boot, and a rebuilt lab has neither. `scripts/pnp_dhcp.py` prints the `cml_configure_node` call that
-writes `/etc/udhcpd.conf` and starts `udhcpd`; the lab rebuild runs it (LAB-REBUILD.md, CatC section):
+started at boot, and a rebuilt lab has neither. Configure it from the node's console (CML: `cml_configure_node`
+with `mode="exec"`): write `/etc/udhcpd.conf` and start `udhcpd`:
+
+```text
+start 192.0.2.100
+end 192.0.2.100
+max_leases 1
+interface eth0
+static_lease <pnp1 MAC> 192.0.2.100
+opt subnet 255.255.255.0
+opt router <gateway>
+opt 43 <option 43, hex-encoded: see below>
+```
 
 ```bash
-cd ~/MCP-Suite/cml-mcp-server
-uv run python ~/MCP-Suite/scripts/mcp_call.py cml cml_configure_node \
-  "$(cd ~/MCP-Suite/catc-mcp-server && uv run -q python scripts/pnp_dhcp.py)" --yes
+sudo udhcpd /etc/udhcpd.conf && pgrep -l udhcpd
 ```
+
+The suite's own lab rebuild generates this step with a script kept in the private lab repo (stutters-mcp-lab).
 
 ### DHCP option 43
 
-`5A1D;B2;K4;I198.18.128.11;J80`: `5A` PnP, `1D` version, `B2` IPv4, `K4` HTTP transport, `I` server, `J` port.
-busybox udhcpd wants the string hex-encoded: `opt 43 354131443b...` (`pnp_dhcp.option43()`). Only pnp1's MAC
-(`52:54:00:cd:30:df`, pinned in the lab export) gets a lease (`start` = `end` = .172, `static_lease`), so the
-other lab devices on the bridge are never offered PnP.
+`5A1D;B2;K4;I192.0.2.10;J80` (Catalyst Center at 192.0.2.10): `5A` PnP, `1D` version, `B2` IPv4, `K4` HTTP transport, `I` server (the Catalyst
+Center IP), `J` port. busybox udhcpd wants the string hex-encoded: `opt 43 354131443b...`
+(`"5A1D;B2;K4;I<ip>;J80".encode().hex()` in Python). Only pnp1's MAC (pinned in the lab export) gets a lease
+(`start` = `end`, `static_lease`), so the other lab devices on the bridge are never offered PnP.
 
 ## Findings
 
@@ -36,7 +47,7 @@ other lab devices on the bridge are never offered PnP.
   mask. Workaround on the console (what the live test expects to be in place):
   ```text
   pnp profile pnp-zero-touch
-   transport http ipv4 198.18.128.11 port 80
+   transport http ipv4 192.0.2.10 port 80
   interface GigabitEthernet1
    ip address dhcp
   ```

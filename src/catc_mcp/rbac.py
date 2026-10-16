@@ -1,8 +1,8 @@
 """Catalyst Center RBAC: the least-privilege role definitions (roadmap D17) and the account check in
 catc_status.
 
-The three custom roles are tested in the lab (tests/live/test_least_privilege.py) and created by
-scripts/seed_access.py; docs/least-privilege.md explains every permission. Permission ids are the leaf ids of
+The three custom roles are tested in the lab (tests/live/test_least_privilege.py); docs/least-privilege.md
+explains every permission and the API calls that create them. Permission ids are the leaf ids of
 GET /dna/system/api/v2/roles/permissions (Catalyst Center 3.2.2). Anything a role doesn't list is Deny.
 """
 
@@ -62,9 +62,9 @@ DANGEROUS: dict[str, str] = {
     "System.System Settings": "Write",  # catc_add_ise_server / accept / delete policy server
 }
 ROLES: dict[str, tuple[str, dict[str, str]]] = {
-    "mcp-catc-ro": ("catc-mcp-server read tier. Managed by scripts/seed_access.py.", READ),
-    "mcp-catc-rw": ("catc-mcp-server read + write tiers. Managed by scripts/seed_access.py.", WRITE),
-    "mcp-catc-dangerous": ("catc-mcp-server every tier. Managed by scripts/seed_access.py.", DANGEROUS),
+    "mcp-catc-ro": ("catc-mcp-server read tier. Managed by the suite's seed step.", READ),
+    "mcp-catc-rw": ("catc-mcp-server read + write tiers. Managed by the suite's seed step.", WRITE),
+    "mcp-catc-dangerous": ("catc-mcp-server every tier. Managed by the suite's seed step.", DANGEROUS),
 }
 # Built-in roles (roleList names and v2 ids) and the server tier they amount to.
 BUILTIN_TIERS = {

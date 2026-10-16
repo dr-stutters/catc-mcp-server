@@ -15,8 +15,25 @@
   with `pip install --no-index` in a clean venv and runs the unit + contract suite against it. The release
   builds the image from the bundled wheel.
 
+- **Live tests take their lab inputs from `CATC_LIVE_*` variables (D35, #71).** Device addresses, site paths,
+  ISE, WLC, SD-Access fabric and PnP inputs are no longer hard-coded: each test reads documented variables and
+  skips naming the unset ones. New: `CATC_LIVE_ROUTER1`/`2`, `CATC_LIVE_PATH_TRACE`, `CATC_LIVE_BUILDING`,
+  `CATC_LIVE_FLOOR`, `CATC_LIVE_CLIENT_MAC`, `CATC_LIVE_ONBOARD_SWITCH`, `CATC_LIVE_ISE_IP`/`_FQDN`/`_USERNAME`/
+  `_PASSWORD`, `CATC_LIVE_RADIUS_SECRET`, `CATC_LIVE_WLC`, `CATC_LIVE_FABRIC_BUILDING`/`_BORDER`/`_EDGE`/`_POOL`/
+  `_PORT`, `CATC_LIVE_PNP_SERIAL`, `CATC_LIVE_DEVICE_USERNAME`/`_PASSWORD`, `CATC_LIVE_SNMP_RO`/`_RW` and
+  `CATC_LIVE_RMA_DEVICE` (with the existing `CATC_LIVE_ISE_CYCLE` and `CATC_LIVE_RMA`). They replace the
+  `LAB_ISE_*`, `LAB_RADIUS_SECRET` and `LAB_CLI_*`/`LAB_SNMP_*` keys the tests read. All listed in the new
+  [docs/live-tests.md](docs/live-tests.md) and in `.env.example`.
+- `docs/least-privilege.md` describes the API steps that create the roles, access groups and users; `docs/pnp.md`
+  describes the PnP DHCP server and option 43 without lab addresses. The roles' descriptions in `rbac.py` say
+  "Managed by the suite's seed step".
+
 ### Removed
 - The git source for stutters-mcp-core and `CORE_READ_TOKEN` (Dockerfile build secret, compose, workflows).
+- **Lab tooling moved to the suite's private lab repo (stutters-mcp-lab) (D35, #71):** `scripts/lab_state.py`,
+  `scripts/seed_access.py`, `scripts/pnp_dhcp.py`, their unit test (`tests/unit/test_lab_state.py`) and the CML
+  lab exports `labs/mcp-catc-fabric.yaml` / `labs/mcp-catc-wlc.yaml`. The `LAB_*` keys are gone from
+  `.env.example`.
 
 ## 0.8.3 (2026-10-15)
 

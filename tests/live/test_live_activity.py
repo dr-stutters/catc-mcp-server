@@ -1,8 +1,8 @@
 """D2 live tests: catc_recent_activity / catc_list_event_notifications against the lab.
 
-The link test shuts r2 GigabitEthernet2 (the r1-r2 OSPF link of the `catc-routers` recipe) with a
+The link test shuts GigabitEthernet2 of CATC_LIVE_ROUTER2 (its OSPF link to CATC_LIVE_ROUTER1) with a
 throwaway Catalyst Center template, waits for the issue/syslog to show up in catc_recent_activity,
-and brings the link back up. It skips when the CML routers aren't managed and reachable."""
+and brings the link back up. It skips when the routers are unset or not managed and reachable."""
 
 import asyncio
 import contextlib
@@ -62,7 +62,7 @@ async def test_link_down_shows_in_recent_activity(
             if seen["event"] and seen["alert"]:
                 break
             await asyncio.sleep(30)
-        assert seen.get("event"), "no syslog event for Gi2 on r2"
+        assert seen.get("event"), f"no syslog event for Gi2 on {R2}"
         assert seen.get("alert"), "no issue/notification for the link going down"
     finally:
         with contextlib.suppress(Exception):

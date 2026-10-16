@@ -1,5 +1,6 @@
-"""D4 live: a "no ip http server" compliance policy on mcp-test-lab gives r1 a violation; a template
-fix makes it compliant; the http server is put back and everything mcp-test-* is removed."""
+"""D4 live: a "no ip http server" compliance policy on the area above CATC_LIVE_BUILDING gives
+CATC_LIVE_ROUTER1 (assigned to that building) a violation; a template fix makes it compliant; the http
+server is put back and everything mcp-test-* is removed."""
 
 import asyncio
 import contextlib
@@ -8,11 +9,12 @@ from typing import Any
 import pytest
 from fastmcp import Client
 
+from .conftest import BUILDING, need, parent_site
 from .test_live_phase2 import R1, RUN, routers  # noqa: F401 - fixture
 from .test_live_writes import apply, call
 
 pytestmark = pytest.mark.live
-SITE = "Global/mcp-test-lab"
+SITE = parent_site(BUILDING)
 
 
 async def _violations(c: Client, policy: str) -> list[dict[str, Any]]:  # type: ignore[type-arg]
@@ -41,6 +43,7 @@ async def _deploy(c: Client, proj: str, name: str, content: str) -> None:  # typ
 
 
 async def test_policy_violation_and_fix(lab_rw: Client, routers: dict[str, Any]) -> None:  # type: ignore[type-arg]  # noqa: F811
+    need("CATC_LIVE_BUILDING")
     policy, proj = f"mcp-test-no-http-{RUN}", f"mcp-test-d4-{RUN}"
     rules = [
         {
@@ -72,14 +75,15 @@ async def test_policy_violation_and_fix(lab_rw: Client, routers: dict[str, Any])
         # Make sure the router has the http server on, then expect a violation.
         await _deploy(lab_rw, proj, "mcp-test-http-on", "ip http server\n")
         bad = await _violations(lab_rw, policy)
-        assert bad, "no violation for ip http server on r1"
+        assert bad, f"no violation for ip http server on {R1}"
         assert bad[0]["severity"] == "MAJOR" and "ip http server" in bad[0]["message"], bad
         at_site = await call(
             lab_rw,
             "catc_list_compliance_violations",
-            {"policy": policy, "site": SITE + "/mcp-test-bldg", "response_format": "json"},
+            {"policy": policy, "site": BUILDING, "response_format": "json"},
         )
-        assert any(r.get("device") == "r1.mcp.lab" for r in at_site["results"]), at_site
+        r1_name = routers[R1].get("hostname")
+        assert any(r.get("device") == r1_name for r in at_site["results"]), at_site
         # The fix: turn it off and re-run compliance.
         await _deploy(lab_rw, proj, "mcp-test-http-off", "no ip http server\n")
         await apply(lab_rw, "catc_run_compliance", {"devices": [R1]})

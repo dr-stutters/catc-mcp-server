@@ -13,21 +13,21 @@ roles, the tier they amount to and a **warning when the role allows more than th
 (`catc.account`). MCP-side roles (`MCP_ROLES`, core docs/PRODUCTION.md) restrict *callers*; this guide
 restricts *the server itself*. Use both.
 
-The three roles are defined in code (`src/catc_mcp/rbac.py`), created by `scripts/seed_access.py`, and checked
-by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2.2-75131** (dCloud), 2026-10-15.
+The three roles are defined in code (`src/catc_mcp/rbac.py`), created through the API calls in section 4, and
+checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2.2-75131** (dCloud), 2026-10-15.
 
 ## How Catalyst Center RBAC works (what we found)
 
 - A role is a list of leaf permissions (`GET /dna/system/api/v2/roles/permissions`: 40 on 3.2.2, e.g.
   `Network Management.Inventory`), each `Deny`, `Read` or `Write`. Catalyst Center stores only the non-Deny
   ones. Some have a floor or a ceiling (`Network Management.Hierarchy` minimum Read, `Network Provision.Network-wide
-  Config` maximum Read). The seed script sends **every** leaf permission (unlisted ones as Deny), so an upgrade
-  that adds a permission with a Read default doesn't silently widen the role.
+  Config` maximum Read). Send **every** leaf permission when you create or update a role (unlisted ones as Deny), so an
+  upgrade that adds a permission with a Read default doesn't silently widen the role.
 - A user needs an **access group** binding its role to a scope (`/dna/system/api/v1/accessGroups`, scope = the
   Global site here). A user created through the API with only `roleList` gets `accessGroups: [""]`: it logs in and
   reads fine, but some writes fail *inside* Catalyst Center (tag creation: `Failed to add members based on the rules.
-  java.lang.NullPointerException`), for custom and built-in roles alike. The seed script creates
-  `<role>_GLOBAL` access groups and assigns them.
+  java.lang.NullPointerException`), for custom and built-in roles alike. Create a
+  `<role>_GLOBAL` access group per role and assign it to the user.
 - Password policy: no more than two consecutive characters of the user name or full name.
 - A denied API call returns HTTP 403 "Role does not have valid permissions to access the API"; the server reports
   it as "Catalyst Center denied access (403) on <METHOD> <path>".
@@ -86,7 +86,7 @@ Everything in `mcp-catc-ro`, plus Write on:
 
 **Stays Read (dangerous-only):** Network Provision.Device Provision, Network Operations.PnP, Network Provision.SD-Access,
 System.System Settings. So Catalyst Center itself refuses provisioning, PnP claims and ISE integration changes to this
-account (tested: re-provisioning r1 as `mcp-catc-rw` → 403).
+account (tested: re-provisioning a router as `mcp-catc-rw` → 403).
 
 Catalyst Center's permissions don't line up exactly with the server's tiers: Hierarchy Write also allows deleting
 sites, and Inventory Write allows deleting devices. Those tools are in the server's dangerous tier, so with
@@ -105,7 +105,7 @@ SWIM Write (already in rw). Prefer a separate server instance (token, container)
 GUI: *System > Users & Roles > Role Based Access Control > Create a New Role* (set each permission as in the
 tables; everything else Deny), then *User Management > Add* with that role.
 
-API (what `scripts/seed_access.py` does, idempotently, as a SUPER-ADMIN from `.env`):
+API, as a SUPER-ADMIN (create each object only if it is missing, so the steps can be re-run):
 
 ```bash
 POST /dna/system/api/v2/roles          {"name": "mcp-catc-ro", "description": "...", "permissions": [{"id": "Assurance.Monitoring", "privilege": "Read"}, ...]}
@@ -114,15 +114,19 @@ POST /dna/system/api/v1/accessGroups   {"name": "mcp-catc-ro_GLOBAL", "role": ["
 POST /dna/system/api/v1/user           {"username": "mcp-catc-ro", "password": "...", "firstName": "mcp", "lastName": "mcp-catc-ro", "roleList": ["mcp-catc-ro"], "accessGroups": ["<group id>"]}
 ```
 
-```bash
-uv run python scripts/seed_access.py           # create/update roles, access groups and users
-uv run python scripts/seed_access.py --check   # differences only
-uv run python scripts/seed_access.py --delete  # remove them
-```
+1. `GET /dna/system/api/v2/roles/permissions` for the leaf permission ids, then build each role's body from
+   `ROLES` in `src/catc_mcp/rbac.py`: the listed privilege, every other leaf permission `Deny` (clamped to the
+   permission's `minimumPrivilege` / `maximumPrivilege`).
+2. `GET /dna/system/api/v2/roles`: POST the roles that are missing; for an existing one, compare its permissions
+   (`GET /dna/system/api/v2/roles/{id}`; Catalyst Center omits Deny entries) and PUT when they differ.
+3. `GET /dna/system/api/v1/accessGroups`: POST the missing `<role>_GLOBAL` groups, then read them back for their ids.
+4. `GET /dna/system/api/v1/user`: POST missing users with their role and access group; PUT existing ones whose
+   `roleList` / `accessGroups` differ (the user PUT can't change a password: delete and re-create the user to
+   reset it). Never change the admin you run as, or an account with a built-in role.
 
-Users and passwords come from `.env`: `CATC_RO_USERNAME`/`CATC_RO_PASSWORD`, `CATC_RW_USERNAME`/`CATC_RW_PASSWORD`,
-`CATC_ADMIN_USERNAME`/`CATC_ADMIN_PASSWORD`. On hosted servers store the password as a Docker secret
-(`CATC_PASSWORD_FILE`), not in `.env`.
+Removing them is the reverse: DELETE the users, then the access groups, then the roles. On hosted servers store
+the server's password as a Docker secret (`CATC_PASSWORD_FILE`), not in `.env`. The live test reads the accounts
+as `CATC_RO_USERNAME`/`CATC_RO_PASSWORD` and `CATC_RW_USERNAME`/`CATC_RW_PASSWORD` ([live-tests.md](live-tests.md)).
 
 ## 5. Verify
 
@@ -134,8 +138,8 @@ uv run pytest -m live tests/live/test_least_privilege.py -v -s
   (core `assert_read_tier_works`) and checks that write tools are hidden; `catc_preview_template` must be the only
   403. Result on 3.2.2-75131: **ok 53, denied 0, errors 0, skipped 6** (5 need ids from earlier calls, plus the
   expected preview denial, asserted separately).
-- `test_write_tier_as_rw_user`: as `mcp-catc-rw`, creates and deletes a tag and an area; re-provisioning r1 is
-  refused by Catalyst Center (403).
+- `test_write_tier_as_rw_user`: as `mcp-catc-rw`, creates and deletes a tag and an area; re-provisioning
+  `CATC_LIVE_ROUTER1` is refused by Catalyst Center (403).
 - Whole live suite per account: `CATC_USERNAME=mcp-catc-rw CATC_PASSWORD=... uv run pytest tests/live -m live`
   (results below).
 
@@ -150,4 +154,5 @@ with only Hierarchy Write): Catalyst Center treats floors as wireless maps. Both
 
 ## 6. Lab rebuild
 
-`scripts/seed_access.py` is part of the Catalyst Center rebuild step (`~/MCP-Suite/LAB-REBUILD.md`, CatC section).
+Recreate the roles, access groups and users (section 4) whenever the Catalyst Center is rebuilt. The suite's own
+seed script for this, part of its lab rebuild, lives in the private lab repo (stutters-mcp-lab).
