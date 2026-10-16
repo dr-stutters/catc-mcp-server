@@ -15,7 +15,8 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     NotFound,
     Plan,
@@ -26,9 +27,8 @@ from stutters_mcp_core import (
     poll_until,
     preview_or_apply,
 )
-from stutters_mcp_core.formatting import MASK, is_secret_key
-from stutters_mcp_core.http import page_of
-
+from catc_mcp._core.formatting import MASK, is_secret_key
+from catc_mcp._core.http import page_of
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, is_uuid, resolve_device, resolve_site, resolve_template
 from catc_mcp.safety import device_limit_blockers

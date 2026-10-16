@@ -10,7 +10,8 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     InvalidRequest,
     ResponseFormat,
     ToolRegistrar,
@@ -19,8 +20,7 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
-from stutters_mcp_core.http import fetch_all, page_of
-
+from catc_mcp._core.http import fetch_all, page_of
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import (
     PAGE_DEVICE_HEALTH,

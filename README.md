@@ -23,10 +23,20 @@ rest of the Intent API. `docs/GAP-ANALYSIS.md` maps the whole 3.2.2 API to the t
 
 ```bash
 git clone https://github.com/dr-stutters/catc-mcp-server && cd catc-mcp-server
+python3 scripts/bundle_core.py vendor    # bundles the pinned stutters-mcp-core as catc_mcp._core (needs git)
 uv sync
 cp .env.example .env && chmod 600 .env   # set CATC_URL, CATC_USERNAME, CATC_PASSWORD
 uv run catc-mcp-server check             # logs in and prints catc_status as JSON
 ```
+
+The shared [stutters-mcp-core](https://github.com/dr-stutters/stutters-mcp-core) library (with its `tasks` extra) is
+**bundled** into the package as `catc_mcp._core` (core ADR-005): the wheel, the sdist and the Docker image need
+nothing but their PyPI dependencies, with no git dependency and no token. `uv build` writes a wheel that installs on
+its own (`pip install dist/catc_mcp_server-*.whl`), with the Catalyst Center spec bundle included as before; every
+GitHub release has one attached. The pinned core tag is `[tool.bundle-core]` in `pyproject.toml` and `catc_status`
+reports it as `core_version`. The vendored copy is generated, not committed: `scripts/bundle_core.py vendor` writes
+it, `check` reports drift, and `update --tag vX.Y.Z` moves the pin (then `uv lock`). A plain git checkout has no
+`catc_mcp/_core`, so install from a release wheel rather than `git+https://...`.
 
 ### Claude Code (stdio)
 
@@ -350,12 +360,12 @@ repository only covers the Assurance APIs. To refresh it for another release, ex
 
 ```bash
 uv run catc-mcp-server token reptar        # put the sha256 line in .env as MCP_AUTH_TOKENS=...
-CORE_READ_TOKEN=$(gh auth token) docker compose up -d --build
+docker compose up -d --build               # no token: the image is built from the bundled wheel
 curl -s http://localhost:8034/health
 ```
 
 The compose file runs the container read-only, non-root, with all capabilities dropped; writes are on
-and the dangerous tier is off. `CORE_READ_TOKEN` is only needed while stutters-mcp-core is private.
+and the dangerous tier is off.
 
 ## Development
 

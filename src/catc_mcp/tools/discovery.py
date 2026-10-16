@@ -6,9 +6,9 @@ from typing import Annotated, Any
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import NotFound, ResponseFormat, ToolRegistrar, get_client, list_result
-from stutters_mcp_core.http import Page
 
+from catc_mcp._core import NotFound, ResponseFormat, ToolRegistrar, get_client, list_result
+from catc_mcp._core.http import Page
 from catc_mcp.client import CatcApp
 from catc_mcp.common import ensure_list, is_uuid, pick
 

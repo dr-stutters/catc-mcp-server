@@ -6,7 +6,8 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     NotFound,
     ResponseFormat,
     ToolRegistrar,
@@ -15,8 +16,7 @@ from stutters_mcp_core import (
     list_result,
     object_result,
 )
-from stutters_mcp_core.http import fetch_all, page_of
-
+from catc_mcp._core.http import fetch_all, page_of
 from catc_mcp.client import CatcApp, exec_summary, safe_id, task_summary
 from catc_mcp.common import PAGE_AUDIT, resolve_device, resolve_site, window
 from catc_mcp.tools.activity import AUDIT_SCAN_CAP, audit_kind, audit_rows, fetch_audit

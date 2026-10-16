@@ -7,7 +7,8 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     ResponseFormat,
     ToolRegistrar,
     UpstreamError,
@@ -15,9 +16,8 @@ from stutters_mcp_core import (
     object_result,
     text_result,
 )
-from stutters_mcp_core.formatting import dumps
-from stutters_mcp_core.http import fetch_all
-
+from catc_mcp._core.formatting import dumps
+from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp
 from catc_mcp.common import resolve_site
 from catc_mcp.tools.credentials import all_credentials

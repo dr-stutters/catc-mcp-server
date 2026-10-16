@@ -17,8 +17,8 @@ from typing import Any
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from stutters_mcp_core.testing import live_settings
 
+from catc_mcp._core.testing import live_settings
 from catc_mcp.config import Settings
 from catc_mcp.server import create_server
 

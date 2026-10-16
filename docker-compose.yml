@@ -2,7 +2,7 @@
 #
 #   .env needs CATC_URL/USERNAME/PASSWORD (+ CATC_VERIFY_SSL=false for labs) and MCP_AUTH_TOKENS
 #   (generate with `catc-mcp-server token <name>`).
-#   CORE_READ_TOKEN=$(gh auth token) docker compose up -d --build
+#   docker compose up -d --build
 #
 # Writes are on (preview-first); the dangerous tier (deploy, provision, SWIM, deletes) stays off.
 # The container logs in as the least-privilege write account (role mcp-catc-rw, docs/least-privilege.md)
@@ -11,8 +11,6 @@ services:
   catc-mcp-server:
     build:
       context: .
-      secrets:
-        - core_read_token
     image: catc-mcp-server:latest
     container_name: catc-mcp
     restart: unless-stopped
@@ -38,10 +36,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-
-secrets:
-  core_read_token:
-    environment: CORE_READ_TOKEN
 
 volumes:
   spec-cache:

@@ -11,7 +11,8 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import Context
 from pydantic import BaseModel, Field, SecretStr
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     NotFound,
@@ -23,8 +24,7 @@ from stutters_mcp_core import (
     poll_until,
     preview_or_apply,
 )
-from stutters_mcp_core.formatting import MASK
-
+from catc_mcp._core.formatting import MASK
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, pick, resolve_site
 

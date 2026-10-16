@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 (unreleased)
+
+### Changed
+- **stutters-mcp-core is bundled into the package (D31, #67; core C20 / ADR-005).** The wheel, sdist and image
+  carry core v0.12.4 (with the `tasks` extra's dependencies) as `catc_mcp._core`, so installing needs no git
+  dependency and Docker needs no `CORE_READ_TOKEN`. The pin is `[tool.bundle-core]` (tag + commit + extras) in
+  `pyproject.toml`; core's runtime dependencies are listed in the server's own. `scripts/bundle_core.py` vendors it
+  (`vendor`, after a clone), checks for drift (`check`) and moves the pin (`update --tag`). Code and tests import
+  `catc_mcp._core`; importing the package without the bundle says how to fix it. The bundled Catalyst Center spec
+  (`scripts/bundle_spec.py`) still ships in the wheel.
+- `catc_status` reports the bundled core version (`server.core_version`).
+- CI: the core `bundle-core.yml` job vendors, fails on drift, builds the wheel and sdist, installs the wheel
+  with `pip install --no-index` in a clean venv and runs the unit + contract suite against it. The release
+  builds the image from the bundled wheel.
+
+### Removed
+- The git source for stutters-mcp-core and `CORE_READ_TOKEN` (Dockerfile build secret, compose, workflows).
+
 ## 0.8.3 (2026-10-15)
 
 ### Fixed

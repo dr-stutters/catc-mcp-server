@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from pydantic import Field
-from stutters_mcp_core import Tier, ToolRegistrar, tool_ref
 
+from catc_mcp._core import Tier, ToolRegistrar, tool_ref
 from catc_mcp.common import norm_mac
 
 # Devices per change (roadmap D19's CATC_MAX_DEVICES_PER_CHANGE default).
