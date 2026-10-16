@@ -1,0 +1,10 @@
+{
+  "POST /dna/system/api/v1/auth/token": {"json": {"Token": "mock-x-auth-token-__NAME__"}},
+  "GET /dna/intent/api/v1/dnac-release": {"json": {"response": {"displayVersion": "3.2.2", "installedVersion": "3.2.2-75131", "systemVersion": "3.2.2-75131"}}},
+  "GET /dna/intent/api/v1/network-device/count": {"json": {"response": 2}},
+  "GET /dna/intent/api/v1/sites/count": {"json": {"response": {"count": 4}}},
+  "GET /dna/system/api/v1/user": {"json": {"response": {"users": [{"username": "mcp-catc-ro", "firstName": "mcp", "lastName": "__NAME__", "roleList": ["mcp-catc-ro"]}]}}},
+  "GET /dna/system/api/v2/roles/mcp-catc-ro": {"json": {"response": {"name": "mcp-catc-ro", "description": "catc-mcp-server read tier", "permissions": [{"id": "Assurance.Monitoring", "privilege": "Read"}, {"id": "Extensions.Intent API", "privilege": "Read"}, {"id": "Network Management.Inventory", "privilege": "Read"}, {"id": "System.System Administration", "privilege": "Read"}, {"id": "System.System Settings", "privilege": "Read"}]}}},
+  "GET /dna/intent/api/v1/authentication-policy-servers": {"json": {"response": [{"ipAddress": "192.0.2.10", "isIseEnabled": true, "state": "ACTIVE", "protocol": "RADIUS", "role": "primary", "pxgridEnabled": true, "ciscoIseDtos": [{"role": "PRIMARY", "fqdn": "ise.__NAME__.example.com", "trustState": "TRUSTED"}]}]}},
+  "GET /dna/intent/api/v1/networkDeviceConfigFiles": {"json": {"response": []}}
+}

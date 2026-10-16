@@ -1,17 +1,22 @@
-# catc-mcp-server over streamable HTTP on cortex (host port 8034).
+# catc-mcp-server: docker compose for one Catalyst Center over streamable HTTP (host port 8034).
+# Shared hosts (TLS, several Catalyst Centers, per-user tokens, upgrades): docs/deploying.md.
 #
-#   .env needs CATC_URL/USERNAME/PASSWORD (+ CATC_VERIFY_SSL=false for labs) and MCP_AUTH_TOKENS
-#   (generate with `catc-mcp-server token <name>`).
-#   docker compose up -d --build
+#   cp .env.example .env && chmod 600 .env   # CATC_URL/USERNAME/PASSWORD and MCP_AUTH_TOKENS (one token per person)
+#   docker compose up -d            # pulls ghcr.io/dr-stutters/catc-mcp-server (MCP_IMAGE_TAG, default latest)
+#   docker compose up -d --build    # or build from this checkout (MCP_PULL_POLICY=build keeps the local image)
+#   docker compose exec catc-mcp-server catc-mcp-server check
 #
-# Writes are on (preview-first); the dangerous tier (deploy, provision, SWIM, deletes) stays off.
+# Read-only unless .env sets MCP_ENABLE_WRITES=true (and MCP_ENABLE_DANGEROUS=true for deploy, provision,
+# SWIM, PnP claims and deletes). Every write is preview-first.
 # The container logs in as the least-privilege write account (role mcp-catc-rw, docs/least-privilege.md)
-# when CATC_RW_USERNAME/CATC_RW_PASSWORD are in .env (set both or neither), else as CATC_USERNAME.
+# when CATC_RW_USERNAME/CATC_RW_PASSWORD are in .env (set both or neither, and only with writes on), else as
+# CATC_USERNAME (role mcp-catc-ro for a read-only server).
 services:
   catc-mcp-server:
+    image: ghcr.io/dr-stutters/catc-mcp-server:${MCP_IMAGE_TAG:-latest}
+    pull_policy: ${MCP_PULL_POLICY:-always}
     build:
       context: .
-    image: catc-mcp-server:latest
     container_name: catc-mcp
     restart: unless-stopped
     env_file: .env
@@ -20,8 +25,6 @@ services:
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
       MCP_CACHE_DIR: /cache
-      MCP_ENABLE_WRITES: "true"
-      MCP_ENABLE_DANGEROUS: "false"
       MCP_METRICS: "true"
       CATC_USERNAME: ${CATC_RW_USERNAME:-${CATC_USERNAME}}
       CATC_PASSWORD: ${CATC_RW_PASSWORD:-${CATC_PASSWORD}}
