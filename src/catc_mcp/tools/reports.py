@@ -14,7 +14,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from fastmcp import Context
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     NotFound,
@@ -28,8 +29,7 @@ from stutters_mcp_core import (
     object_result,
     preview_or_apply,
 )
-from stutters_mcp_core.http import page_of
-
+from catc_mcp._core.http import page_of
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list
 

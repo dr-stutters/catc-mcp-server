@@ -14,7 +14,8 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import Context
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     NotFound,
@@ -24,8 +25,7 @@ from stutters_mcp_core import (
     get_client,
     preview_or_apply,
 )
-from stutters_mcp_core.http import fetch_all
-
+from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, resolve_device, resolve_site
 from catc_mcp.safety import device_limit_blockers

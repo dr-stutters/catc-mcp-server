@@ -11,9 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from stutters_mcp_core import InvalidRequest
-from stutters_mcp_core.http import fetch_all
-
+from catc_mcp._core import InvalidRequest
+from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp
 from catc_mcp.common import ensure_list, resolve_device, resolve_site, resolve_tag
 from catc_mcp.tools.sites import all_sites

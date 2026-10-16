@@ -8,7 +8,8 @@ from zoneinfo import available_timezones
 
 from fastmcp import Context
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     Plan,
@@ -18,7 +19,6 @@ from stutters_mcp_core import (
     get_client,
     preview_or_apply,
 )
-
 from catc_mcp.client import CatcApp
 from catc_mcp.common import resolve_site
 from catc_mcp.tools.sites import SETTINGS

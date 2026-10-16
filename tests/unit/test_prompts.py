@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 from fastmcp import Client
 from mcp.shared.exceptions import MCPError
-from stutters_mcp_core.testing import (
+
+from catc_mcp._core.testing import (
     assert_inbound_references,
     assert_prompt_contract,
     assert_prompt_snapshots,
     load_tool_manifests,
 )
-
 from catc_mcp.server import create_server
 
 from .conftest import make_settings

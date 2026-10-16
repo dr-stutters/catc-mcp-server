@@ -1,8 +1,8 @@
 import httpx
 import pytest
 import respx
-from stutters_mcp_core import AuthError, TaskFailed, UpstreamTimeout, ValidationFailed
 
+from catc_mcp._core import AuthError, TaskFailed, UpstreamTimeout, ValidationFailed
 from catc_mcp.client import CatcApp, catc_error_detail, job_ref
 
 from .conftest import make_settings
@@ -118,7 +118,7 @@ async def test_wait_execution_and_timeout(api: respx.MockRouter) -> None:
 
 
 async def test_bad_ids_refused(api: respx.MockRouter) -> None:
-    from stutters_mcp_core import InvalidRequest
+    from catc_mcp._core import InvalidRequest
 
     app = CatcApp(make_settings())
     with pytest.raises(InvalidRequest):
@@ -127,8 +127,7 @@ async def test_bad_ids_refused(api: respx.MockRouter) -> None:
 
 
 async def test_get_task_auto_falls_back_to_execution(api: respx.MockRouter) -> None:
-    from stutters_mcp_core.testing import call_tool
-
+    from catc_mcp._core.testing import call_tool
     from catc_mcp.server import create_server
 
     api.get("/dna/intent/api/v1/task/e9").respond(404, json={"response": {"errorCode": "INVALID_TASK"}})

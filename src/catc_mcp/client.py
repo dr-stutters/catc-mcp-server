@@ -19,14 +19,15 @@ from urllib.parse import quote
 
 import httpx
 from fastmcp import Context
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     InvalidRequest,
     TaskFailed,
     UpstreamError,
     UpstreamTimeout,
     poll_until,
 )
-from stutters_mcp_core.http import (
+from catc_mcp._core.http import (
     ApiClient,
     LoginTokenAuth,
     OffsetLimit,
@@ -35,7 +36,6 @@ from stutters_mcp_core.http import (
     Token,
     basic_header,
 )
-
 from catc_mcp.config import Settings
 from catc_mcp.rbac import BUILTIN_TIERS, account_check, enabled_tier, permissions_tier
 

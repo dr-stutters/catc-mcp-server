@@ -1,5 +1,8 @@
-from stutters_mcp_core.testing import assert_tool_contract, call_tool
+import importlib.resources
+import json
 
+from catc_mcp._core import __version__ as core_version
+from catc_mcp._core.testing import assert_tool_contract, call_tool
 from catc_mcp.server import create_server
 
 from .conftest import make_settings
@@ -30,3 +33,11 @@ async def test_status_does_not_leak_secrets(api) -> None:  # type: ignore[no-unt
     assert "3.2.2-75131" in text
     assert "pw" not in text.replace("password", "") and "tok-123" not in text
     assert out["catc"]["devices"] == 0
+
+
+async def test_status_reports_the_bundled_core(api) -> None:  # type: ignore[no-untyped-def]
+    """D31: core is bundled as catc_mcp._core; status reports that copy's version."""
+    out = await call_tool(create_server(make_settings()), "catc_status")
+    bundle = json.loads((importlib.resources.files("catc_mcp._core") / "BUNDLE.json").read_text())
+    assert out["server"]["core_version"] == core_version == bundle["version"]
+    assert "tasks" in bundle["extras"]
