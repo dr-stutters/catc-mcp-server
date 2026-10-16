@@ -8,7 +8,8 @@ from typing import Annotated, Any, Literal
 
 from fastmcp import Context
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     NotFound,
@@ -18,7 +19,6 @@ from stutters_mcp_core import (
     get_client,
     preview_or_apply,
 )
-
 from catc_mcp.client import CatcApp
 from catc_mcp.common import ensure_list, list_all_templates, resolve_project, resolve_template
 from catc_mcp.tools.templates import TemplateRef

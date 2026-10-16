@@ -137,7 +137,7 @@ def test_show_allowed(cmd: str) -> None:
     ],
 )
 def test_show_refused(cmd: str) -> None:
-    from stutters_mcp_core import InvalidRequest
+    from catc_mcp._core import InvalidRequest
 
     with pytest.raises(InvalidRequest):
         check_show_command(cmd)
@@ -506,7 +506,7 @@ def test_redact_more_forms() -> None:
 
 
 def test_show_refuses_control_chars() -> None:
-    from stutters_mcp_core import InvalidRequest
+    from catc_mcp._core import InvalidRequest
 
     with pytest.raises(InvalidRequest):
         check_show_command("show ver\x1a")
@@ -514,7 +514,7 @@ def test_show_refuses_control_chars() -> None:
 
 def test_core_masking_of_catc_fields() -> None:
     """core 0.1.1 leaves flag-like values unmasked; real CatC secrets must still be masked."""
-    from stutters_mcp_core import compact
+    from catc_mcp._core import compact
 
     out = compact(
         {

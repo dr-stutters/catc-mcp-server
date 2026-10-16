@@ -15,15 +15,15 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     ResponseFormat,
     ToolRegistrar,
     UpstreamError,
     get_client,
     list_result,
 )
-from stutters_mcp_core.http import Page, fetch_all, page_of
-
+from catc_mcp._core.http import Page, fetch_all, page_of
 from catc_mcp.client import CatcApp
 from catc_mcp.common import (
     PAGE_AUDIT,

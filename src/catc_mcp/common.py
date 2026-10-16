@@ -10,8 +10,7 @@ from collections.abc import Awaitable
 from typing import Any
 from urllib.parse import quote
 
-from stutters_mcp_core import InvalidRequest, NotFound, UpstreamError
-
+from catc_mcp._core import InvalidRequest, NotFound, UpstreamError
 from catc_mcp.client import CatcApp, safe_id
 
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")

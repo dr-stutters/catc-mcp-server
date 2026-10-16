@@ -5,9 +5,9 @@ from typing import Any
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
-from stutters_mcp_core import ServerSpec, build_server
-from stutters_mcp_core.spec import SpecSource, bundled
 
+from catc_mcp._core import ServerSpec, build_server
+from catc_mcp._core.spec import SpecSource, bundled
 from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
 from catc_mcp.tools import (

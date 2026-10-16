@@ -7,11 +7,11 @@ from typing import Any
 import httpx
 import pytest
 import respx
-import stutters_mcp_core.policy
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from stutters_mcp_core.testing import as_caller
 
+import catc_mcp._core.policy
+from catc_mcp._core.testing import as_caller
 from catc_mcp.server import create_server
 
 from .conftest import make_settings
@@ -145,7 +145,7 @@ async def test_change_window_refuses_confirm(api: respx.MockRouter, monkeypatch:
     )
     task_ok(api, "t")
     # Thursday 14:00 Sydney, outside a weekend window
-    monkeypatch.setattr(stutters_mcp_core.policy, "_now", lambda: datetime(2026, 10, 15, 3, 0, tzinfo=UTC))
+    monkeypatch.setattr(catc_mcp._core.policy, "_now", lambda: datetime(2026, 10, 15, 3, 0, tzinfo=UTC))
     s = make_settings(
         mcp_enable_writes=True,
         mcp_enable_dangerous=True,
@@ -212,7 +212,7 @@ async def test_two_person_on_provision(api: respx.MockRouter) -> None:
 async def test_truncated_tag_refused(api: respx.MockRouter) -> None:
     mock_template(api)
     api.get("/dna/intent/api/v1/tag").respond(json={"response": [TAG]})
-    from stutters_mcp_core.http import paging
+    from catc_mcp._core.http import paging
 
     async def partial(*a: Any, **k: Any) -> Any:
         return paging.Page(items=[{"id": DEV_ID}], offset=0, total=99999)

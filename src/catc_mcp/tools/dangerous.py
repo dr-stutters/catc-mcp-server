@@ -9,7 +9,8 @@ from typing import Annotated, Any
 
 from fastmcp import Context
 from pydantic import Field
-from stutters_mcp_core import (
+
+from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     Plan,
@@ -20,7 +21,6 @@ from stutters_mcp_core import (
     poll_until,
     preview_or_apply,
 )
-
 from catc_mcp.client import CatcApp, job_ref, safe_id
 from catc_mcp.common import ensure_list, resolve_device, resolve_site, resolve_template
 from catc_mcp.safety import device_limit_blockers, resolve_targets

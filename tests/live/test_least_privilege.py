@@ -18,13 +18,13 @@ import pytest
 from dotenv import dotenv_values
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
-from stutters_mcp_core.testing import as_caller, live_settings
-from stutters_mcp_core.testing.least_privilege import (
+
+from catc_mcp._core.testing import as_caller, live_settings
+from catc_mcp._core.testing.least_privilege import (
     RO_CALLER,
     assert_read_tier_works,
     readonly_live_settings,
 )
-
 from catc_mcp.config import Settings
 from catc_mcp.server import create_server
 

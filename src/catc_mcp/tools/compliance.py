@@ -8,8 +8,8 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from stutters_mcp_core import ToolRegistrar, get_client, object_result
 
+from catc_mcp._core import ToolRegistrar, get_client, object_result
 from catc_mcp.client import CatcApp
 from catc_mcp.common import ensure_list, pick, resolve_device
 
