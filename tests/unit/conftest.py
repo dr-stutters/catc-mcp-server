@@ -5,8 +5,10 @@ from typing import Any
 
 import pytest
 import respx
+from fastmcp import FastMCP
 
 from catc_mcp.config import Settings
+from catc_mcp.server import create_server
 
 BASE = "https://catc.test"
 
@@ -22,6 +24,10 @@ def make_settings(**kw: Any) -> Settings:
     }
     base.update(kw)
     return Settings(_env_file=None, **base)  # type: ignore[call-arg]
+
+
+def make_server(**kw: Any) -> FastMCP[Any]:
+    return create_server(make_settings(**kw))
 
 
 @pytest.fixture

@@ -19,14 +19,79 @@ rest of the Intent API. `docs/GAP-ANALYSIS.md` maps the whole 3.2.2 API to the t
   until the identical call is repeated with that token (refused if the arguments, the caller or the
   target objects changed in between).
 
-## Quick start
+## Quickstart (5 minutes)
+
+You need: a Catalyst Center API user for the server (read-only is enough to start: the custom role
+**mcp-catc-ro**, see [docs/least-privilege.md](docs/least-privilege.md); never SUPER-ADMIN-ROLE on a shared server).
+
+**A. On your laptop (stdio), from a release wheel.** Every [GitHub release](https://github.com/dr-stutters/catc-mcp-server/releases)
+has a wheel with stutters-mcp-core bundled in; it needs only PyPI dependencies.
+
+```bash
+WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.9.0/catc_mcp_server-0.9.0-py3-none-any.whl
+export CATC_URL=https://catalyst-center.example.com CATC_USERNAME=mcp-catc-ro CATC_PASSWORD='...'
+uvx --from "$WHEEL" catc-mcp-server check           # preflight: login, TLS, role, version, ISE integration
+claude mcp add catc -e CATC_URL=$CATC_URL -e CATC_USERNAME=$CATC_USERNAME -e CATC_PASSWORD="$CATC_PASSWORD" \
+  -- uvx --from "$WHEEL" catc-mcp-server             # stdio is the default transport
+```
+
+Claude Desktop (`claude_desktop_config.json`), same idea:
+
+```json
+{
+  "mcpServers": {
+    "catc": {
+      "command": "uvx",
+      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.9.0/catc_mcp_server-0.9.0-py3-none-any.whl", "catc-mcp-server"],
+      "env": {"CATC_URL": "https://catalyst-center.example.com", "CATC_USERNAME": "mcp-catc-ro", "CATC_PASSWORD": "..."}
+    }
+  }
+}
+```
+
+**B. On a shared host (HTTP), from the image.** Multi-arch (amd64/arm64), signed, with an SBOM:
+`ghcr.io/dr-stutters/catc-mcp-server:<version>` (or `:latest`).
+
+```bash
+docker run --rm -e CATC_URL=https://catalyst-center.example.com -e CATC_USERNAME=mcp-catc-ro -e CATC_PASSWORD='...' \
+  ghcr.io/dr-stutters/catc-mcp-server catc-mcp-server check
+docker run --rm ghcr.io/dr-stutters/catc-mcp-server catc-mcp-server token alice   # one token per person
+cp .env.example .env && chmod 600 .env    # CATC_*, MCP_AUTH_TOKENS=alice:sha256:...
+docker compose up -d                      # pulls the image; http://localhost:8034/mcp
+claude mcp add --transport http catc http://localhost:8034/mcp --header "Authorization: Bearer <token>"
+```
+
+For a team, use [docs/deploying.md](docs/deploying.md): read-only by default, per-user tokens in the audit
+log, several Catalyst Centers, the shared token and API limits, the change rails, TLS with Caddy, upgrades.
+
+**`check`** runs without an MCP client and exits 1 on a failure (`--json` for scripts, `--strict` to fail on
+warnings, `--instance lab` for one Catalyst Center). It reports the token login
+(`POST /dna/system/api/v1/auth/token`) and the Intent API, TLS trust, the credentials, the API user's roles
+against the enabled tiers, the Catalyst Center release against the bundled API spec (3.2.2 tested; older than
+2.3.7 fails), and whether Cisco ISE is integrated (informational, never a failure):
+
+```text
+  OK    reachability[login]    POST /dna/system/api/v1/auth/token issued an X-Auth-Token (210 ms)
+  OK    reachability[intent]   Intent API answered (release 3.2.2-75131) (95 ms)
+  OK    tls                    certificate verified against the system trust store
+  OK    auth                   credentials accepted; the token lasts 60 min and is renewed after 55 min, ...
+  FAIL  role                   role 'mcp-catc-ro (ro)' cannot use the write tier(s) this server enables
+                               -> Give the account a role that allows them (docs/least-privilege.md), or ...
+  OK    version                Catalyst Center 3.2.2-75131: tested (bundled API spec 3.2.2-75131)
+  OK    ise                    Cisco ISE integrated: 192.0.2.10 ACTIVE
+```
+
+`catc-mcp-server serve --http` serves HTTP (needs `MCP_AUTH_TOKENS`); `catc-mcp-server config` shows the
+effective settings and where each came from, without contacting Catalyst Center.
+
+### From source
 
 ```bash
 git clone https://github.com/dr-stutters/catc-mcp-server && cd catc-mcp-server
 python3 scripts/bundle_core.py vendor    # bundles the pinned stutters-mcp-core as catc_mcp._core (needs git)
 uv sync
 cp .env.example .env && chmod 600 .env   # set CATC_URL, CATC_USERNAME, CATC_PASSWORD
-uv run catc-mcp-server check             # logs in and prints catc_status as JSON
+uv run catc-mcp-server check
 ```
 
 The shared [stutters-mcp-core](https://github.com/dr-stutters/stutters-mcp-core) library (with its `tasks` extra) is
@@ -356,16 +421,19 @@ repository only covers the Assurance APIs. To refresh it for another release, ex
 *Platform > Developer Toolkit > APIs* and run
 `uv run python scripts/bundle_spec.py swagger.json <version>`.
 
-## Deploying (Docker)
+## Docker
 
 ```bash
-uv run catc-mcp-server token reptar        # put the sha256 line in .env as MCP_AUTH_TOKENS=...
-docker compose up -d --build               # no token: the image is built from the bundled wheel
+uv run catc-mcp-server token alice          # put the sha256 line in .env as MCP_AUTH_TOKENS=...
+docker compose up -d                        # pulls ghcr.io/dr-stutters/catc-mcp-server (MCP_IMAGE_TAG, default latest)
+docker compose up -d --build                # or build from this checkout (no token: core is bundled)
 curl -s http://localhost:8034/health
 ```
 
-The compose file runs the container read-only, non-root, with all capabilities dropped; writes are on
-and the dangerous tier is off.
+The container runs as non-root with a read-only root filesystem, no capabilities and a named volume for
+the spec cache. The compose file is **read-only**: set `MCP_ENABLE_WRITES=true` (and `MCP_ENABLE_DANGEROUS=true`)
+in `.env` to opt in. Shared hosts (TLS, several Catalyst Centers, per-user tokens, upgrades):
+[docs/deploying.md](docs/deploying.md).
 
 ## Development
 
