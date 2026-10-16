@@ -1,5 +1,5 @@
 # catc-mcp-server roadmap
-_Last updated 2026-10-15: **Next delivered in v0.4.0** (D8-D11; D12 moved to Later), Now in v0.3.0 (D1-D6). Logs and events are pull-only ([ADR-003](https://github.com/dr-stutters/stutters-mcp-core/blob/main/docs/adr/003-no-event-ingestion.md)); D7 (webhooks) dropped, D2 reframed as on-demand activity lookups. Current release v0.8.0 (operator-eyes pass D25-D30 in v0.8.0; Production gate D17/D19/D20 in v0.5.0; D13 first slice, D14, D16 in v0.6.0; D21-D24 in v0.7.0; D18 skipped). Suite roadmap: [stutters-mcp-core/ROADMAP.md](https://github.com/dr-stutters/stutters-mcp-core/blob/main/ROADMAP.md). Gap analysis: [docs/GAP-ANALYSIS.md](docs/GAP-ANALYSIS.md)._
+_Last updated 2026-10-16: **Wave 4 planned (D31–D45, plus finishing D13): standalone packaging, de-labbed repo, SDA writes, templates and compliance depth, assurance analytics, config export/import, four prompts.** **Next delivered in v0.4.0** (D8-D11; D12 moved to Later), Now in v0.3.0 (D1-D6). Logs and events are pull-only ([ADR-003](https://github.com/dr-stutters/stutters-mcp-core/blob/main/docs/adr/003-no-event-ingestion.md)); D7 (webhooks) dropped, D2 reframed as on-demand activity lookups. Current release v0.8.0 (operator-eyes pass D25-D30 in v0.8.0; Production gate D17/D19/D20 in v0.5.0; D13 first slice, D14, D16 in v0.6.0; D21-D24 in v0.7.0; D18 skipped). Suite roadmap: [stutters-mcp-core/ROADMAP.md](https://github.com/dr-stutters/stutters-mcp-core/blob/main/ROADMAP.md). Gap analysis: [docs/GAP-ANALYSIS.md](docs/GAP-ANALYSIS.md)._
 
 ## Summary
 - v0.3.0 covers onboarding, day-N change, troubleshooting, on-demand activity lookups, network profiles and compliance policies against Catalyst Center 3.2.2: 95 tools and the `catc_onboard_device` prompt (v0.2.0 had 81 tools, 34 of 38 operator workflows curated; v0.3.0 adds template-to-profile attach), with live tests on real CML devices (r1/r2 cat8000v, sw1/sw2 cat9000v). Everything else is reachable through `catc_api_call`, except 12 multipart/binary operations.
@@ -97,3 +97,70 @@ CatC is also a data source for prompts owned by other servers: `ise_troubleshoot
 - **Users/roles management, backups (create/restore), sensors, smart-account licensing, email/SNMP/SFTP/PagerDuty event destinations**: one-off admin work or not in the lab. Roles are read only for the D17 check.
 - **A separate un-provision tool**: CatC 3.x has none. Un-provisioning is deletion, so it stays in `catc_delete_device` (D20).
 - **Receiving events in this server** (Event Management webhooks or syslog subscriptions, device syslog/traps): out of scope suite-wide (ADR-003); D7 was dropped. CatC already collects device syslog and traps, and `catc_list_events` / D2 query them on demand.
+
+
+## Wave 4 (planned 2026-10-16): standalone, reusable, deeper
+Scoping answers (2026-10-16). The suite-wide ones are shared with ise-mcp-server and fmc-mcp-server Wave 4:
+- **Goals:** make the server something anyone can deploy, not only this lab; then add CatC depth.
+- **Deployers:** engineers on a laptop (`uvx`, stdio, one CatC) and teams on a shared host (Docker over HTTP, tokens,
+  possibly several CatCs). Kubernetes/OAuth are not in this wave (core G1/G5 still apply later).
+- **Standalone:** stutters-mcp-core is **bundled into the package by a build workflow**. Nothing is pulled from git
+  or PyPI at install time.
+- **Lab tooling** (`scripts/lab_state.py`, `seed_access.py`, `pnp_dhcp.py` and lab-specific live tests and fixtures)
+  moves to the private suite-wide repo **`stutters-mcp-lab`**. Public live tests read env vars only.
+- **Depth:** finish SDA writes (D13), templates and compliance depth, assurance analytics, and a full config
+  export/diff/import.
+- **Lab:** the same dCloud CatC 3.2.2 + CML once it is back. Anything that image can't do (SDA apply without the
+  SD-Access application, SWIM without a `.bin`) stays blocked and says so.
+- **UX:** a second operator-eyes pass plus four new workflow prompts.
+- **Lab is down:** this wave is planned only. Phase A needs no lab and goes first. Phases B and C need CatC back.
+
+### Phase A: standalone and reusable (no lab needed)
+| # | Item | Why (operator value) | External needs | Test plan | Size | Issue |
+|---|---|---|---|---|---|---|
+| D31 | **Bundle core into the package**: the suite's release workflow (as ise I35, fmc F35) vendors the pinned stutters-mcp-core tag into the wheel and image (`catc_mcp._core`); no git dependency; CI fails on drift; `catc_status` reports the bundled core version. The bundled CatC spec (`scripts/bundle_spec.py`) ships in the wheel as today | Installing today needs a git dependency and a `CORE_READ_TOKEN` for Docker | none | Unit + contract suite on the built wheel in a clean venv; `pip install --no-index`; drift check by bumping the tag | M | |
+| D32 | **PyPI + `uvx` quickstart**: publish `catc-mcp-server` with trusted publishing; console script (stdio by default); `catc-mcp-server check` preflight (reachability, TLS trust, token, CatC version vs the bundled spec, the API user's role vs tool tiers, ISE integration state); copy-paste Claude Desktop / Claude Code config; 5-minute quickstart | One command from install to a working CatC connection, with a clear answer when something is missing | PyPI account and the `catc-mcp-server` name; trusted publisher | Clean-container wheel install; `check` against mocked CatC (each failure mode); TestPyPI first | M | |
+| D33 | **Published container image**: multi-arch GHCR image from the D31 wheel, cosign-signed, SBOM attached; compose pulls instead of building; `CORE_READ_TOKEN` removed | Teams run it on a shared host without cloning or building | GHCR package permissions | Pre-release tag run; `docker run ... check`; verify signature and SBOM | S | |
+| D34 | **Shared-host deployment guide and defaults**: read-only by default (write and dangerous tiers opt-in); per-user tokens named in the audit log; several CatCs from one host; CatC's API rate limits and token lifetime shared across users; the D19 rails (`CATC_MAX_DEVICES_PER_CHANGE`, change window) explained for teams; reverse-proxy TLS example; least-privilege role setup from `docs/least-privilege.md` as a step-by-step guide | A team deployment that is safe on day one | none | Contract tests for the tier defaults; compose example with two mocked CatCs; follow the docs on a clean host | M | |
+| D35 | **De-lab the public repo**: move `scripts/lab_state.py`, `seed_access.py`, `pnp_dhcp.py` and lab-only live tests to `stutters-mcp-lab` (`bundle_spec.py`, `gap_report.py`, `tool_table.py` stay); public live tests take documented `CATC_LIVE_*` env vars and skip cleanly without them; replace dCloud IPs in prompt examples (`tools/prompts.py`) with RFC 5737 addresses and lab names in fixtures and docs (`docs/pnp.md`); `scrub_check` (core G9) in CI | Anyone can run the live suite against their own CatC, and the public repo carries no lab details | Private repo `stutters-mcp-lab` | `scrub_check` clean in CI; unit suite green; live suite skips with no env | M | |
+
+### Phase B: CatC depth (needs the lab)
+| # | Item | Why (operator value) | External needs | Test plan | Size | Issue |
+|---|---|---|---|---|---|---|
+| [D13](https://github.com/dr-stutters/catc-mcp-server/issues/20) | **Finish SDA writes**: first try installing the SD-Access application on the dCloud CatC (System → Software Management; needs CatC internet egress); if it installs, prove fabric site → VN → IP pool → anycast gateway → edge port live and add `catc_delete_fabric_*` (dangerous). If it can't, keep apply mock-only, document NCSP11008 in `catc_status`, and mark D13 blocked on a CatC with SD-Access | CatC's intent model pays off in SDA; customers buy CatC for it | SD-Access application on CatC (dCloud egress unverified); `catc-sda` recipe (2 × cat9000v + Alpine); cat9000v fabric-role support on 17.18; ISE pxGrid (D8, in place) | Live `catc-sda`: Alpine gets DHCP in the VN through the anycast gateway; previews and refusals on mocks if the application can't be installed | L | [#20](https://github.com/dr-stutters/catc-mcp-server/issues/20) |
+| D36 | **Templates depth**: `catc_export_templates` / `catc_import_templates` (project or template, JSON, versions kept), `catc_clone_template`, template version history and diff between versions, `catc_template_usage` (which profiles, sites and devices use a template and at which version), and a drift check (deployed version vs latest committed) | Templates are the main day-N tool; moving, versioning and auditing them is GUI-only today | none | Unit with recorded projects; live: export a project, import as a copy, diff two versions, deploy an old version and see the drift flagged on r1 | M | |
+| D37 | **Compliance depth**: compliance policy authoring beyond D21 (rules from CLI regex, conditions per device family, attach to sites), `catc_compliance_report` (violations by site, category and severity, with trend between runs), and config drift across sites (devices whose running config differs from their template or a golden device) | "Which devices are out of standard?" is the core audit question and drives most change requests | none | Unit with recorded results; live: a policy requiring `service password-encryption`, r1 compliant and r2 not, report and drift show r2 | M | |
+| D38 | **Assurance analytics**: health trends over a time window (network, site, device, client: min/avg/worst and the dips), top-N problem devices and clients with the issue behind each, issue recurrence (the same issue opening and closing), AI-driven insights where the image has them, and `catc_site_health_report` | Answers "is this site getting worse?" and "what keeps breaking?" instead of a single health snapshot | AI Network Analytics needs cloud connectivity (dCloud egress unverified; reported as unavailable otherwise) | Unit with recorded trend data; live on `catc-routers` with r2 shut for a period, the dip and the issue recurrence show up | M | |
+| D39 | **Config export + diff**: `catc_export_config(scope)` writes the site hierarchy, network settings per site, credentials (masked; names only), templates and projects (D36), network profiles and their site assignments, IP pools and reservations, SSIDs and wireless profiles, tags and their rules, compliance policies as YAML by name with stable ordering; `catc_diff_config` compares two exports, or an export with live CatC | A reviewable baseline, "what changed since last week" alongside the audit log, and PoC → production hand-off | none | Unit: round trip and stable ordering; live: export, change one site setting, diff shows just that setting | L | |
+| D40 | **Config import** (depends on D39): plans create/update/skip in dependency order (sites → settings → credentials → pools → profiles → templates → assignments), matches by name, takes credential secrets separately, previews the whole plan; applying is dangerous-tier with the change window and the D19 device limit, stops on first failure and reports what was applied; provisioning stays a separate step | Builds a production CatC from a PoC, or rebuilds the lab, without retyping it | none | Unit with plans for empty and populated targets; live: export `mcp-test-lab`, delete it, import, diff is empty | L | |
+
+### Phase C: operator UX and workflow prompts
+| # | Item | Why (operator value) | External needs | Test plan | Size | Issue |
+|---|---|---|---|---|---|---|
+| D41 | **Operator-eyes pass 2 + tool surface**: run operator tasks over the tools added since v0.8.0 and Wave 4's; `CATC_TOOLSETS` env to load only some areas (e.g. `inventory,assurance,templates`) so clients with tool limits can use the ~127-tool server | The tool count makes tool choice harder; a laptop user rarely needs all of them | none | Scripted operator tasks live (as v0.8.0); contract test per toolset | M | |
+| D42 | **Prompt `catc_site_health_review`**: network, device and client health with trends (D38), open issues, compliance (D37), image currency against golden, template drift (D36) for a site, as one ranked report with next steps | A weekly site review in one request | none | Prompt test kit (core C9) on mocks (works while the lab is down); live once it is back | S | |
+| D43 | **Prompt `catc_software_upgrade`**: golden image → readiness (bootflash, current version, HA) → distribute → activate in a change window within the D19 limit → verify version, health and compliance → rollback plan | Upgrades are high-risk and done the same way every time | **D12 live** for the distribute/activate steps (blocked: `.bin` image, CCO entitlement, HTTP server CatC can reach); the prompt runs to readiness without it | Prompt test kit on mocks; live once D12 is unblocked | S | |
+| D44 | **Prompt `catc_new_site_buildout`**: site hierarchy → network settings → IP pools → network profile → credentials → PnP claim or discovery → provision → template deploy → verify | Greenfield sites follow the same steps every time and miss one | PnP lab `mcp-catc-pnp` (D11, in place) | Live: build `mcp-test-site2` and claim the PnP cat8000v into it; prompt test kit | S | |
+| D45 | **Prompt `catc_client_troubleshoot`**: client 360 → issues → path trace → switch or WLC CLI → ISE auth history and failure reason (with ise-mcp-server) → diagnosis and a preview-only fix | The most common campus ticket, across CatC, the device and ISE | ise-mcp-server for the auth step (optional) | Live with the `ise-access` client: a healthy client, a failed 802.1X and a wrong VLAN | S | |
+
+### Later (kept)
+- **D12 SWIM live**: blocked on a `.bin` image, CCO entitlement and an HTTP server CatC can reach. Unblocks D43's distribute/activate.
+- **D15 LAN automation**: needs blank cat9000v and a LAN-automation pool.
+- **D16 ITSM**: needs a ServiceNow PDI and CatC egress.
+- **D18 version matrix 2.3.7.x / 3.1 / 3.2**: needs older CatC releases.
+
+### Order
+1. **Now (no lab):** D31 → D33 → D32 → D35 → D34, then D42 on mocks. Target v0.9.0 (standalone).
+2. **When the lab is back:** D13 (SD-Access application attempt first), D36, D37, D39 → D40, D38. Target v0.10.0.
+3. **Then:** D41, D43 (to readiness), D44, D45. Target v0.11.0.
+
+### New prerequisites
+| Prerequisite | Needed for | Status |
+|---|---|---|
+| PyPI account, `catc-mcp-server` name, trusted publisher | D32 | ⏳ owner |
+| GHCR package permissions | D33 | ⏳ owner |
+| Private repo `stutters-mcp-lab` | D35 | ⏳ owner (shared with ise I39, fmc F39) |
+| dCloud CatC 3.2.2 + CML back up | D13, D36–D41, D44, D45 | ⏳ owner |
+| SD-Access application on CatC (needs CatC egress) | D13 | ⏳ try when the lab is back |
+| CatC cloud connectivity for AI Network Analytics | D38 (AI insights only) | ⏳ check on dCloud |
+| `.bin` image + CCO entitlement + HTTP server CatC can reach | D12, D43 | ❌ unavailable |
