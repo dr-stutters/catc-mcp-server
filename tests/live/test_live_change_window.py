@@ -1,8 +1,9 @@
-"""D10 live: walk the `catc_change_window` prompt on r1 + r2 of the CML `catc-routers` recipe.
+"""D10 live: walk the `catc_change_window` prompt on CATC_LIVE_ROUTER1 + CATC_LIVE_ROUTER2.
 
 Baseline -> preview per device -> deploy mcp-test-dayn/mcp-test-loopback -> deployment status ->
 CLI check -> config diff -> compliance -> negation rollback (a generated template) -> CLI check.
-Needs `scripts/lab_state.py seed` (r1/r2 Managed, template project mcp-test-dayn). Leaves nothing
+Needs both routers Managed and the committed template mcp-test-dayn/mcp-test-loopback (docs/live-tests.md,
+prerequisite objects). Leaves nothing
 behind: the rollback removes the loopback and the rollback template's project is deleted."""
 
 import asyncio
@@ -16,11 +17,12 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+from .conftest import ROUTER1, ROUTER2, need
 from .test_live_writes import RUN, apply, call
 
 pytestmark = pytest.mark.live
 
-DEVICES = ["r1.mcp.lab", "r2.mcp.lab"]
+DEVICES = [ROUTER1, ROUTER2]
 TEMPLATE = "mcp-test-dayn/mcp-test-loopback"
 LOOP = 79
 PARAMS = {"loop_id": LOOP, "desc": "mcp-test-change-window", "ip": "10.79.79.1"}
@@ -43,8 +45,9 @@ async def _managed(c: Client) -> bool:  # type: ignore[type-arg]
 
 
 async def test_change_window_on_routers(lab_rw: Client) -> None:  # type: ignore[type-arg]
+    need("CATC_LIVE_ROUTER1", "CATC_LIVE_ROUTER2")
     if not await _managed(lab_rw):
-        pytest.skip("r1/r2 not Reachable in Catalyst Center (start catc-routers, run lab_state.py seed)")
+        pytest.skip(f"{DEVICES} not Reachable and Managed in Catalyst Center")
     window_end = (datetime.now(UTC) + timedelta(hours=1)).isoformat(timespec="minutes")
     prompt = await lab_rw.get_prompt(
         "catc_change_window",

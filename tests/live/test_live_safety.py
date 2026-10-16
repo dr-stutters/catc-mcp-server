@@ -1,5 +1,5 @@
-"""Live safety-rail tests (D19, D20) on r1/r2 of the CML `catc-routers` recipe (provisioned at
-mcp-test-bldg by scripts/lab_state.py seed).
+"""Live safety-rail tests (D19, D20) on CATC_LIVE_ROUTER1 / CATC_LIVE_ROUTER2 ("r1"/"r2" below), both
+provisioned at CATC_LIVE_BUILDING (docs/live-tests.md).
 
 - D19: a template deploy to r1+r2 is blocked at CATC_MAX_DEVICES_PER_CHANGE=1 and allowed for r1 alone;
   a tag target expands to its members; MCP_MAX_BLAST_RADIUS blocks too; outside MCP_CHANGE_WINDOW the
@@ -22,12 +22,13 @@ from catc_mcp._core.testing import live_settings
 from catc_mcp.config import Settings
 from catc_mcp.server import create_server
 
+from .conftest import BUILDING, need
 from .test_live_phase2 import R1, R2, routers  # noqa: F401 - routers is a fixture
 from .test_live_writes import RUN, apply, call
 
 pytestmark = pytest.mark.live
 
-BLDG = "Global/mcp-test-lab/mcp-test-bldg"
+BLDG = BUILDING
 TEMPLATE = "mcp-test-dayn/mcp-test-loopback"
 PARAMS = {"loop_id": 78, "desc": "mcp-test-d19", "ip": "10.255.78.1"}
 
@@ -79,6 +80,7 @@ async def test_change_window_refuses_deploy(routers: dict[str, Any]) -> None:  #
 
 
 async def test_unprovision_deletes_device_then_reonboard(routers: dict[str, Any]) -> None:  # noqa: F811
+    need("CATC_LIVE_BUILDING")
     async with server() as c:
         with pytest.raises(ToolError, match="clean_config"):
             await call(c, "catc_delete_device", {"device": R2})
@@ -92,7 +94,7 @@ async def test_unprovision_deletes_device_then_reonboard(routers: dict[str, Any]
         with pytest.raises(ToolError, match="No network device"):
             await call(c, "catc_get_device", {"device": R2})
 
-        # Re-onboard: discovery -> Managed -> assign -> provision (as scripts/lab_state.py seed leaves it).
+        # Re-onboard: discovery -> Managed -> assign -> provision (as it was before).
         disc = f"mcp-test-d20-{RUN}"
         try:
             await apply(
