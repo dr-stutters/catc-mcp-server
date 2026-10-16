@@ -79,9 +79,9 @@ CatC is also a data source for prompts owned by other servers: `ise_troubleshoot
 |---|---|---|---|---|
 | Catalyst Center 3.2.2-75131 (lab, 198.18.128.11, self-signed) | all | lab | server → CatC :443 via cortex tun0 (VPN) | ✅ in place |
 | CML 2.10 controller, Enterprise licence (70 running nodes) | all live device tests | Lab | cortex → 198.18.128.10 | ✅ in place: `catc-routers` (r1/r2), `mcp-catc-onboard` (sw2 198.18.128.170) |
-| Lab state in CatC: r1.mcp.lab / r2.mcp.lab provisioned at Global/mcp-test-lab/mcp-test-bldg, the mcp-test-* creds, discovery, template project and switching profile | live suite | `scripts/lab_state.py seed\|cleanup\|status` | — | ✅ seeded; CML labs stopped afterwards, so the devices show as Unreachable |
+| Lab state in CatC: r1.mcp.lab / r2.mcp.lab provisioned at Global/mcp-test-lab/mcp-test-bldg, the mcp-test-* creds, discovery, template project and switching profile | live suite | the suite's private lab repo (stutters-mcp-lab); inputs as `CATC_LIVE_*` ([docs/live-tests.md](docs/live-tests.md)) | — | ✅ seeded; CML labs stopped afterwards, so the devices show as Unreachable |
 | ISE 198.18.134.35 integrated with CatC: ERS on, pxGrid persona on, CatC client approved, GUI and CLI credentials | D8, D9, D13 | ISE node (CatC ↔ ISE integration, appliance to appliance; our servers never subscribe to pxGrid) | **CatC → ISE** :443, :8910, :22 | ✅ integrated 2026-10-15 (ISE 3.5, pxGrid TRUSTED; subscriber `pxgrid_client_<epoch>`) |
-| A network profile in CatC | D3 | `catc_create_switching_profile` (switching; routing profiles can't take templates) | — | ✅ mcp-test-sw-profile (seeded by `scripts/lab_state.py`) |
+| A network profile in CatC | D3 | `catc_create_switching_profile` (switching; routing profiles can't take templates) | — | ✅ mcp-test-sw-profile (seeded from the suite's private lab repo (stutters-mcp-lab)) |
 | CML lab `mcp-catc-pnp` (blank cat8000v + alpine udhcpd with option 43, own lab) | D11 | catc builder | **device → CatC** :80/:443 | ✅ built 2026-10-15 |
 | IOS XE `.bin` for cat8000v + CCO download entitlement | D12 | cisco.com | — | ❌ missing |
 | HTTP image server reachable from CatC (e.g. CML `nginx` node) | D12 | CML | **CatC → server** HTTP | ⏳ to set up |

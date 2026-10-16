@@ -115,8 +115,8 @@ claude mcp add --transport http catc http://cortex:8034/mcp --header "Authorizat
 Don't run the server as an admin. Three custom Catalyst Center roles, tested live on 3.2.2, match the
 server's tiers: **mcp-catc-ro** (read tier), **mcp-catc-rw** (+ write tier; Catalyst Center itself refuses
 provisioning, PnP claims and ISE changes) and **mcp-catc-dangerous**. [docs/least-privilege.md](docs/least-privilege.md)
-lists every permission, the access-group requirement and the API calls; `scripts/seed_access.py` creates the roles,
-access groups and users. `catc_status` shows the account's roles under `catc.account` and warns when they allow
+lists every permission, the access-group requirement and the API calls that create the roles, access groups and
+users. `catc_status` shows the account's roles under `catc.account` and warns when they allow
 more than the enabled tiers.
 
 Every tool call is written to the audit log with the caller's token name, so give each person their own
@@ -371,7 +371,7 @@ and the dangerous tier is off.
 
 ```bash
 uv run ruff check && uv run ruff format --check && uv run mypy && uv run pytest   # unit (respx)
-uv run pytest tests/live -m live     # against the lab in .env; creates and removes mcp-test-* objects
+uv run pytest tests/live -m live     # against the CatC in .env; creates and removes mcp-test-* objects
 uv run python scripts/tool_table.py  # regenerate the tool tables above
 uv run python scripts/gap_report.py  # API coverage per area (docs/GAP-ANALYSIS.md)
 ```
@@ -379,10 +379,9 @@ uv run python scripts/gap_report.py  # API coverage per area (docs/GAP-ANALYSIS.
 Troubleshooting configuration: `uv run catc-mcp-server config` prints the effective settings and where each
 came from (secrets only as set/unset), without contacting Catalyst Center.
 
-Live tests skip themselves when `CATC_URL` is unset or unreachable. The device workflow tests in
-`tests/live/test_live_phase2.py` need the two CML routers of the cml-mcp-server `catc-routers`
-recipe (198.18.128.152/.153) discovered and reachable, and skip otherwise. SWIM distribute/activate
-are covered by mocked unit tests only (no importable image in the lab).
+Live tests skip themselves when `CATC_URL` is unset or unreachable. Lab devices, sites, ISE, WLC, fabric and
+PnP inputs come from `CATC_LIVE_*` variables; a test whose variables are unset skips and names them.
+[docs/live-tests.md](docs/live-tests.md) lists every variable and the objects the device tests expect.
 
 ## License
 
