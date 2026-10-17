@@ -17,6 +17,8 @@ meta:
   - wireless_profiles
   - tags
   - compliance_policies
+  warnings:
+  - 'credentials: 2 items share the name ''CLI:mcp-dup'' (diff tells them apart as #2, #3...)'
 sites:
 - path: Global/mcp-test-lab
   type: area
@@ -55,6 +57,13 @@ settings:
       timeZone:
         identifier: GMT
   Global/mcp-test-lab:
+    aaa:
+      aaaNetwork:
+        pan: 198.18.134.35
+        primaryServerIp: 198.18.134.35
+        protocol: RADIUS
+        serverType: ISE
+        sharedSecret: '********'
     banner:
       banner:
         type: Custom
@@ -73,12 +82,28 @@ settings:
         servers:
         - 198.18.128.1
     telemetry:
+      snmpTraps:
+        externalTrapServers:
+        - 192.0.2.50
+        snmpv3:
+          authPhrase: '********'
+          authProtocol: SHA
+          privKeyValue: '********'
+          privacyProtocol: AES128
+          userName: trapuser
+        useBuiltinTrapServer: true
       wiredDataCollection:
         enableWiredDataCollection: true
     timezone:
       timeZone:
         identifier: Australia/Sydney
 credentials:
+- type: CLI
+  description: mcp-dup
+  username: alice
+- type: CLI
+  description: mcp-dup
+  username: bob
 - type: CLI
   description: mcp-test-cli
   username: netadmin
@@ -157,6 +182,37 @@ templates:
     parameterName: port
     required: true
   softwareType: IOS-XE
+- project: mcp-test-dayn
+  name: mcp-test-secrets
+  composite: false
+  content: |-
+    #set($password = "********")
+    #set( $hostname = "r1" )
+    {% set enable_secret = "********" %}
+    {% set vlan = 10 %}
+    username admin privilege 15 secret 0 ********
+    hostname $hostname
+  deviceTypes:
+  - productFamily: Routers
+  language: VELOCITY
+  params:
+  - dataType: STRING
+    defaultValue: '********'
+    parameterName: enable_pw
+    required: false
+  - dataType: STRING
+    defaultValue: '********'
+    parameterName: snmp_community
+    required: false
+  - dataType: SECUREDSTRING
+    defaultValue: '********'
+    parameterName: vault
+    required: false
+  - dataType: INTEGER
+    defaultValue: '10'
+    parameterName: vlan
+    required: false
+  softwareType: IOS-XE
 network_profiles:
 - name: mcp-test-sw-profile
   type: Switching
@@ -204,8 +260,24 @@ ssids:
   wlanType: Enterprise
 wireless_profiles:
 - name: mcp-test-wl
-  additionalInterfaces: []
+  additionalInterfaces:
+  - guest
+  - voice
+  apZones:
+  - apZoneName: zone-a
+    rfProfileName: LOW
+    ssids:
+    - mcp-test-psk
+  - apZoneName: zone-b
+    rfProfileName: HIGH
+    ssids:
+    - mcp-test-guest
+    - mcp-test-psk
   ssidDetails:
+  - enableFabric: false
+    interfaceName: guest
+    sharedKeyValue: '********'
+    ssidName: mcp-test-guest
   - enableFabric: false
     flexConnect:
       enableFlexConnect: false
@@ -217,6 +289,12 @@ tags:
 - name: mcp-test-routers
   description: lab routers
   dynamicRules:
+  - memberType: interface
+    rules:
+      name: portName
+      apiToken: '********'
+      operation: ILIKE
+      value: Gi%
   - memberType: networkdevice
     rules:
       name: hostname
@@ -229,6 +307,14 @@ compliance_policies:
   - name: ntp-server
     description: ''
     conditions:
+    - action:
+        doesNotMatchAction: RAISE_A_VIOLATION
+        doesNotMatchViolationSeverity: LOW
+        matchAction: PASS
+      operator: CONTAINS_STRING
+      scope: RUNNING_CONFIG
+      sequenceNumber: 1
+      value: ntp server 198.18.128.2
     - action:
         doesNotMatchAction: RAISE_A_VIOLATION
         doesNotMatchViolationSeverity: MEDIUM
