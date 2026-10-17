@@ -135,6 +135,14 @@ def register(reg: ToolRegistrar) -> None:
         force_push: Annotated[
             bool, Field(description="Push even if this version was already deployed to the device")
         ] = False,
+        version: Annotated[
+            int | None,
+            Field(
+                ge=1,
+                description="Deploy this committed version instead of the latest, e.g. to roll back "
+                "(catc_list_template_versions)",
+            ),
+        ] = None,
         wait: Wait = True,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
@@ -144,7 +152,9 @@ def register(reg: ToolRegistrar) -> None:
         template version; nothing is pushed until you confirm. Uncommitted templates are refused (commit
         with catc_commit_template). Only devices in the template's device families are targeted (e.g.
         site= with a Routers template skips the switches and WLCs there; the preview lists them). More
-        than CATC_MAX_DEVICES_PER_CHANGE targets (default 10) are refused."""
+        than CATC_MAX_DEVICES_PER_CHANGE targets (default 10) are refused. `version` pushes an older
+        committed version instead of the latest (a rollback; catc_template_drift then shows it as
+        behind)."""
         app: CatcApp = get_client(ctx)
         ref = await resolve_template(app, template)
         tid = str(ref.get("templateId") or ref.get("id"))
@@ -177,6 +187,13 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(
                 "The template has never been committed; commit it with catc_commit_template first."
             )
+        elif version is not None:
+            chosen = next((v for v in versions if str(v.get("version")) == str(version)), None)
+            if chosen is None or not chosen.get("id"):
+                have = ", ".join(str(v.get("version")) for v in sorted(versions, key=_version_key))
+                blockers.append(f"The template has no committed version {version} (versions: {have}).")
+            else:
+                latest, tid = chosen, str(chosen["id"])  # `latest` = the version that will be pushed
         rendered: Any = None
         try:
             prev = await app.api.put(
@@ -260,6 +277,7 @@ def register(reg: ToolRegistrar) -> None:
                 "tag": tag,
                 "params": params,
                 "force_push": force_push,
+                "version": version,
                 "wait": wait,
             },
             confirm=confirm,

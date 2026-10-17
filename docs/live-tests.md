@@ -24,7 +24,7 @@ variable. With no `.env` at all, the whole live suite skips.
 
 | Variable | Example | Used by | Meaning |
 |---|---|---|---|
-| `CATC_LIVE_ROUTER1` | `192.0.2.11` | phase2, activity, change window, compliance policy, compliance depth, safety, least privilege | Management IP of a managed, Reachable IOS-XE router |
+| `CATC_LIVE_ROUTER1` | `192.0.2.11` | phase2, activity, change window, compliance policy, compliance depth, safety, least privilege, templates depth | Management IP of a managed, Reachable IOS-XE router |
 | `CATC_LIVE_ROUTER2` | `192.0.2.12` | the same | A second router, an OSPF neighbour of router 1 over its `GigabitEthernet2`. The activity test shuts that link and brings it up again. The safety test deletes this router from the inventory and onboards it again. |
 | `CATC_LIVE_PATH_TRACE` | `10.255.255.1,10.255.255.2` | phase2 | Optional. `source,dest` for the path trace. Default: router 1 to router 2. |
 | `CATC_LIVE_BUILDING` | `Global/Lab/Building1` | least privilege, compliance policy, compliance depth, safety, onboard, AAA, wireless | A building where both routers are assigned and provisioned. Its parent area gets the test compliance policy, and the AAA test creates the building `mcp-test-nac` next to it. |
