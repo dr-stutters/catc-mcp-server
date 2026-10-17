@@ -39,10 +39,6 @@
   3.2.2 (an assurance task is polled); network/device trends over a day use 1-hour buckets in 7-day chunks (the
   API's limits); site filters match the site and below, not siblings; a per-device trend 404 (e.g. during a
   resync) is reported as no data. Found live: a cat8000v's health score ignores a down link, so the outage shows as issues and issue bursts, not a dip.
-
-## 0.9.0 (unreleased)
-
-### Added
 - **Config export and diff (D39, #75).** `catc_export_config(scope, sections)` writes the site hierarchy, the
   network settings set at each site, credentials (type, description, username: never secrets), template projects
   and templates, network profiles with their templates and sites, IP pools and reservations, SSIDs (passphrases
@@ -55,6 +51,10 @@
   characters are cut and the rows held under the response limit.
   Both run as MCP background tasks. Format: [docs/config-export.md](docs/config-export.md). New dependency:
   PyYAML. The templates section uses its own minimal serializer until D36's lands.
+
+## 0.9.0 (unreleased)
+
+### Added
 - **`catc-mcp-server check` preflight (D32, #68; core C21).** Runs without an MCP client: the token login
   (`POST /dna/system/api/v1/auth/token`) and the Intent API, TLS trust, credentials (a static `CATC_TOKEN` warns:
   it is never renewed), the API user's roles against the enabled tiers (built-in roles by name, custom roles by
