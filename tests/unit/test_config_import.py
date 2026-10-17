@@ -397,3 +397,70 @@ async def test_tool_is_dangerous_tier(api: respx.MockRouter) -> None:
     async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
         names = {t.name for t in await c.list_tools()}
     assert "catc_import_config" not in names
+
+
+# --- review fixes ------------------------------------------------------------------------------------
+
+
+def test_incomplete_live_reads_block() -> None:
+    live = {**EMPTY_LIVE, "meta": {"warnings": ["settings Global/mcp-d40 dns: 429 Too Many Requests"]}}
+    plan = plan_import(doc(), live, secrets=SECRETS)
+    assert plan.blockers == [
+        "The live read was incomplete, so the plan could be wrong: "
+        "settings Global/mcp-d40 dns: 429 Too Many Requests"
+    ]
+    # A warning about a section that isn't imported doesn't block.
+    plan = plan_import(doc(), live, secrets=SECRETS, sections=["tags"])
+    assert plan.blockers == []
+
+
+def test_settings_merge_over_what_is_set() -> None:
+    live = doc()
+    live["credentials"].append({"type": "HTTP_READ", "description": "keep"})
+    live["settings"]["Global/mcp-d40"]["credentials"] = {
+        "cliCredentials": "CLI:mcp-d40",
+        "httpReadCredentials": "HTTP_READ:keep",
+    }
+    live["settings"]["Global/mcp-d40"]["dns"]["dns"]["dnsServers"] = ["192.0.2.1"]
+    live["settings"]["Global/mcp-d40"]["dns"]["dns"]["extra"] = "stays"
+    plan = plan_import(doc(), live, secrets={})
+    rows = {s.item: s for s in plan.steps if s.section == "settings"}
+    # The export's credential slot equals what is set; the extra slot is kept, so nothing changes.
+    assert "Global/mcp-d40 credentials" not in rows
+    dns = rows["Global/mcp-d40 dns"].payload["body"]["dns"]
+    assert dns == {"domainName": "d40.example", "dnsServers": ["192.0.2.53"], "extra": "stays"}
+
+
+def test_dual_stack_global_pool_blocks() -> None:
+    pools = [
+        {"name": "ds", "type": "Generic", "ipv4": {"subnet": "10.0.0.0"}, "ipv6": {"subnet": "2001:db8::"}}
+    ]
+    plan = plan_import(doc(ip_pools=pools, ip_reservations=[]), EMPTY_LIVE, secrets=SECRETS)
+    assert any("dual-stack" in b for b in plan.blockers)
+
+
+def test_settings_hint_names_the_missing_section() -> None:
+    plan = plan_import(doc(), EMPTY_LIVE, secrets={}, sections=["sites", "settings"])
+    assert any("add 'credentials' to `sections`" in b for b in plan.blockers)
+
+
+def test_secret_field_names_are_normalised_and_checked() -> None:
+    from pydantic import SecretStr
+
+    out = config_import._secret_values(
+        {"CLI:x": {"PASSWORD": SecretStr("pw"), "enablepassword": SecretStr("en")}}
+    )
+    assert out == {"CLI:x": {"password": "pw", "enablePassword": "en"}}
+    with pytest.raises(Exception, match="unknown field 'pass'"):
+        config_import._secret_values({"CLI:x": {"pass": SecretStr("pw")}})
+
+
+async def test_failure_text_masks_secret_values(lookups: None) -> None:
+    class Leaky(FakeApp):
+        async def run_job(self, method: str, path: str, body: Any = None, **_: Any) -> dict[str, Any]:
+            raise RuntimeError(f"rejected body {body}")
+
+    steps = [Step("credentials", "create", "CLI:c", {"type": "CLI", "description": "c", "username": "u"})]
+    out = await Applier(Leaky(), None, {"CLI:c": {"password": "hunter2-secret"}}).run(steps, True)  # type: ignore[arg-type]
+    assert out["status"] == "stopped"
+    assert "hunter2-secret" not in out["failed"]["error"] and MASK in out["failed"]["error"]
