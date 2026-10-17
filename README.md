@@ -240,6 +240,11 @@ Typical flows:
   pools, SSIDs, tags, compliance policies as stable YAML; [format](docs/config-export.md)) →
   later `catc_diff_config(before=<export>)` lists what changed against live Catalyst Center (or against a
   second export); `catc_list_audit_logs` says who.
+- **Rebuild or promote a design:** `catc_import_config(export=<export>, secrets=...)` (dangerous tier) plans
+  the export onto a Catalyst Center by name, in dependency order (sites, credentials, settings, pools,
+  reservations, templates, profiles, tags), creates what is missing, updates sites and site settings that
+  differ, never deletes or overwrites the rest, and stops at the first failure
+  ([docs](docs/config-export.md#import)). Provision afterwards.
 - **Profiles:** `catc_attach_template_to_profile` / `catc_assign_profile_to_sites` record which Day-N
   templates belong to a site; the provisioning API doesn't push them (3.2.2), so deploy them with
   `catc_deploy_template`.
@@ -409,7 +414,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (21)
+### Dangerous (22)
 
 | Tool | What it does |
 |---|---|
@@ -430,6 +435,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
+| `catc_import_config` | Build Catalyst Center design intent from a catc_export_config document: a PoC's design on a production Catalyst Center, or a rebuilt lab. |
 | `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |
 | `catc_provision_wireless_controller` | Provision a Catalyst 9800 WLC: set its primary managed AP locations, then push the WLANs, policy profiles and tags of the wireless profiles assigned to those sites (plus the site's AAA, DNS, NTP and telemetry settings). |
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |

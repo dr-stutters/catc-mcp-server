@@ -1,7 +1,7 @@
 # Config export format (version 1)
 
 `catc_export_config` writes Catalyst Center design intent as YAML; `catc_diff_config` compares two
-exports, or an export with live Catalyst Center. Config import (D40) plans from the same document.
+exports, or an export with live Catalyst Center; `catc_import_config` ([Import](#import)) builds from one.
 The code is `src/catc_mcp/tools/config_io.py`: a fetch layer (`collect`) and a pure layer
 (`build_export`, `dump_export`, `load_export`, `diff_exports`) that tests run on recorded fixtures
 (`tests/fixtures/config_export_raw.json` → `tests/fixtures/config_export.yaml`, a complete example).
@@ -108,3 +108,46 @@ whichever comes first (`truncated` says so).
 The export is one tool response, so it is held to `MCP_MAX_RESPONSE_CHARS` (40 000 by default). Over
 that, the tool returns an error with the size of each section instead of a truncated document: export
 fewer `sections`, a smaller `scope`, or raise the limit.
+
+## Import
+
+`catc_import_config(export, sections?, secrets?, commit_templates=true)` (dangerous tier;
+`src/catc_mcp/tools/config_import.py`) plans an export onto a Catalyst Center. It exports the document's
+`meta.scope` live (or its nearest existing ancestor, when the scope doesn't exist yet), plus what the
+sections refer to by name, and matches every item by its identity above, ignoring case.
+
+Steps run in this order, so whatever an item refers to exists first:
+
+| Order | Section | Missing | Present and different |
+|---|---|---|---|
+| 1 | `sites` | created (area, building, floor; floors get the UI's defaults for unset dimensions) | building/floor attributes updated; a different site type blocks |
+| 2 | `credentials` | created with `secrets["TYPE:description"]` (CLI/HTTP `password`, CLI `enablePassword`, SNMPv2c `readCommunity`/`writeCommunity`, SNMPv3 `authPassword`/`privacyPassword` per `snmpMode`) | skipped: secrets can't be compared, credentials aren't changed |
+| 3 | `settings` | each category set at a site is PUT (credential slots by `TYPE:description`) | the export's values merged over what is set at the site (one level deep): values the export doesn't carry stay, an explicit `[]` clears a list; categories the export doesn't set are left alone |
+| 4 | `ip_pools` | created | skipped (reported) |
+| 5 | `ip_reservations` | created from the named global pool | skipped (reported) |
+| 6 | `template_projects` | created (also any project a new template names) | nothing to change |
+| 7 | `templates` | created with content and variables, committed as version 1 (`commit_templates=false`: left uncommitted) | skipped: never overwritten; `catc_import_templates` imports a copy |
+| 8 | `network_profiles` | switching profiles created; other types skipped (UI only) | missing templates attached, sites not covered by an assigned parent assigned |
+| 9 | `tags` | created with their dynamic rules | skipped (reported) |
+
+`ssids`, `wireless_profiles` and `compliance_policies` are counted in `not_imported`. Nothing is ever
+deleted, unassigned or detached.
+
+The preview lists every step (`limit`, default 200), counts per section and action, `unchanged` counts and
+anything blocking:
+- a new credential without its secrets, or `secrets` for a credential the import doesn't create;
+- the mask `********` anywhere in what would be written (an AAA shared secret, an SNMP value, a template
+  line or variable): put the real value in the export, or drop the field;
+- a site, credential, global pool or template that a step refers to and that exists neither on Catalyst
+  Center nor in the export; a building without a country and an address or coordinates; composite templates;
+- a section the live export couldn't read, or a live read that was incomplete for a section being imported (one
+  site's settings, one template or profile failed, or the per-site request budget ran out): that item would
+  look missing and get a wrong write;
+- a dual-stack global pool (split it into an IPv4 and an IPv6 pool).
+
+Applying runs the steps one at a time and stops at the first failure: the result has `applied`, `failed`
+(with the error, secret values masked, and an incomplete template it left behind) and `not_applied`. Run the import again after
+fixing the cause: the new plan only has what is still missing. The core's rails apply (`MCP_CHANGE_WINDOW`,
+`MCP_MAX_BLAST_RADIUS` with the number of steps as blast radius, two-person confirmation). The confirm token
+is tied to the planned steps: a live change that alters the plan refuses it, unrelated changes don't. Devices get new
+settings only when provisioned (`catc_provision_devices`), where `CATC_MAX_DEVICES_PER_CHANGE` applies.
