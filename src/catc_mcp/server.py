@@ -18,6 +18,7 @@ from catc_mcp.tools import (
     assurance_analytics,
     compliance,
     compliance_policies,
+    config_io,
     credentials,
     dangerous,
     discovery,
@@ -123,6 +124,7 @@ REGISTER = [
     sda.register,
     wireless.register,
     reports.register,
+    config_io.register,
     dangerous.register,
 ]
 

@@ -23,6 +23,8 @@ LONG = {
     "catc_replace_device",
     "catc_add_fabric_device",
     "catc_add_anycast_gateway",
+    "catc_export_config",
+    "catc_diff_config",
 }
 
 
