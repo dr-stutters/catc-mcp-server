@@ -67,7 +67,8 @@
   variables, no versions). `catc_deploy_template` takes `version` to push an older committed version (a
   rollback). Drift comes from the deploy tasks Catalyst Center keeps (their deployment status names the
   version; `GET /task` pages from offset 0 on 3.2.2, not 1 as its spec says), and Day-N templates pushed by the
-  provisioning flow leave no such record.
+  provisioning flow leave no such record. Config export (D39) now masks templates with the same shared rules: a
+  value that is only a template variable (`#set($secret = $x)`) stays, and `sensitiveField` variables are masked.
 
 ## 0.9.0 (unreleased)
 
