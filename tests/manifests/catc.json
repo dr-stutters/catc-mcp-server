@@ -124,6 +124,10 @@
       "tier": "dangerous",
       "title": "Add Cisco ISE to Catalyst Center"
     },
+    "catc_ai_insights": {
+      "tier": "read",
+      "title": "AI-driven insights"
+    },
     "catc_api_call": {
       "tier": "dangerous",
       "title": "Raw Cisco Catalyst Center API call"
@@ -416,6 +420,14 @@
       "tier": "read",
       "title": "Wireless controller"
     },
+    "catc_health_trend": {
+      "tier": "read",
+      "title": "Health trend"
+    },
+    "catc_issue_recurrence": {
+      "tier": "read",
+      "title": "Issue recurrence"
+    },
     "catc_list_audit_logs": {
       "tier": "read",
       "title": "List audit logs"
@@ -580,6 +592,10 @@
       "tier": "read",
       "title": "Search the Cisco Catalyst Center API spec"
     },
+    "catc_site_health_report": {
+      "tier": "read",
+      "title": "Site health report"
+    },
     "catc_status": {
       "tier": "read",
       "title": "Cisco Catalyst Center status"
@@ -587,6 +603,10 @@
     "catc_tag_golden_image": {
       "tier": "write",
       "title": "Tag golden image"
+    },
+    "catc_top_problems": {
+      "tier": "read",
+      "title": "Top problem devices or clients"
     },
     "catc_unassign_profile_from_sites": {
       "tier": "write",

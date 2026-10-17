@@ -50,6 +50,16 @@
   with `CATC_INSTANCES`, Caddy TLS, the least-privilege account step by step, upgrades and verifying signatures)
   and `examples/shared-host/` (server + Caddy, and a test override with two mocked Catalyst Centers). Contract
   tests pin the tier defaults (`tests/unit/test_tier_defaults.py`).
+- **Assurance analytics (D38, #74).** Five read tools in `tools/assurance_analytics.py`:
+  `catc_health_trend` (network, site, device or client over a window: min/avg/latest, the worst moment, each dip
+  with start, length and depth, worse/better/steady, a trimmed series; site trends also give when issues were
+  raised, device/client trends the issues open in the window), `catc_top_problems` (worst devices or clients in the
+  window with the issue behind each), `catc_issue_recurrence` (the same issue opening again: times opened,
+  occurrences, gap between openings, each opening with when it closed), `catc_ai_insights` (AI-driven issues;
+  reports `unavailable` with the reason instead of failing when AI Network Analytics has no cloud connectivity)
+  and `catc_site_health_report` (all of it for one site, with a one-line verdict). Site trends are asynchronous on
+  3.2.2 (an assurance task is polled); a per-device trend 404 (e.g. during a resync) is reported as no data. Found
+  live: a cat8000v's health score ignores a down link, so the outage shows as issues and issue bursts, not a dip.
 
 ### Changed
 - Bundled core v0.14.0.
