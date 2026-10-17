@@ -1,0 +1,246 @@
+format: catc-config-export
+version: 1
+meta:
+  catalyst_center: 3.2.2-75131
+  exported_at: '2026-10-17T06:00:00Z'
+  scope: Global
+  sections:
+  - sites
+  - settings
+  - credentials
+  - template_projects
+  - templates
+  - network_profiles
+  - ip_pools
+  - ip_reservations
+  - ssids
+  - wireless_profiles
+  - tags
+  - compliance_policies
+sites:
+- path: Global/mcp-test-lab
+  type: area
+- path: Global/mcp-test-lab/mcp-test-bldg
+  type: building
+  address: 1 Lab St, Sydney NSW
+  country: Australia
+  latitude: -33.86
+  longitude: 151.2
+- path: Global/mcp-test-lab/mcp-test-bldg/mcp-test-floor1
+  type: floor
+  floorNumber: 1
+  height: 10.0
+  length: 100.0
+  rfModel: Cubes And Walled Offices
+  unitsOfMeasure: feet
+  width: 100.0
+settings:
+  Global:
+    telemetry:
+      applicationVisibility:
+        collector:
+          collectorType: Builtin
+        enableOnWiredAccessDevices: false
+      snmpTraps:
+        externalTrapServers: []
+        useBuiltinTrapServer: true
+      syslogs:
+        externalSyslogServers: []
+        useBuiltinSyslogServer: true
+      wiredDataCollection:
+        enableWiredDataCollection: false
+      wirelessTelemetry:
+        enableWirelessTelemetry: true
+    timezone:
+      timeZone:
+        identifier: GMT
+  Global/mcp-test-lab:
+    banner:
+      banner:
+        type: Custom
+        message: 'mcp-test banner: authorised use only'
+    credentials:
+      cliCredentials: CLI:mcp-test-cli
+      snmpv2cReadCredentials: SNMPV2_READ_COMMUNITY:mcp-test-snmp-ro
+      snmpv2cWriteCredentials: SNMPV2_WRITE_COMMUNITY:mcp-test-snmp-rw
+    dns:
+      dns:
+        dnsServers:
+        - 198.18.133.1
+        domainName: mcp.lab
+    ntp:
+      ntp:
+        servers:
+        - 198.18.128.1
+    telemetry:
+      wiredDataCollection:
+        enableWiredDataCollection: true
+    timezone:
+      timeZone:
+        identifier: Australia/Sydney
+credentials:
+- type: CLI
+  description: mcp-test-cli
+  username: netadmin
+- type: HTTP_READ
+  description: mcp-test-http
+  port: 443
+  secure: true
+  username: api
+- type: NETCONF
+  description: defaultNetConfPort
+  port: 830
+- type: SNMPV2_READ_COMMUNITY
+  description: mcp-test-snmp-ro
+- type: SNMPV2_WRITE_COMMUNITY
+  description: mcp-test-snmp-rw
+template_projects:
+- name: mcp-d36-src
+  description: D36 live test source project
+- name: mcp-test-dayn
+  description: mcp-test-dayn
+templates:
+- project: mcp-d36-src
+  name: mcp-d36-hosts
+  description: 'D36 live test: harmless ip host entries'
+  composite: false
+  content: |-
+    ip host mcp-d36-a 192.0.2.61
+    ip host mcp-d36-b 192.0.2.62
+  deviceTypes:
+  - productFamily: Routers
+  language: JINJA
+  softwareType: IOS-XE
+- project: mcp-test-dayn
+  name: mcp-test-cdp
+  composite: false
+  content: |-
+    cdp run
+    interface GigabitEthernet2
+     cdp enable
+  deviceTypes:
+  - productFamily: Routers
+  language: JINJA
+  softwareType: IOS-XE
+- project: mcp-test-dayn
+  name: mcp-test-loopback
+  composite: false
+  content: |-
+    interface Loopback{{ loop_id }}
+     description {{ desc }}
+     ip address {{ ip }} 255.255.255.255
+  deviceTypes:
+  - productFamily: Routers
+  language: JINJA
+  params:
+  - dataType: STRING
+    parameterName: desc
+    required: true
+  - dataType: STRING
+    parameterName: ip
+    required: true
+  - dataType: STRING
+    parameterName: loop_id
+    required: true
+  softwareType: IOS-XE
+- project: mcp-test-dayn
+  name: mcp-test-port-open
+  composite: false
+  content: |-
+    interface {{ port }}
+     authentication open
+  deviceTypes:
+  - productFamily: Switches and Hubs
+  language: JINJA
+  params:
+  - dataType: STRING
+    parameterName: port
+    required: true
+  softwareType: IOS-XE
+network_profiles:
+- name: mcp-test-sw-profile
+  type: Switching
+  sites:
+  - Global/mcp-test-lab/mcp-test-bldg
+  templates:
+  - mcp-test-dayn/mcp-test-cdp
+ip_pools:
+- name: mcp-test-global
+  type: Generic
+  ipv4:
+    dhcpServers:
+    - 198.18.133.1
+    dnsServers:
+    - 198.18.133.1
+    gatewayIpAddress: 10.90.0.1
+    prefixLength: 16
+    subnet: 10.90.0.0
+ip_reservations:
+- site: Global/mcp-test-lab/mcp-test-bldg
+  name: mcp-test-lan
+  type: LAN
+  ipv4:
+    dhcpServers:
+    - 198.18.133.1
+    dnsServers: []
+    gatewayIpAddress: 10.90.1.1
+    globalPool: mcp-test-global
+    prefixLength: 24
+    slaacSupport: false
+    subnet: 10.90.1.0
+ssids:
+- site: Global
+  ssid: mcp-test-psk
+  authServers: []
+  authType: WPA2_PERSONAL
+  isAuthKeyPSK: true
+  isBroadcastSSID: true
+  isEnabled: true
+  passphrase: '********'
+  profileName: mcp-test-psk_profile
+  rsnCipherSuiteCcmp128: true
+  sessionTimeOut: 1800
+  ssidRadioType: 2.4 and 5 GHz
+  wlanType: Enterprise
+wireless_profiles:
+- name: mcp-test-wl
+  additionalInterfaces: []
+  ssidDetails:
+  - enableFabric: false
+    flexConnect:
+      enableFlexConnect: false
+    interfaceName: management
+    ssidName: mcp-test-psk
+    wlanProfileName: mcp-test-psk_profile
+tags:
+- name: AUTO_INV_EVENT_SYNC_DISABLED
+- name: mcp-test-routers
+  description: lab routers
+  dynamicRules:
+  - memberType: networkdevice
+    rules:
+      name: hostname
+      operation: ILIKE
+      value: '%lab-r%'
+compliance_policies:
+- name: mcp-test-ntp
+  description: NTP configured
+  rules:
+  - name: ntp-server
+    description: ''
+    conditions:
+    - action:
+        doesNotMatchAction: RAISE_A_VIOLATION
+        doesNotMatchViolationSeverity: MEDIUM
+        matchAction: PASS
+      operator: CONTAINS_STRING
+      scope: RUNNING_CONFIG
+      sequenceNumber: 1
+      value: ntp server 198.18.128.1
+    deviceFamilies:
+    - Routers
+    impact: ''
+    softwareType: IOS-XE
+    suggestedFix: ntp server 198.18.128.1
+  sites:
+  - Global/mcp-test-lab

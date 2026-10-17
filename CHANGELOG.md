@@ -43,6 +43,14 @@
 ## 0.9.0 (unreleased)
 
 ### Added
+- **Config export and diff (D39, #75).** `catc_export_config(scope, sections)` writes the site hierarchy, the
+  network settings set at each site, credentials (type, description, username: never secrets), template projects
+  and templates, network profiles with their templates and sites, IP pools and reservations, SSIDs (passphrases
+  masked), wireless profiles, tags and compliance policies as YAML, by name and in a stable order, with a
+  `format`/`version` header (version 1) for config import (D40). `catc_diff_config(before, after?)` compares two
+  exports, or an export with live Catalyst Center, by item identity: added/removed items and each changed field.
+  Both run as MCP background tasks. Format: [docs/config-export.md](docs/config-export.md). New dependency:
+  PyYAML. The templates section uses its own minimal serializer until D36's lands.
 - **`catc-mcp-server check` preflight (D32, #68; core C21).** Runs without an MCP client: the token login
   (`POST /dna/system/api/v1/auth/token`) and the Intent API, TLS trust, credentials (a static `CATC_TOKEN` warns:
   it is never renewed), the API user's roles against the enabled tiers (built-in roles by name, custom roles by
