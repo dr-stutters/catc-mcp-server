@@ -583,7 +583,7 @@ def test_masking_parity_with_config_export() -> None:
     mine = serialize_templates([{"name": "p"}], [raw])["projects"][0]["templates"][0]
     _, (theirs,) = config_io._templates({"projects": [], "templates": [raw]})
     assert mine["content"] == theirs["content"]
-    for secret in ("$9$hash", "Cisco123", "\"pub\"", "T0k9x"):
+    for secret in ("$9$hash", "Cisco123", '"pub"', "T0k9x"):
         assert secret not in mine["content"]
     for kept in ("$enable", "$vault", '"strong"', '"r1"', "{{ host }}"):
         assert kept in mine["content"]
