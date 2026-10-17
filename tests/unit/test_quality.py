@@ -178,7 +178,7 @@ async def test_list_clients_by_device(api: respx.MockRouter) -> None:
         "ipv4Address": "10.77.0.10",
         "type": "Wired",
         "connectionStatus": "connected",
-        "lastUpdatedTime": NOW - 120_000,
+        "lastUpdatedTime": int(time.time() * 1000) - 120_000,  # not NOW: collection may be minutes ago
         "health": {"overallScore": 10, "rssiThreshold": -72},
         "connectedNetworkDevice": {
             "connectedNetworkDeviceName": "edge-sw1.lab.local",

@@ -7,6 +7,7 @@ expanded set (the sites and everything below them). Remediation stays on catc_ap
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import re
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -81,8 +82,59 @@ class RuleSpec(BaseModel):
     suggested_fix: str | None = Field(None, max_length=2000, description="How to fix a violation")
     impact: str | None = Field(None, max_length=2000, description="Why a violation matters")
     conditions: list[ConditionSpec] = Field(
-        min_length=1, max_length=20, description="Checks, evaluated in order"
+        [], max_length=20, description="Checks, evaluated in order (or use require_lines/forbid_lines)"
     )
+    require_lines: list[str] = Field(
+        [],
+        max_length=20,
+        description="CLI lines that must be in the running config, e.g. ['service password-encryption']; "
+        "each becomes an exact-line regex condition (violation when missing)",
+    )
+    forbid_lines: list[str] = Field(
+        [],
+        max_length=20,
+        description="CLI lines that must not be in the running config, e.g. ['ip http server']; "
+        "each becomes an exact-line regex condition (violation when present)",
+    )
+    severity: Severity = Field("MAJOR", description="Severity of require_lines/forbid_lines violations")
+
+    @model_validator(mode="after")
+    def _has_checks(self) -> "RuleSpec":
+        if len(self.all_conditions()) == 0:
+            raise ValueError("a rule needs conditions, require_lines or forbid_lines")
+        if len(self.all_conditions()) > 20:
+            raise ValueError("a rule takes at most 20 checks in all")
+        return self
+
+    def all_conditions(self) -> list[ConditionSpec]:
+        """The explicit conditions followed by the ones generated from require/forbid lines."""
+        out = list(self.conditions)
+        for lines, when in ((self.require_lines, "does_not_match"), (self.forbid_lines, "matches")):
+            for line in lines:
+                if not line.strip():
+                    continue
+                out.append(
+                    ConditionSpec(
+                        operator="MATCHES_EXPRESSION",
+                        value=line_regex(line),
+                        violation_when=when,  # type: ignore[arg-type]
+                        severity=self.severity,
+                        message=(f"{'Missing' if when == 'does_not_match' else 'Forbidden'}: {line.strip()}")[
+                            :100
+                        ],
+                        scope="CONFIGURATION",
+                        show_command=None,
+                        block_start=None,
+                    )
+                )
+        return out
+
+
+def line_regex(line: str) -> str:
+    """An exact-line regex for one CLI line: anchored, special characters escaped, any run of
+    whitespace accepted where the line has one, trailing spaces allowed."""
+    words = [re.escape(w) for w in line.strip().split()]
+    return "^" + r"\s+".join(words) + r"\s*$"
 
 
 def condition_body(c: ConditionSpec) -> dict[str, Any]:
@@ -337,7 +389,9 @@ def register(reg: ToolRegistrar) -> None:
     ) -> dict[str, Any]:
         """Create a compliance policy that checks devices against your own standard, e.g. "no ip http
         server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or
-        "a login banner is set" ('^banner login' with violation_when='does_not_match'). Creates the
+        "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight
+        from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http
+        server']. Each rule targets its own device families and software type. Creates the
         policy, its rules and conditions, then the site assignment; if a step fails the new policy is
         deleted again. Preview-first. Violations show after catc_run_compliance."""
         app: CatcApp = get_client(ctx)
@@ -347,7 +401,7 @@ def register(reg: ToolRegistrar) -> None:
             "sites": sites,
             "description": description,
         }
-        bodies = [(rule_body(r), [condition_body(c) for c in r.conditions]) for r in rules]
+        bodies = [(rule_body(r), [condition_body(c) for c in r.all_conditions()]) for r in rules]
         st = list({str(x["id"]): x for x in [await resolve_site(app, s) for s in sites or []]}.values())
         blockers = []
         if any(str(p.get("name", "")).lower() == name.lower() for p in await list_policies(app)):
@@ -414,6 +468,133 @@ def register(reg: ToolRegistrar) -> None:
 
         return await preview_or_apply(
             ctx, tool="catc_create_compliance_policy", args=args, confirm=confirm, plan=plan, apply=apply
+        )
+
+    @reg.write(title="Update compliance policy")
+    async def catc_update_compliance_policy(
+        ctx: Context,
+        policy: PolicyRef,
+        add_rules: Annotated[
+            list[RuleSpec] | None,
+            Field(max_length=50, description="Rules to add (same shape as in catc_create_compliance_policy)"),
+        ] = None,
+        remove_rules: Annotated[
+            list[str] | None,
+            Field(max_length=50, description="Names of rules to delete (with their conditions)"),
+        ] = None,
+        name: Annotated[
+            str | None, Field(min_length=1, max_length=255, description="New policy name")
+        ] = None,
+        description: Annotated[str | None, Field(max_length=2000, description="New description")] = None,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Change an existing compliance policy: add rules (conditions, or CLI lines with
+        require_lines/forbid_lines), delete rules by name, rename it or change its description. To
+        change a rule, remove it and add it again under the same name in one call. Sites are changed
+        with catc_assign_compliance_policy. Preview-first; the steps run in order (removals first)
+        and a failure stops at that step, reporting what was done. Violations change after the next
+        catc_run_compliance."""
+        app: CatcApp = get_client(ctx)
+        p = await resolve_policy(app, policy)
+        pid = safe_id(str(p["id"]), "policy id")
+        existing = {
+            str(r.get("name")): r
+            for r in ensure_list(await app.get_response(f"{CP}/{pid}/rules"))
+            if isinstance(r, dict)
+        }
+        adds = add_rules or []
+        removes = list(dict.fromkeys(remove_rules or []))
+        blockers: list[str] = []
+        if p.get("source") == "SYSTEM":
+            blockers.append("System policies can't be changed.")
+        unknown = [r for r in removes if r not in existing]
+        if unknown:
+            blockers.append(f"No rule named {', '.join(unknown)} in {p.get('name')}.")
+        add_names = [r.name for r in adds]
+        if len(set(add_names)) != len(add_names):
+            blockers.append("Rule names to add must be unique.")
+        clash = [n for n in add_names if n in existing and n not in removes]
+        if clash:
+            blockers.append(
+                f"Rule {', '.join(clash)} already exists; remove it in the same call to replace it."
+            )
+        renamed_to = name.lower() if name and name.lower() != str(p.get("name", "")).lower() else None
+        if renamed_to and any(str(x.get("name", "")).lower() == renamed_to for x in await list_policies(app)):
+            blockers.append(f"A compliance policy named {name!r} already exists.")
+        rename = (name is not None and name != p.get("name")) or (
+            description is not None and description != (p.get("description") or "")
+        )
+        if not (adds or removes or rename):
+            blockers.append("Nothing to change: give add_rules, remove_rules, name or description.")
+        bodies = [(rule_body(r), [condition_body(c) for c in r.all_conditions()]) for r in adds]
+        details: dict[str, Any] = {"policy": p.get("name"), "rules_now": sorted(existing)}
+        if rename:
+            details["policy_after"] = {
+                "name": name or p.get("name"),
+                "description": description if description is not None else p.get("description") or "",
+            }
+        if removes:
+            details["remove_rules"] = removes
+        if adds:
+            details["add_rules"] = [{**rb, "conditions": cb} for rb, cb in bodies]
+        details["rules_after"] = sorted({*existing, *add_names} - (set(removes) - set(add_names)))
+        plan = Plan(
+            f"Update compliance policy {p.get('name')}"
+            + (f": -{len(removes)} rule(s)" if removes else "")
+            + (f" +{len(adds)} rule(s)" if adds else "")
+            + (" (rename/description)" if rename else ""),
+            details=details,
+            fingerprint={"policy": pid, "rules": sorted((n, str(r.get("id"))) for n, r in existing.items())},
+            blockers=blockers,
+            side_effects=["Violations change after the next compliance run."] if adds or removes else [],
+        )
+
+        async def apply() -> Any:
+            done: list[str] = []
+            try:
+                if rename:
+                    body = {
+                        "id": pid,
+                        "name": name or p.get("name"),
+                        "description": description if description is not None else p.get("description") or "",
+                    }
+                    await app.run_job("PUT", f"{CP}/{pid}", body, ctx=ctx, what="update policy")
+                    done.append("updated name/description")
+                for rname in removes:
+                    old_id = safe_id(str(existing[rname]["id"]), "rule id")
+                    await app.run_job("DELETE", f"{CP}/{pid}/rules/{old_id}", ctx=ctx, what="delete rule")
+                    done.append(f"removed rule {rname}")
+                for rb, cbs in bodies:
+                    rjob = await app.run_job("POST", f"{CP}/{pid}/rules", rb, ctx=ctx, what="create rule")
+                    rid = task_id_of(rjob)
+                    if not rid:
+                        raise NotFound(f"Rule {rb['name']!r} returned no id.")
+                    for cb in cbs:
+                        await app.run_job(
+                            "POST", f"{CP}/{pid}/rules/{rid}/conditions", cb, ctx=ctx, what="create condition"
+                        )
+                    done.append(f"added rule {rb['name']}")
+            except Exception as err:
+                raise UpstreamError(
+                    f"{err}. Done before the failure: {', '.join(done) or 'nothing'}. "
+                    "Check with catc_get_compliance_policy."
+                ) from err
+            final = await resolve_policy(app, pid)
+            return {**pick(final, ["name", "id", "status", "rulesCount", "sitesCount"]), "done": done}
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_update_compliance_policy",
+            args={
+                "policy": policy,
+                "add_rules": [r.model_dump() for r in adds],
+                "remove_rules": removes,
+                "name": name,
+                "description": description,
+            },
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
         )
 
     @reg.write(title="Assign compliance policy to sites")
