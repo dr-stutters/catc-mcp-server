@@ -269,12 +269,14 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (65)
+### Read (67)
 
 | Tool | What it does |
 |---|---|
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
 | `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
+| `catc_compliance_report` | Which devices are out of standard: compliance at a site (and below) from the last compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX, network settings, your compliance policies as NETWORK_RULES...) and severity, with the non-compliant devices and their failing categories and policy rule violations (worst first). |
+| `catc_config_drift` | Config drift across sites: which devices' running configuration differs from a golden device (lines missing compared with it, and extra lines) or no longer contains what a template renders to (lines missing; a 'no X' template line counts as present when X is absent). |
 | `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
@@ -339,7 +341,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 
-### Write (40)
+### Write (41)
 
 | Tool | What it does |
 |---|---|
@@ -349,7 +351,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_assign_site_credentials` | Set which global credentials (CLI, SNMPv2c read/write, SNMPv3, HTTP read/write) a site uses (Design > Network Settings > Device Credentials). |
 | `catc_attach_template_to_profile` | Attach a Day-N CLI template to switching or wireless network profiles, so it belongs to the profiles' sites (the UI's provisioning flow offers it there). |
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
-| `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'). |
+| `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http server']. |
 | `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
 | `catc_create_fabric_site` | Make a site an SD-Access fabric site. |
 | `catc_create_global_credential` | Create a global device credential that discovery and site assignment can use. |
@@ -377,6 +379,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
+| `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |
 | `catc_update_site_aaa_settings` | Set a site's AAA network settings (Design > Network Settings > AAA): which server devices use for administrator login (network) and for 802.1X/MAB endpoints (client), as ISE or plain AAA, RADIUS or TACACS. |
