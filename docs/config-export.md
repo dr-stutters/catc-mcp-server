@@ -122,7 +122,7 @@ Steps run in this order, so whatever an item refers to exists first:
 |---|---|---|---|
 | 1 | `sites` | created (area, building, floor; floors get the UI's defaults for unset dimensions) | building/floor attributes updated; a different site type blocks |
 | 2 | `credentials` | created with `secrets["TYPE:description"]` (CLI/HTTP `password`, CLI `enablePassword`, SNMPv2c `readCommunity`/`writeCommunity`, SNMPv3 `authPassword`/`privacyPassword` per `snmpMode`) | skipped: secrets can't be compared, credentials aren't changed |
-| 3 | `settings` | each category set at a site is PUT whole (credential slots by `TYPE:description`) | the same: the category gets the export's values; categories the export doesn't set are left alone |
+| 3 | `settings` | each category set at a site is PUT (credential slots by `TYPE:description`) | the export's values merged over what is set at the site (one level deep): values the export doesn't carry stay, an explicit `[]` clears a list; categories the export doesn't set are left alone |
 | 4 | `ip_pools` | created | skipped (reported) |
 | 5 | `ip_reservations` | created from the named global pool | skipped (reported) |
 | 6 | `template_projects` | created (also any project a new template names) | nothing to change |
@@ -140,10 +140,14 @@ anything blocking:
   line or variable): put the real value in the export, or drop the field;
 - a site, credential, global pool or template that a step refers to and that exists neither on Catalyst
   Center nor in the export; a building without a country and an address or coordinates; composite templates;
-- a section the live export couldn't read.
+- a section the live export couldn't read, or a live read that was incomplete for a section being imported (one
+  site's settings, one template or profile failed, or the per-site request budget ran out): that item would
+  look missing and get a wrong write;
+- a dual-stack global pool (split it into an IPv4 and an IPv6 pool).
 
 Applying runs the steps one at a time and stops at the first failure: the result has `applied`, `failed`
-(with the error, and an incomplete template it left behind) and `not_applied`. Run the import again after
+(with the error, secret values masked, and an incomplete template it left behind) and `not_applied`. Run the import again after
 fixing the cause: the new plan only has what is still missing. The core's rails apply (`MCP_CHANGE_WINDOW`,
-`MCP_MAX_BLAST_RADIUS` with the number of steps as blast radius, two-person confirmation). Devices get new
+`MCP_MAX_BLAST_RADIUS` with the number of steps as blast radius, two-person confirmation). The confirm token
+is tied to the planned steps: a live change that alters the plan refuses it, unrelated changes don't. Devices get new
 settings only when provisioned (`catc_provision_devices`), where `CATC_MAX_DEVICES_PER_CHANGE` applies.

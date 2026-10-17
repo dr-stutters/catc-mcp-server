@@ -37,6 +37,7 @@ from catc_mcp._core import (
     preview_or_apply,
 )
 from catc_mcp._core.formatting import MASK
+from catc_mcp._core.secrets import scrub_text
 from catc_mcp.client import CatcApp
 from catc_mcp.common import ensure_list, resolve_site, resolve_template
 from catc_mcp.tools.config_io import (
@@ -104,6 +105,24 @@ CRED_BODY_FIELDS = {
     "privacyType": "privacyType",
 }
 TAG_PATH = "/dna/intent/api/v1/tag"
+# Live-export warnings (config_io Reader / budget) that make a section's comparison unreliable.
+WARNING_PREFIXES = {
+    "settings": ("settings",),
+    "templates": ("template",),
+    "network_profiles": ("network profile", "template"),
+}
+# Secret fields `secrets` may give, by lower-case name (accepted in any case, sent as spelled here).
+SECRET_FIELDS = {
+    f.lower(): f
+    for f in (
+        "password",
+        "enablePassword",
+        "readCommunity",
+        "writeCommunity",
+        "authPassword",
+        "privacyPassword",
+    )
+}
 ACTIONS = ("create", "update", "attach", "assign")
 IMPORT_COMMENT = "imported by catc_import_config"
 
@@ -188,6 +207,16 @@ def _masked_at(v: Any, path: str = "") -> str | None:
     return None
 
 
+def merged_settings(have: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """The category body to PUT: the export's values over what is set at the site now (one level deep,
+    as a category holds sub-objects such as dns.dns or telemetry.syslogs). An import never removes a
+    setting the export doesn't mention; an explicit [] in the export still clears a list."""
+    out = dict(have)
+    for k, v in body.items():
+        out[k] = {**have[k], **v} if isinstance(v, dict) and isinstance(have.get(k), dict) else v
+    return out
+
+
 def _parent(path: str) -> str:
     return path.rsplit("/", 1)[0]
 
@@ -219,6 +248,16 @@ def plan_import(
     for s in wanted:
         if s in errors:
             plan.blockers.append(f"Can't read the live {s} to compare with: {errors[s]}")
+    # A per-item read failure (one site's settings, one template) or the request budget would look
+    # like "missing here" and plan a wrong write: block instead.
+    for w in (live.get("meta") or {}).get("warnings") or []:
+        if any(
+            str(w).startswith(prefix)
+            for s, prefixes in WARNING_PREFIXES.items()
+            if s in wanted
+            for prefix in prefixes
+        ):
+            plan.blockers.append(f"The live read was incomplete, so the plan could be wrong: {w}")
     if plan.blockers:
         return plan
 
@@ -336,7 +375,7 @@ def plan_import(
     def cred_known(label: str) -> bool:
         return label.lower() in live_creds or label.lower() in new_creds
 
-    # Settings: each category set at a site is PUT whole when it differs from what is set there now.
+    # Settings: a category that differs is PUT with the export's values merged over the site's own.
     if "settings" in wanted:
         live_settings = {str(k).lower(): v for k, v in (live.get("settings") or {}).items()}
         for path, cats in (doc.get("settings") or {}).items():
@@ -349,6 +388,8 @@ def plan_import(
                     plan.blockers.append(f"Settings for {path}: unknown category {cat!r}.")
                     continue
                 have = have_cats.get(cat) or {}
+                # Merge into what is set there now, so a value the export doesn't carry stays.
+                body = merged_settings(have, body or {})
                 if canon_json(have) == canon_json(body):
                     unchanged("settings")
                     continue
@@ -357,7 +398,12 @@ def plan_import(
                         if not cred_known(str(label)):
                             plan.blockers.append(
                                 f"Settings for {path}: {slot} names credential {label}, which is neither "
-                                "here nor in the export."
+                                "here nor in the export"
+                                + (
+                                    " (add 'credentials' to `sections`)"
+                                    if "credentials" not in wanted
+                                    else "."
+                                )
                             )
                 step(
                     "settings",
@@ -389,6 +435,11 @@ def plan_import(
                 continue
             if not (p.get("ipv4") or p.get("ipv6")):
                 plan.blockers.append(f"IP pool {name} has no address space in the export.")
+            if p.get("ipv4") and p.get("ipv6"):
+                plan.blockers.append(
+                    f"IP pool {name} is dual-stack; a global pool holds one family here. Split it into an "
+                    "IPv4 and an IPv6 pool in the export."
+                )
             new_pools.add(name.lower())
             step("ip_pools", "create", name, dict(p))
     if "ip_reservations" in wanted:
@@ -593,6 +644,14 @@ class Applier:
         self.ids: dict[tuple[str, str], str] = {}
         self.partial: dict[str, str | None] = {"template_id": None}
 
+    def scrub(self, text: str) -> str:
+        """An error message without any secret value this import was given."""
+        for fields in self.secrets.values():
+            for v in fields.values():
+                if v:
+                    text = text.replace(v, MASK)
+        return scrub_text(text)
+
     async def job(self, method: str, path: str, body: Any, what: str) -> dict[str, Any]:
         result: dict[str, Any] = await self.app.run_job(method, path, body, ctx=self.ctx, what=what)
         return result
@@ -791,7 +850,7 @@ class Applier:
                     result = await handler(s.payload)
             except Exception as e:  # noqa: BLE001 - every failure stops the import and is reported
                 failed = s.row()
-                failed["error"] = str(e)[:400]
+                failed["error"] = self.scrub(str(e))[:400]
                 if s.section == "templates" and self.partial.get("template_id"):
                     failed["left_behind"] = (
                         f"template {self.partial['template_id']} was created and is incomplete; delete it "
@@ -827,10 +886,17 @@ Secrets = Annotated[
 
 
 def _secret_values(secrets: dict[str, dict[str, SecretStr]] | None) -> dict[str, dict[str, str]]:
-    return {
-        label: {k: v.get_secret_value() for k, v in fields.items()}
-        for label, fields in (secrets or {}).items()
-    }
+    """Plain values with field names in their API spelling; an unknown field name is refused."""
+    out: dict[str, dict[str, str]] = {}
+    for label, fields in (secrets or {}).items():
+        for k, v in fields.items():
+            canon = SECRET_FIELDS.get(k.lower())
+            if canon is None:
+                raise InvalidRequest(
+                    f"secrets[{label!r}]: unknown field {k!r}; use " + ", ".join(SECRET_FIELDS.values()) + "."
+                )
+            out.setdefault(label, {})[canon] = v.get_secret_value()
+    return out
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -906,12 +972,14 @@ def register(reg: ToolRegistrar) -> None:
             details["live_warnings"] = live["meta"]["warnings"]
         counts = {a: sum(1 for s in changes if s.action == a) for a in ACTIONS}
         what = ", ".join(f"{n} {a}" for a, n in counts.items() if n) or "nothing to change"
-        live_state = {k: v for k, v in live.items() if k != "meta"}
         plan_obj = Plan(
             f"Import config into {scope}: {what}",
             details=details,
             blockers=blockers,
-            fingerprint=hashlib.sha256(canon_json(live_state).encode()).hexdigest(),
+            # What the plan would write: a live change that alters it refuses the token, unrelated ones don't.
+            fingerprint=hashlib.sha256(
+                canon_json([[st.section, st.action, st.item, st.payload] for st in plan.steps]).encode()
+            ).hexdigest(),
             blast_radius=len(changes),
             side_effects=[
                 "Creates and updates design objects only; nothing reaches devices until they are "
