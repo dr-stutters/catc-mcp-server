@@ -1,0 +1,1481 @@
+{
+ "network_trend": {
+  "response": [
+   {
+    "timestamp": 1792206000000,
+    "attributes": [
+     {
+      "name": "goodDeviceCount",
+      "value": "4"
+     },
+     {
+      "name": "fairDeviceCount",
+      "value": "0"
+     },
+     {
+      "name": "poorDeviceCount",
+      "value": "0"
+     }
+    ]
+   },
+   {
+    "timestamp": 1792207800000,
+    "attributes": [
+     {
+      "name": "goodDeviceCount",
+      "value": "12"
+     },
+     {
+      "name": "fairDeviceCount",
+      "value": "0"
+     },
+     {
+      "name": "poorDeviceCount",
+      "value": "0"
+     }
+    ]
+   },
+   {
+    "timestamp": 1792209600000,
+    "attributes": [
+     {
+      "name": "goodDeviceCount",
+      "value": "12"
+     },
+     {
+      "name": "fairDeviceCount",
+      "value": "0"
+     },
+     {
+      "name": "poorDeviceCount",
+      "value": "0"
+     }
+    ]
+   },
+   {
+    "timestamp": 1792211400000,
+    "attributes": [
+     {
+      "name": "goodDeviceCount",
+      "value": "12"
+     },
+     {
+      "name": "fairDeviceCount",
+      "value": "0"
+     },
+     {
+      "name": "poorDeviceCount",
+      "value": "0"
+     }
+    ]
+   },
+   {
+    "timestamp": 1792213200000,
+    "attributes": [
+     {
+      "name": "goodDeviceCount",
+      "value": "12"
+     },
+     {
+      "name": "fairDeviceCount",
+      "value": "0"
+     },
+     {
+      "name": "poorDeviceCount",
+      "value": "0"
+     }
+    ]
+   },
+   {
+    "timestamp": 1792215000000,
+    "attributes": [
+     {
+      "name": "goodDeviceCount",
+      "value": "12"
+     },
+     {
+      "name": "fairDeviceCount",
+      "value": "0"
+     },
+     {
+      "name": "poorDeviceCount",
+      "value": "0"
+     }
+    ]
+   }
+  ],
+  "page": {
+   "limit": 6,
+   "offset": 1,
+   "count": 6,
+   "timestampOrder": "asc"
+  },
+  "version": "1.0"
+ },
+ "device_trend": {
+  "response": [
+   {
+    "timestamp": 1792207200000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792207800000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792208400000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792209000000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792209600000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792210200000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792210800000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792211400000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792212000000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792212600000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792213200000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792213800000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792214400000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792215000000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792215600000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792216200000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792216800000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   },
+   {
+    "timestamp": 1792217400000,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10
+     }
+    ]
+   }
+  ],
+  "page": {
+   "limit": 18,
+   "offset": 1,
+   "count": 18,
+   "timestampOrder": "asc"
+  },
+  "version": "1.0"
+ },
+ "site_trend_task": {
+  "response": {
+   "taskLocation": "/dna/data/api/v1/assuranceTasks/6ad31300629aaf3551df423a",
+   "taskId": "6ad31300629aaf3551df423a"
+  },
+  "version": "2.0"
+ },
+ "assurance_task": {
+  "response": {
+   "id": "6ad31300629aaf3551df423a",
+   "status": "SUCCESS",
+   "startTime": 1792217856000,
+   "endTime": 1792217857101,
+   "updateTime": 1792217857101,
+   "progress": null,
+   "failureReason": null,
+   "errorCode": null,
+   "requestType": "siteHealthTrend",
+   "data": {
+    "startTime": 1792207056056,
+    "attributes": [
+     "NETWORKDEVICEGOODHEALTHPERCENTAGE",
+     "CLIENTGOODHEALTHPERCENTAGE",
+     "ISSUECOUNT",
+     "P1ISSUECOUNT",
+     "P2ISSUECOUNT"
+    ],
+    "endTime": 1792217280000,
+    "trendInterval": "_10MIN",
+    "filters": [
+     {
+      "value": [
+       "ec510a85-c946-4be2-94d0-22d76af7f403"
+      ],
+      "key": "id",
+      "operator": "IN"
+     }
+    ],
+    "page": {
+     "offset": 1,
+     "limit": 500,
+     "timeSortOrder": "ASC"
+    }
+   },
+   "resultUrl": "/dna/data/api/v1/siteHealthSummaries/ec510a85-c946-4be2-94d0-22d76af7f403/trendAnalytics?taskId=6ad31300629aaf3551df423a"
+  },
+  "version": "1.0"
+ },
+ "site_trend": {
+  "response": [
+   {
+    "timestamp": 1792207200000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792207800000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792208400000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792209000000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792209600000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792210200000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792210800000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792211400000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792212000000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792212600000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792213200000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792213800000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792214400000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792215000000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792215600000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     },
+     {
+      "name": "issueCount",
+      "value": 2.0
+     },
+     {
+      "name": "p2IssueCount",
+      "value": 2.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792216200000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   },
+   {
+    "timestamp": 1792216800000,
+    "attributes": [
+     {
+      "name": "networkDeviceGoodHealthPercentage",
+      "value": 100.0
+     }
+    ]
+   }
+  ],
+  "page": {
+   "limit": 500,
+   "offset": 1,
+   "timeSortOrder": "ASC",
+   "count": 17
+  },
+  "version": "2.0"
+ },
+ "site_summary": {
+  "response": {
+   "wirelessDeviceCount": 0,
+   "routerDeviceGoodHealthPercentage": 100,
+   "wiredClientGoodHealthCount": 0,
+   "wlcDeviceGoodHealthCount": 0,
+   "latitude": -33.86,
+   "networkDeviceGoodHealthCount": 2,
+   "wirelessClientGoodHealthCount": 0,
+   "clientDataUsage": 0.0,
+   "p3IssueCount": 0,
+   "issueCount": 2,
+   "routerDeviceCount": 2,
+   "wirelessDeviceGoodHealthPercentage": null,
+   "switchDeviceCount": 0,
+   "wlcDeviceGoodHealthPercentage": null,
+   "wirelessClientGoodHealthPercentage": null,
+   "coreDeviceGoodHealthPercentage": null,
+   "apDeviceGoodHealthPercentage": null,
+   "id": "ec510a85-c946-4be2-94d0-22d76af7f403",
+   "switchDeviceGoodHealthPercentage": null,
+   "p1IssueCount": 0,
+   "clientCount": 0,
+   "clientGoodHealthCount": 0,
+   "siteType": "building",
+   "longitude": 151.2,
+   "coreDeviceCount": 0,
+   "switchDeviceGoodHealthCount": 0,
+   "p4IssueCount": 0,
+   "routerDeviceGoodHealthCount": 2,
+   "accessDeviceCount": 0,
+   "wirelessDeviceGoodHealthCount": 0,
+   "distributionDeviceGoodHealthPercentage": null,
+   "p2IssueCount": 2,
+   "wiredClientCount": 0,
+   "clientGoodHealthPercentage": null,
+   "coreDeviceGoodHealthCount": 0,
+   "apDeviceCount": 0,
+   "distributionDeviceCount": 0,
+   "wirelessClientCount": 0,
+   "accessDeviceGoodHealthPercentage": null,
+   "wlcDeviceCount": 0,
+   "apDeviceGoodHealthCount": 0,
+   "siteHierarchy": "Global/mcp-test-lab/mcp-test-bldg",
+   "siteHierarchyId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+   "wiredClientGoodHealthPercentage": null,
+   "networkDeviceGoodHealthPercentage": 100,
+   "accessDeviceGoodHealthCount": 0,
+   "distributionDeviceGoodHealthCount": 0,
+   "networkDeviceCount": 2
+  },
+  "version": "2.0"
+ },
+ "issues": {
+  "response": [
+   {
+    "issueId": "9a68cecb-deea-4c87-927b-8525b667d05f",
+    "name": "OSPF_Down",
+    "description": "OSPF adjacency failed on device name:'r2.mcp.lab', interface:'GigabitEthernet2' (Interface description: to r1) at site:'Global/mcp-test-lab/mcp-test-bldg' with neighbor '10.255.255.1'",
+    "summary": "OSPF Adjacency Failed on Device \"r2.mcp.lab\" Interface GigabitEthernet2 (Interface description: to r1) with Neighbor 10.255.255.1",
+    "priority": "P2",
+    "severity": "high",
+    "deviceType": "border router",
+    "deviceFamily": "Routers",
+    "category": "connectivity",
+    "entityType": "network device",
+    "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+    "firstOccurredTime": 1792216109752,
+    "mostRecentOccurredTime": 1792216109752,
+    "status": "active",
+    "isGlobal": true,
+    "updatedBy": null,
+    "updatedTime": null,
+    "notes": null,
+    "siteId": "ec510a85-c946-4be2-94d0-22d76af7f403",
+    "siteHierarchyId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+    "siteName": "mcp-test-bldg",
+    "siteHierarchy": "Global/mcp-test-lab/mcp-test-bldg",
+    "suggestedActions": [
+     {
+      "message": "Ping the neighbor IP to verify connectivity.",
+      "steps": [
+       {
+        "command": "ping 10.255.255.1",
+        "description": "ping neighbor IP",
+        "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "Check OSPF neighbors.",
+      "steps": [
+       {
+        "command": "show ip ospf neighbor",
+        "description": "Check IPv4 OSPF neighbors",
+        "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+        "stepType": "command-Runner"
+       },
+       {
+        "command": "show ipv6 ospf neighbor",
+        "description": "Check IPv6 OSPF neighbors",
+        "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "If the Neighbor is in \"Init\" state. Check if there is authentication configured using \"show run | sec OSPF\". Authentication type and keys should match on both routers",
+      "steps": [
+       {
+        "command": "show run | sec ospf",
+        "description": "Check if there is authentication configured",
+        "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "If the Neighbor is in \"Exstart\" state. Check if the MTU settings are same on the interface connecting the routers.",
+      "steps": [
+       {
+        "command": "show ip interface GigabitEthernet2 | in MTU",
+        "description": "Check the interface MTU",
+        "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "Check interface GigabitEthernet2 has any incrementing errors ",
+      "steps": [
+       {
+        "command": "show int GigabitEthernet2 | inc errors|runts|discard|drop|MTU",
+        "description": "Check for errors on the interface GigabitEthernet2",
+        "entityId": "02a69307-652c-4518-90e1-700099ecd3ec",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "Contact Cisco TAC World Wide \u2013 https://www.cisco.com/c/en/us/support/web/tsd-cisco-worldwide-contacts.html",
+      "steps": []
+     }
+    ],
+    "additionalAttributes": [
+     {
+      "key": "interfaceDescription",
+      "value": "to r1"
+     },
+     {
+      "key": "remoteIP",
+      "value": "10.255.255.1"
+     },
+     {
+      "key": "_name",
+      "value": "OSPF_Down"
+     },
+     {
+      "key": "_entity_type",
+      "value": "NetworkDevice"
+     },
+     {
+      "key": "ctProfileName",
+      "value": "global"
+     },
+     {
+      "key": "_key",
+      "value": "NetworkDevice:02a69307-652c-4518-90e1-700099ecd3ec:02a69307-652c-4518-90e1-700099ecd3ec:10.255.255.1:GigabitEthernet2:r2.mcp.lab:Global/mcp-test-lab/mcp-test-bldg:/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/"
+     },
+     {
+      "key": "type",
+      "value": "issue"
+     },
+     {
+      "key": "ctProfileId",
+      "value": "global"
+     },
+     {
+      "key": "floorId",
+      "value": ""
+     },
+     {
+      "key": "areaName",
+      "value": "Global/mcp-test-lab"
+     },
+     {
+      "key": "rootCause",
+      "value": "504"
+     },
+     {
+      "key": "syslogMsg",
+      "value": "269: *Oct 17 05:48:29.829:  Process 1, Nbr 10.255.255.1 on GigabitEthernet2 from FULL to DOWN, Neighbor Down: Interface down or detached"
+     },
+     {
+      "key": "needState",
+      "value": "true"
+     },
+     {
+      "key": "deviceType",
+      "value": "Cisco Catalyst 8000V Edge Software"
+     },
+     {
+      "key": "deviceUuid",
+      "value": "02a69307-652c-4518-90e1-700099ecd3ec"
+     },
+     {
+      "key": "deviceOS",
+      "value": "17.18.2"
+     },
+     {
+      "key": "entityType",
+      "value": "network_device"
+     },
+     {
+      "key": "_eventTime",
+      "value": "1792216109752"
+     },
+     {
+      "key": "nwDeviceName",
+      "value": "r2.mcp.lab"
+     },
+     {
+      "key": "deviceGroupHierarchyId",
+      "value": "/38d0b7ee-6c7e-4278-9797-a4cd02279f0a/36e16476-f4c8-499a-9b21-f63ac40c705a/"
+     },
+     {
+      "key": "_mostRecent",
+      "value": "1792216109752"
+     },
+     {
+      "key": "eventUniqueId",
+      "value": "198.18.128.153"
+     },
+     {
+      "key": "deviceFamily",
+      "value": "Routers"
+     },
+     {
+      "key": "timeInMillis",
+      "value": "1792216109752"
+     },
+     {
+      "key": "priority",
+      "value": "P2"
+     },
+     {
+      "key": "buildingName",
+      "value": "Global/mcp-test-lab/mcp-test-bldg"
+     },
+     {
+      "key": "siteHierarchyGraphId",
+      "value": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/"
+     },
+     {
+      "key": "failureReason",
+      "value": "Issue"
+     },
+     {
+      "key": "tagIdList",
+      "value": "[]"
+     },
+     {
+      "key": "status",
+      "value": "active"
+     },
+     {
+      "key": "managementIpAddr",
+      "value": "198.18.128.153"
+     },
+     {
+      "key": "eventSource",
+      "value": "Network Device"
+     },
+     {
+      "key": "_count",
+      "value": "1"
+     },
+     {
+      "key": "scope",
+      "value": "global"
+     },
+     {
+      "key": "_primary_key",
+      "value": "NetworkDevice:02a69307-652c-4518-90e1-700099ecd3ec"
+     },
+     {
+      "key": "floorName",
+      "value": ""
+     },
+     {
+      "key": "severity",
+      "value": "HIGH"
+     },
+     {
+      "key": "deviceRole",
+      "value": "BORDER ROUTER"
+     },
+     {
+      "key": "_suppression",
+      "value": "0"
+     },
+     {
+      "key": "entityId",
+      "value": "02a69307-652c-4518-90e1-700099ecd3ec"
+     },
+     {
+      "key": "buildingId",
+      "value": "ec510a85-c946-4be2-94d0-22d76af7f403"
+     },
+     {
+      "key": "areaId",
+      "value": "406c3e32-efd7-42cb-b0de-81749ce1889a"
+     },
+     {
+      "key": "siteHierarchy",
+      "value": "Global/mcp-test-lab/mcp-test-bldg"
+     },
+     {
+      "key": "eventStatus",
+      "value": "Down"
+     },
+     {
+      "key": "siteId",
+      "value": "ec510a85-c946-4be2-94d0-22d76af7f403"
+     },
+     {
+      "key": "deviceModel",
+      "value": "C8000V"
+     },
+     {
+      "key": "category",
+      "value": "connectivity"
+     },
+     {
+      "key": "timestring",
+      "value": "2026-10-17T05:48:29.752+0000"
+     },
+     {
+      "key": "intfName",
+      "value": "GigabitEthernet2"
+     }
+    ]
+   },
+   {
+    "issueId": "6cbdcf57-3c32-4f63-948b-92b134073d3b",
+    "name": "OSPF_Down",
+    "description": "OSPF adjacency failed on device name:'r1.mcp.lab', interface:'GigabitEthernet2' (Interface description: to r2) at site:'Global/mcp-test-lab/mcp-test-bldg' with neighbor '10.255.255.2'",
+    "summary": "OSPF Adjacency Failed on Device \"r1.mcp.lab\" Interface GigabitEthernet2 (Interface description: to r2) with Neighbor 10.255.255.2",
+    "priority": "P2",
+    "severity": "high",
+    "deviceType": "border router",
+    "deviceFamily": "Routers",
+    "category": "connectivity",
+    "entityType": "network device",
+    "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+    "firstOccurredTime": 1792216143856,
+    "mostRecentOccurredTime": 1792216143856,
+    "status": "active",
+    "isGlobal": true,
+    "updatedBy": null,
+    "updatedTime": null,
+    "notes": null,
+    "siteId": "ec510a85-c946-4be2-94d0-22d76af7f403",
+    "siteHierarchyId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+    "siteName": "mcp-test-bldg",
+    "siteHierarchy": "Global/mcp-test-lab/mcp-test-bldg",
+    "suggestedActions": [
+     {
+      "message": "Ping the neighbor IP to verify connectivity.",
+      "steps": [
+       {
+        "command": "ping 10.255.255.2",
+        "description": "ping neighbor IP",
+        "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "Check OSPF neighbors.",
+      "steps": [
+       {
+        "command": "show ip ospf neighbor",
+        "description": "Check IPv4 OSPF neighbors",
+        "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+        "stepType": "command-Runner"
+       },
+       {
+        "command": "show ipv6 ospf neighbor",
+        "description": "Check IPv6 OSPF neighbors",
+        "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "If the Neighbor is in \"Init\" state. Check if there is authentication configured using \"show run | sec OSPF\". Authentication type and keys should match on both routers",
+      "steps": [
+       {
+        "command": "show run | sec ospf",
+        "description": "Check if there is authentication configured",
+        "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "If the Neighbor is in \"Exstart\" state. Check if the MTU settings are same on the interface connecting the routers.",
+      "steps": [
+       {
+        "command": "show ip interface GigabitEthernet2 | in MTU",
+        "description": "Check the interface MTU",
+        "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "Check interface GigabitEthernet2 has any incrementing errors ",
+      "steps": [
+       {
+        "command": "show int GigabitEthernet2 | inc errors|runts|discard|drop|MTU",
+        "description": "Check for errors on the interface GigabitEthernet2",
+        "entityId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+        "stepType": "command-Runner"
+       }
+      ]
+     },
+     {
+      "message": "Contact Cisco TAC World Wide \u2013 https://www.cisco.com/c/en/us/support/web/tsd-cisco-worldwide-contacts.html",
+      "steps": []
+     }
+    ],
+    "additionalAttributes": [
+     {
+      "key": "interfaceDescription",
+      "value": "to r2"
+     },
+     {
+      "key": "remoteIP",
+      "value": "10.255.255.2"
+     },
+     {
+      "key": "_name",
+      "value": "OSPF_Down"
+     },
+     {
+      "key": "_entity_type",
+      "value": "NetworkDevice"
+     },
+     {
+      "key": "ctProfileName",
+      "value": "global"
+     },
+     {
+      "key": "_key",
+      "value": "NetworkDevice:f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3:f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3:10.255.255.2:GigabitEthernet2:r1.mcp.lab:Global/mcp-test-lab/mcp-test-bldg:/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/"
+     },
+     {
+      "key": "type",
+      "value": "issue"
+     },
+     {
+      "key": "ctProfileId",
+      "value": "global"
+     },
+     {
+      "key": "floorId",
+      "value": ""
+     },
+     {
+      "key": "areaName",
+      "value": "Global/mcp-test-lab"
+     },
+     {
+      "key": "rootCause",
+      "value": "504"
+     },
+     {
+      "key": "syslogMsg",
+      "value": "257: *Oct 17 05:49:03.400:  Process 1, Nbr 10.255.255.2 on GigabitEthernet2 from FULL to DOWN, Neighbor Down: Dead timer expired"
+     },
+     {
+      "key": "needState",
+      "value": "true"
+     },
+     {
+      "key": "deviceType",
+      "value": "Cisco Catalyst 8000V Edge Software"
+     },
+     {
+      "key": "deviceUuid",
+      "value": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3"
+     },
+     {
+      "key": "deviceOS",
+      "value": "17.18.2"
+     },
+     {
+      "key": "entityType",
+      "value": "network_device"
+     },
+     {
+      "key": "_eventTime",
+      "value": "1792216143856"
+     },
+     {
+      "key": "nwDeviceName",
+      "value": "r1.mcp.lab"
+     },
+     {
+      "key": "deviceGroupHierarchyId",
+      "value": "/38d0b7ee-6c7e-4278-9797-a4cd02279f0a/36e16476-f4c8-499a-9b21-f63ac40c705a/"
+     },
+     {
+      "key": "_mostRecent",
+      "value": "1792216143856"
+     },
+     {
+      "key": "eventUniqueId",
+      "value": "198.18.128.152"
+     },
+     {
+      "key": "deviceFamily",
+      "value": "Routers"
+     },
+     {
+      "key": "timeInMillis",
+      "value": "1792216143856"
+     },
+     {
+      "key": "priority",
+      "value": "P2"
+     },
+     {
+      "key": "buildingName",
+      "value": "Global/mcp-test-lab/mcp-test-bldg"
+     },
+     {
+      "key": "siteHierarchyGraphId",
+      "value": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/"
+     },
+     {
+      "key": "failureReason",
+      "value": "Issue"
+     },
+     {
+      "key": "tagIdList",
+      "value": "[]"
+     },
+     {
+      "key": "status",
+      "value": "active"
+     },
+     {
+      "key": "managementIpAddr",
+      "value": "198.18.128.152"
+     },
+     {
+      "key": "eventSource",
+      "value": "Network Device"
+     },
+     {
+      "key": "_count",
+      "value": "1"
+     },
+     {
+      "key": "scope",
+      "value": "global"
+     },
+     {
+      "key": "_primary_key",
+      "value": "NetworkDevice:f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3"
+     },
+     {
+      "key": "floorName",
+      "value": ""
+     },
+     {
+      "key": "severity",
+      "value": "HIGH"
+     },
+     {
+      "key": "deviceRole",
+      "value": "BORDER ROUTER"
+     },
+     {
+      "key": "_suppression",
+      "value": "0"
+     },
+     {
+      "key": "entityId",
+      "value": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3"
+     },
+     {
+      "key": "buildingId",
+      "value": "ec510a85-c946-4be2-94d0-22d76af7f403"
+     },
+     {
+      "key": "areaId",
+      "value": "406c3e32-efd7-42cb-b0de-81749ce1889a"
+     },
+     {
+      "key": "siteHierarchy",
+      "value": "Global/mcp-test-lab/mcp-test-bldg"
+     },
+     {
+      "key": "eventStatus",
+      "value": "Down"
+     },
+     {
+      "key": "siteId",
+      "value": "ec510a85-c946-4be2-94d0-22d76af7f403"
+     },
+     {
+      "key": "deviceModel",
+      "value": "C8000V"
+     },
+     {
+      "key": "category",
+      "value": "connectivity"
+     },
+     {
+      "key": "timestring",
+      "value": "2026-10-17T05:49:03.856+0000"
+     },
+     {
+      "key": "intfName",
+      "value": "GigabitEthernet2"
+     }
+    ]
+   }
+  ],
+  "page": {
+   "limit": 25,
+   "offset": 1,
+   "count": 2,
+   "sortBy": [
+    {
+     "name": "name",
+     "order": "asc"
+    }
+   ]
+  },
+  "version": "1.0"
+ },
+ "devices_query": {
+  "response": [
+   {
+    "id": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+    "name": "r1.mcp.lab",
+    "managementIpAddress": "198.18.128.152",
+    "platformId": "C8000V",
+    "deviceFamily": "Routers",
+    "serialNumber": "9I10C992IKP",
+    "macAddress": "00:1E:BD:AA:10:00",
+    "deviceSeries": "Cloud Edge",
+    "softwareVersion": "17.18.2",
+    "productVendor": "Cisco",
+    "deviceRole": "BORDER ROUTER",
+    "deviceType": "Cisco Catalyst 8000V Edge Software",
+    "communicationState": "REACHABLE",
+    "collectionStatus": "SUCCESS",
+    "secureMode": "NOT_APPLICABLE",
+    "haStatus": "Non-redundant",
+    "lastBootTime": 1792198905904,
+    "siteHierarchyId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+    "siteHierarchy": "Global/mcp-test-lab/mcp-test-bldg",
+    "siteId": "ec510a85-c946-4be2-94d0-22d76af7f403",
+    "deviceGroupHierarchyId": "/38d0b7ee-6c7e-4278-9797-a4cd02279f0a/36e16476-f4c8-499a-9b21-f63ac40c705a/",
+    "tagNames": [],
+    "stackType": "NORMAL",
+    "osType": "IOS-XE",
+    "ringStatus": false,
+    "maintenanceModeEnabled": false,
+    "upTime": 18953,
+    "redundancyMode": "Non-redundant",
+    "featureFlagList": null,
+    "haLastResetReason": null,
+    "redundancyPeerStateDerived": null,
+    "redundancyPeerState": null,
+    "redundancyStateDerived": null,
+    "redundancyState": null,
+    "wiredClientCount": 0,
+    "wirelessClientCount": 0,
+    "clientCount": 0,
+    "portCount": 5,
+    "physicalPortCount": 4,
+    "virtualPortCount": 1,
+    "wlcAfcStatus": null,
+    "wlcAfcLastConnectionTime": null,
+    "apDetails": null,
+    "metricsDetails": {
+     "overallHealthScore": 10,
+     "cpuUtilization": 43.0,
+     "cpuScore": 10,
+     "memoryUtilization": 10.032247235673783,
+     "memoryScore": 10,
+     "avgTemperature": null,
+     "maxTemperature": null,
+     "discardScore": -1,
+     "discardInterfaces": null,
+     "errorInterfaces": null,
+     "interDeviceLinkScore": -1,
+     "interDeviceConnectedDownInterfaces": null,
+     "linkUtilizationScore": -1,
+     "freeTimerScore": -1,
+     "freeTimer": null,
+     "packetPoolScore": -1,
+     "packetPool": null,
+     "freeMemoryBufferScore": -1,
+     "freeMemoryBuffer": null,
+     "wqePoolScore": -1,
+     "wqePool": null,
+     "apCount": null,
+     "noiseScore": null,
+     "utilizationScore": -1,
+     "interferenceScore": null,
+     "airQualityScore": null
+    },
+    "apAfcDetails": null,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10.0
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10.0
+     }
+    ]
+   },
+   {
+    "id": "02a69307-652c-4518-90e1-700099ecd3ec",
+    "name": "r2.mcp.lab",
+    "managementIpAddress": "198.18.128.153",
+    "platformId": "C8000V",
+    "deviceFamily": "Routers",
+    "serialNumber": "97BVCI2UQW1",
+    "macAddress": "00:1E:BD:E7:D8:00",
+    "deviceSeries": "Cloud Edge",
+    "softwareVersion": "17.18.2",
+    "productVendor": "Cisco",
+    "deviceRole": "BORDER ROUTER",
+    "deviceType": "Cisco Catalyst 8000V Edge Software",
+    "communicationState": "REACHABLE",
+    "collectionStatus": "SUCCESS",
+    "secureMode": "NOT_APPLICABLE",
+    "haStatus": "Non-redundant",
+    "lastBootTime": 1792198901150,
+    "siteHierarchyId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+    "siteHierarchy": "Global/mcp-test-lab/mcp-test-bldg",
+    "siteId": "ec510a85-c946-4be2-94d0-22d76af7f403",
+    "deviceGroupHierarchyId": "/38d0b7ee-6c7e-4278-9797-a4cd02279f0a/36e16476-f4c8-499a-9b21-f63ac40c705a/",
+    "tagNames": [],
+    "stackType": "NORMAL",
+    "osType": "IOS-XE",
+    "ringStatus": false,
+    "maintenanceModeEnabled": false,
+    "upTime": 18957,
+    "redundancyMode": "Non-redundant",
+    "featureFlagList": null,
+    "haLastResetReason": null,
+    "redundancyPeerStateDerived": null,
+    "redundancyPeerState": null,
+    "redundancyStateDerived": null,
+    "redundancyState": null,
+    "wiredClientCount": 0,
+    "wirelessClientCount": 0,
+    "clientCount": 0,
+    "portCount": 5,
+    "physicalPortCount": 4,
+    "virtualPortCount": 1,
+    "wlcAfcStatus": null,
+    "wlcAfcLastConnectionTime": null,
+    "apDetails": null,
+    "metricsDetails": {
+     "overallHealthScore": 10,
+     "cpuUtilization": 45.0,
+     "cpuScore": 10,
+     "memoryUtilization": 9.988347092712706,
+     "memoryScore": 10,
+     "avgTemperature": null,
+     "maxTemperature": null,
+     "discardScore": -1,
+     "discardInterfaces": null,
+     "errorInterfaces": null,
+     "interDeviceLinkScore": -1,
+     "interDeviceConnectedDownInterfaces": null,
+     "linkUtilizationScore": -1,
+     "freeTimerScore": -1,
+     "freeTimer": null,
+     "packetPoolScore": -1,
+     "packetPool": null,
+     "freeMemoryBufferScore": -1,
+     "freeMemoryBuffer": null,
+     "wqePoolScore": -1,
+     "wqePool": null,
+     "apCount": null,
+     "noiseScore": null,
+     "utilizationScore": -1,
+     "interferenceScore": null,
+     "airQualityScore": null
+    },
+    "apAfcDetails": null,
+    "aggregateAttributes": [
+     {
+      "name": "overallHealthScore",
+      "function": "AVG",
+      "value": 10.0
+     },
+     {
+      "name": "overallHealthScore",
+      "function": "MIN",
+      "value": 10.0
+     }
+    ]
+   }
+  ],
+  "page": {
+   "limit": 500,
+   "offset": 1,
+   "count": 2,
+   "sortBy": "overallHealthScore",
+   "order": "asc"
+  },
+  "version": "1.0"
+ },
+ "intent_issues": {
+  "response": [
+   {
+    "issueId": "6cbdcf57-3c32-4f63-948b-92b134073d3b",
+    "name": "OSPF Adjacency Failed on Device \"r1.mcp.lab\" Interface GigabitEthernet2 (Interface description: to r2) with Neighbor 10.255.255.2",
+    "siteId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+    "deviceId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+    "deviceRole": "",
+    "aiDriven": "No",
+    "clientMac": "",
+    "issue_occurence_count": 1,
+    "status": "active",
+    "priority": "P2",
+    "category": "",
+    "last_occurence_time": 1792216143856
+   },
+   {
+    "issueId": "9a68cecb-deea-4c87-927b-8525b667d05f",
+    "name": "OSPF Adjacency Failed on Device \"r2.mcp.lab\" Interface GigabitEthernet2 (Interface description: to r1) with Neighbor 10.255.255.1",
+    "siteId": "/2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/",
+    "deviceId": "02a69307-652c-4518-90e1-700099ecd3ec",
+    "deviceRole": "",
+    "aiDriven": "No",
+    "clientMac": "",
+    "issue_occurence_count": 1,
+    "status": "active",
+    "priority": "P2",
+    "category": "",
+    "last_occurence_time": 1792216109752
+   }
+  ],
+  "totalCount": "2",
+  "version": "1.0"
+ }
+}

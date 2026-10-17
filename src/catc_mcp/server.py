@@ -15,6 +15,7 @@ from catc_mcp.tools import (
     activity,
     archive,
     assurance,
+    assurance_analytics,
     compliance,
     compliance_policies,
     credentials,
@@ -76,6 +77,8 @@ Workflows:
 - Clients: catc_list_clients (by switch/WLC/AP, site, SSID, VLAN), then catc_client_360 for one.
 - Health: catc_get_network_health -> catc_list_device_health (health='POOR'); software per device:
   catc_list_devices or catc_list_device_images.
+- Over time ("is this site getting worse?", "what keeps breaking?"): catc_site_health_report, or
+  catc_health_trend (dips), catc_top_problems, catc_issue_recurrence, catc_ai_insights.
 Asynchronous operations return a task id; check it with catc_get_task.
 Anything not covered: catc_search_spec -> catc_get_definition -> catc_api_call.
 """.strip()
@@ -96,6 +99,7 @@ REGISTER = [
     sites.register,
     inventory.register,
     assurance.register,
+    assurance_analytics.register,
     smart.register,
     topology.register,
     compliance.register,
