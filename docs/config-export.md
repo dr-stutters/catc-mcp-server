@@ -30,8 +30,9 @@ The code is `src/catc_mcp/tools/config_io.py`: a fetch layer (`collect`) and a p
   A final pass over the whole document masks (`********`) the value of every key whose name looks
   secret: the core's list (password, passphrase, secret, community, keys...) plus phrase, pwd, `_pw`,
   psk, token, hash and names ending in key/keyValue (SNMPv3 `authPhrase`, `privKeyValue`...). Flags
-  such as `isAuthKeyPSK` and labels such as `cliCredentials` stay readable. In templates: IOS lines
-  with passwords/secrets/communities (as `catc_get_template`), Velocity `#set($password = ...)` and
+  such as `isAuthKeyPSK`, labels such as `cliCredentials` and the core's exclusions
+  (`passwordPolicy`, `passwordIDStore`, `secretStorage`, `enableMultiSecret`) stay readable. In templates: IOS lines
+  with passwords/secrets/communities (as `catc_get_template`), Velocity `#set($password = ...)` (every one on a line; a quoted value may contain `)`) and
   Jinja `{% set secret = ... %}` assignments to secret-named variables, and the default value and
   choices of a variable with a secret-looking name or a secure data type. An import supplies secrets
   separately.
@@ -55,7 +56,10 @@ meta:
   - "credentials: 2 items share the name 'CLI:lab' (diff tells them apart as #2, #3...)"
 ```
 
-Reads run at most 8 at a time across the whole export; Catalyst Center 429s are retried by the API
+Reads run at most 8 at a time across the whole export (each request takes one slot; nothing holds a
+slot while waiting on another). The per-site reads have a budget of 1800 requests (sites × 9
+settings categories, and one per site for SSIDs): past it the first sites by path are read and a
+warning names the first one skipped, so export a smaller scope for the rest; Catalyst Center 429s are retried by the API
 client (it honours Retry-After and paces itself). One site, template, profile or policy that fails to
 read is skipped and named in `warnings`; the rest of its section is exported.
 

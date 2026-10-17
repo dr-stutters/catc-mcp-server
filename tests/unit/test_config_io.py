@@ -1,10 +1,12 @@
 """D39: config export (pure serializer on a recorded fixture) and diff."""
 
+import asyncio
 import copy
 import json
 import os
 import random
 import re
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -416,3 +418,91 @@ async def test_system_compliance_policies_are_left_out(api: respx.MockRouter) ->
     api.get(f"{cp}/{user}/siteAssignments").respond(json={"response": {"siteIds": []}})
     doc = load_export(await call("catc_export_config", {"sections": ["compliance_policies"]}))
     assert [p["name"] for p in doc["compliance_policies"]] == ["mcp-user"]
+
+
+async def test_many_profiles_and_policies_do_not_deadlock(api: respx.MockRouter) -> None:
+    """20 profiles and 20 policies (more than PARALLEL) with nested reads per item finish: the
+    per-item wrappers hold no slot, only the API calls do."""
+    mock_sites_and_settings(api, "mcp.lab")
+    np, cp = "/dna/intent/api/v1/networkProfilesForSites", "/dna/intent/api/v1/compliancePolicys"
+    pid = "aaaaaaaa-0000-0000-0000-{:012d}".format
+    qid = "bbbbbbbb-0000-0000-0000-{:012d}".format
+    rid = "cccccccc-0000-0000-0000-000000000001"
+    api.get("/dna/intent/api/v1/template-programmer/project").respond(json=[])
+    api.get("/dna/intent/api/v1/template-programmer/template").respond(json=[])
+    api.get(np).respond(
+        json={"response": [{"id": pid(n), "name": f"p{n:02d}", "type": "Switching"} for n in range(20)]}
+    )
+    api.get(path__regex=rf"^{np}/[0-9a-f-]+/templates$").respond(json={"response": []})
+    api.get(path__regex=rf"^{np}/[0-9a-f-]+/siteAssignments$").respond(json={"response": []})
+    api.get(cp).respond(
+        json={"response": [{"id": qid(n), "name": f"q{n:02d}", "source": "USER"} for n in range(20)]}
+    )
+    api.get(path__regex=rf"^{cp}/[0-9a-f-]+/rules$").respond(json={"response": [{"id": rid, "name": "r"}]})
+    api.get(path__regex=rf"^{cp}/[0-9a-f-]+/rules/[0-9a-f-]+/conditions$").respond(json={"response": []})
+    api.get(path__regex=rf"^{cp}/[0-9a-f-]+/siteAssignments$").respond(json={"response": {"siteIds": []}})
+    text = await asyncio.wait_for(
+        call("catc_export_config", {"sections": ["network_profiles", "compliance_policies"]}), timeout=30
+    )
+    doc = load_export(text)
+    assert len(doc["network_profiles"]) == 20 and len(doc["compliance_policies"]) == 20
+
+
+async def test_reader_never_exceeds_the_limit() -> None:
+    """Nested Reader use (each -> item -> get) stays within PARALLEL and completes."""
+    live = peak = 0
+
+    class FakeApp:
+        async def get_response(self, path: str, params: Any = None) -> Any:
+            nonlocal live, peak
+            live += 1
+            peak = max(peak, live)
+            await asyncio.sleep(0.001)
+            live -= 1
+            return path
+
+    r = config_io.Reader(FakeApp())  # type: ignore[arg-type]
+
+    async def item(n: int) -> list[Any]:
+        return list(await asyncio.gather(*(r.get(f"/{n}/{k}") for k in range(5))))
+
+    out = await asyncio.wait_for(r.each({str(n): partial(item, n) for n in range(40)}, "x"), timeout=10)
+    assert len(out) == 40 and 1 < peak <= config_io.PARALLEL
+
+
+def test_core_not_secret_keys_are_left_alone() -> None:
+    data = {
+        "passwordPolicy": {"minLength": 8, "complexity": "high"},
+        "passwordIDStore": "Internal Users",
+        "secretStorage": "vault",
+        "enableMultiSecret": "true",
+        "authPhrase": "x",
+    }
+    assert config_io.mask_doc(data) == {**data, "authPhrase": "********"}
+
+
+def test_velocity_set_lines_with_several_directives() -> None:
+    body = '#set($password = "a)b") #set($secret=$x) #set( $host = "h" )\n#set($enable_pw = \'y\')'
+    assert config_io.redact_template(body).splitlines() == [
+        '#set($password = "********") #set($secret="********") #set( $host = "h" )',
+        '#set($enable_pw = "********")',
+    ]
+
+
+def test_dynamic_rule_values_with_secret_keys_are_masked() -> None:
+    doc = load_export(export_text())
+    tag = next(t for t in doc["tags"] if t["name"] == "mcp-test-routers")
+    rules = [r["rules"] for r in tag["dynamicRules"]]
+    assert {"apiToken": "********", "name": "portName", "operation": "ILIKE", "value": "Gi%"} in rules
+    assert {"name": "hostname", "operation": "ILIKE", "value": "%lab-r%"} in rules
+
+
+async def test_site_request_budget_stops_with_a_warning(
+    api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_sites_and_settings(api, "mcp.lab")
+    monkeypatch.setattr(config_io, "MAX_SITE_REQUESTS", 2 * 9)  # two sites' worth of settings reads
+    doc = load_export(await call("catc_export_config", {"sections": ["sites", "settings"]}))
+    assert list(doc["settings"]) == ["Global", "Global/mcp-test-lab"]
+    (warning,) = doc["meta"]["warnings"]
+    assert warning.startswith("settings: 4 sites in scope, read the first 2 by path (18-request budget)")
