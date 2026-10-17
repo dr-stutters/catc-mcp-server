@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`catc_status` reports whether SD-Access is deployed (D13, #20).** A new `catc.sda` block reads
+  `/dna/system/api/v1/installedRelease` and gives the state of the optional `sda` (SD Access) and `aca` (Access
+  Control Application) packages, `available`, and the reason when they aren't deployed. `/dnac-packages` lists
+  both even when they were skipped at install, which is why the first D13 slice found 'sda' listed yet fabric
+  site creation failing with NCSP11008 ('Package required ... No application found for type
+  ConnectivityDomain'). The refusal message from the SDA write tools now points there and to the install
+  (System > Software Management, or `POST /dna/system/api/v1/installOptionalPackages`). SDA apply stays
+  mock-tested only: the lab 3.2.2 image ships both packages SKIPPED, and D13 is blocked until there's a
+  Catalyst Center with SD Access deployed.
+
 ## 0.9.0 (unreleased)
 
 ### Added

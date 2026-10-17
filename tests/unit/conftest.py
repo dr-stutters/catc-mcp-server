@@ -48,6 +48,9 @@ def api() -> Iterator[respx.MockRouter]:
         router.get("/dna/intent/api/v1/dnac-release").respond(
             json={"response": {"installedVersion": "3.2.2-75131"}}
         )
+        router.get("/dna/system/api/v1/installedRelease").respond(
+            json={"response": {"packages": [{"name": n, "status": "DEPLOYED"} for n in ("sda", "aca")]}}
+        )
         router.get("/dna/intent/api/v1/network-device/count").respond(json={"response": 0})
         router.get("/dna/intent/api/v1/sites/count").respond(json={"response": {"count": 1}})
         router.get("/dna/intent/api/v1/networkDeviceConfigFiles").respond(json={"response": []})

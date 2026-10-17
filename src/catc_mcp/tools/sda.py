@@ -73,8 +73,30 @@ async def resolve_fabric(app: CatcApp, ref: str) -> tuple[dict[str, Any], dict[s
 SDA_MISSING = (
     "Catalyst Center refused the SD-Access request: {err}. On an appliance without the SD-Access "
     "application running (NCSP11008 'Package required ... ConnectivityDomain', seen on the lab 3.2.2 "
-    "image) fabric sites and virtual networks can't be created; check System > Software Management."
+    "image) fabric sites and virtual networks can't be created; catc_status shows the 'SD Access' and "
+    "'Access Control Application' packages. Install them in System > Software Management (optional "
+    "packages) or with POST /dna/system/api/v1/installOptionalPackages."
 )
+# The SD Access package and the one it depends on. Both ship with every 3.x release as optional packages;
+# /dnac-packages lists them even when they were skipped at install, so only installedRelease tells.
+SDA_PACKAGES = ("sda", "aca")
+
+
+async def sda_application(app: CatcApp) -> dict[str, Any]:
+    """Whether the SD-Access application is deployed (for catc_status). The fabric APIs answer reads
+    either way; without it, fabric site and VN creation fail with NCSP11008."""
+    rel = await app.get_response("/dna/system/api/v1/installedRelease")
+    pkgs = {p.get("name"): p for p in (rel.get("packages") or []) if isinstance(p, dict)}
+    states = {n: str(pkgs[n].get("status") or "UNKNOWN") if n in pkgs else "ABSENT" for n in SDA_PACKAGES}
+    out: dict[str, Any] = {"available": all(v == "DEPLOYED" for v in states.values()), "packages": states}
+    if not out["available"]:
+        out["reason"] = (
+            "SD Access is not deployed on this Catalyst Center, so fabric site and virtual network "
+            "creation fail with NCSP11008 ('Package required ... No application found for type "
+            "ConnectivityDomain'); SDA write tools preview only. Install the optional packages "
+            "'Access Control Application' and 'SD Access' (System > Software Management)."
+        )
+    return out
 
 
 async def sda_job(app: CatcApp, method: str, path: str, body: Any, ctx: Context, what: str, **kw: Any) -> Any:
