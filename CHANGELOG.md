@@ -12,6 +12,20 @@
   (System > Software Management, or `POST /dna/system/api/v1/installOptionalPackages`). SDA apply stays
   mock-tested only: the dCloud 3.2.2 image ships both packages SKIPPED, and D13 is blocked until there's a
   Catalyst Center with SD Access deployed.
+- **Compliance depth (D37, #73).** Policy authoring beyond D4: rules straight from CLI lines
+  (`require_lines` / `forbid_lines` become exact-line regex conditions with a generated message, per rule
+  device families and software type) and `catc_update_compliance_policy` (write: add rules, delete rules by
+  name, replace a rule by removing and adding it in one call, rename, description; removals run first and a
+  failure reports what was done). `catc_compliance_report` (read): devices at a site and below from the last
+  compliance runs, counted by status, site, category (your policies as NETWORK_RULES) and severity, the
+  non-compliant devices worst first with their failing categories and policy rule violations, a per-rule
+  count, and the trend between runs (`in_last_run`: new vs persisting non-compliance; `since_previous_report`:
+  new and fixed items against the previous report at an earlier run, kept in the cache directory).
+  `catc_config_drift` (read): devices whose latest archived running config differs from a golden device
+  (missing and extra lines as `parent > child`) or lacks what a template renders to per device (`no X` lines
+  honoured), with `only` / `ignore` regexes; hostname, version, certificates and similar lines are ignored.
+  Live: a policy requiring `service password-encryption`, r1 compliant and r2 not; the report and both drift
+  modes show r2.
 
 ## 0.9.0 (unreleased)
 

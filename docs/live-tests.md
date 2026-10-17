@@ -24,10 +24,10 @@ variable. With no `.env` at all, the whole live suite skips.
 
 | Variable | Example | Used by | Meaning |
 |---|---|---|---|
-| `CATC_LIVE_ROUTER1` | `192.0.2.11` | phase2, activity, change window, compliance policy, safety, least privilege | Management IP of a managed, Reachable IOS-XE router |
+| `CATC_LIVE_ROUTER1` | `192.0.2.11` | phase2, activity, change window, compliance policy, compliance depth, safety, least privilege | Management IP of a managed, Reachable IOS-XE router |
 | `CATC_LIVE_ROUTER2` | `192.0.2.12` | the same | A second router, an OSPF neighbour of router 1 over its `GigabitEthernet2`. The activity test shuts that link and brings it up again. The safety test deletes this router from the inventory and onboards it again. |
 | `CATC_LIVE_PATH_TRACE` | `10.255.255.1,10.255.255.2` | phase2 | Optional. `source,dest` for the path trace. Default: router 1 to router 2. |
-| `CATC_LIVE_BUILDING` | `Global/Lab/Building1` | least privilege, compliance policy, safety, onboard, AAA, wireless | A building where both routers are assigned and provisioned. Its parent area gets the test compliance policy, and the AAA test creates the building `mcp-test-nac` next to it. |
+| `CATC_LIVE_BUILDING` | `Global/Lab/Building1` | least privilege, compliance policy, compliance depth, safety, onboard, AAA, wireless | A building where both routers are assigned and provisioned. Its parent area gets the test compliance policy, and the AAA test creates the building `mcp-test-nac` next to it. |
 | `CATC_LIVE_FLOOR` | `Global/Lab/Building1/Floor1` | least privilege, PnP, wireless | A floor in that building |
 | `CATC_LIVE_CLIENT_MAC` | `00:00:5e:00:53:01` | least privilege | Optional. A client MAC that Catalyst Center knows, for `catc_get_client` / `catc_client_360`. Without it, those two are skipped. |
 | `CATC_LIVE_ONBOARD_SWITCH` | `192.0.2.20` | onboard, AAA | Management IP of a switch **not** in the inventory yet. It must be reachable over SSH/SNMP with the `mcp-test-cli` / `mcp-test-snmp-ro` credentials. The tests discover it, provision it and delete it again. |
