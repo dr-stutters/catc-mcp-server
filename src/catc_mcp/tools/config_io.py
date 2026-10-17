@@ -15,7 +15,6 @@ Two layers:
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
 import json
-import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from functools import partial
@@ -27,20 +26,21 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from catc_mcp._core import InvalidRequest, ToolRegistrar, UpstreamError, get_client, text_result
-from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key, mask_all, max_chars
 from catc_mcp._core.formatting import _is_flag as is_flag
+from catc_mcp._core.formatting import mask_all, max_chars
 from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, list_all_templates, resolve_site
 from catc_mcp.tools.compliance_policies import CP, list_policies, root_ids
 from catc_mcp.tools.credentials import all_credentials
-from catc_mcp.tools.inventory import redact_config
 from catc_mcp.tools.ipam import GLOBAL as GLOBAL_POOLS
 from catc_mcp.tools.ipam import RESERVED as RESERVED_POOLS
 from catc_mcp.tools.ipam import _all as all_pools
 from catc_mcp.tools.profiles import list_profiles, profile_site_ids, profile_template_ids
 from catc_mcp.tools.sites import SETTINGS, all_sites
-from catc_mcp.tools.templates import param_summary
+
+# Secret masking is the templates module's (D36), so a template is masked the same in both exports.
+from catc_mcp.tools.templates import param_view, redact_template, secret_name
 from catc_mcp.tools.wireless import site_ssids, wireless_profiles
 
 FORMAT = "catc-config-export"
@@ -120,40 +120,6 @@ PARALLEL = 8
 # the first sites by path are read and a warning says to export a smaller scope for the rest.
 MAX_SITE_REQUESTS = 1800
 
-# Secret-looking key names on top of the core's SECRET_KEY_RE: SNMPv3 auth/priv phrases and keys,
-# hashes, tokens, whatever an endpoint calls them.
-EXTRA_SECRET_RE = re.compile(
-    r"(phrase|passw|pwd|(^|[_-])pw$|secret|psk|community|token|hash|cipher_?text|(^|[a-z_])key(value)?s?$)",
-    re.IGNORECASE,
-)
-# Names, labels and enums that look like secrets and aren't.
-NOT_SECRET = {
-    "authType",
-    "privacyType",
-    "snmpMode",
-    "authProtocol",
-    "privacyProtocol",
-    "cliCredentials",
-    "snmpv2cReadCredentials",
-    "snmpv2cWriteCredentials",
-    "snmpv3Credentials",
-    "httpReadCredentials",
-    "httpWriteCredentials",
-    "passphraseType",
-    "keyWrap",
-}
-SECRET_DATA_TYPES = {"SECUREDSTRING", "SECURESTRING", "PASSWORD", "SECRET"}
-# Template bodies: `#set($password = "x")` (Velocity) and `{% set secret = "x" %}` (Jinja).
-TEMPLATE_SET_RES = [
-    # The value is one quoted string or anything up to the closing parenthesis, so several #set
-    # directives on one line are each matched.
-    re.compile(
-        r"(?P<keep>#set\s*\(\s*\$!?\{?(?P<name>\w+)\}?\s*=\s*)"
-        r"""(?P<val>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^)\n]*?)(?P<end>\s*\))"""
-    ),
-    re.compile(r"(?P<keep>\{%-?\s*set\s+(?P<name>\w+)\s*=\s*)(?P<val>.*?)(?P<end>\s*-?%\})"),
-]
-
 # Lists inside records that are sets (order means nothing): sorted by this field (None: the whole
 # value), ties broken by the item's canonical JSON. Lists not named here keep the API's order, which
 # carries meaning (server priority, composite template sequence, choice order).
@@ -195,13 +161,6 @@ def clean(v: Any) -> Any:
     return v
 
 
-def secret_name(key: str) -> bool:
-    """The core's exclusions (passwordPolicy, secretStorage...) and ours win over both patterns."""
-    if key in NOT_SECRET_KEYS or key in NOT_SECRET:
-        return False
-    return is_secret_key(key) or bool(EXTRA_SECRET_RE.search(key))
-
-
 def mask_doc(v: Any) -> Any:
     """Mask the value of every secret-named key (flags such as isAuthKeyPSK stay readable)."""
     if isinstance(v, dict):
@@ -215,30 +174,6 @@ def mask_doc(v: Any) -> Any:
     if isinstance(v, list):
         return [mask_doc(x) for x in v]
     return v
-
-
-def redact_template(text: str) -> str:
-    """IOS secrets (redact_config) plus Velocity/Jinja set-assignments of secret-named variables."""
-    text = redact_config(text)
-
-    def sub(m: re.Match[str]) -> str:
-        return f'{m["keep"]}"{MASK}"{m["end"]}' if secret_name(m["name"]) else m[0]
-
-    for pat in TEMPLATE_SET_RES:
-        text = pat.sub(sub, text)
-    return text
-
-
-def _param(p: dict[str, Any]) -> dict[str, Any]:
-    out = param_summary(p)
-    secret = secret_name(str(p.get("parameterName") or "")) or str(p.get("dataType") or "").upper() in (
-        SECRET_DATA_TYPES
-    )
-    if secret:
-        for k in ("defaultValue", "choices"):
-            if out.get(k) not in (None, "", []):
-                out[k] = mask_all(out[k])
-    return out
 
 
 def segs(path: str) -> list[str]:
@@ -303,8 +238,9 @@ def cred_label(c: dict[str, Any]) -> str:
 def _templates(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """(template_projects, templates) from the project listing and the full template records.
 
-    TODO(D36): switch to templates.serialize_templates(...) once D36 lands; keep this signature so
-    the export format only changes in one place."""
+    Content and variables are masked by the templates module (D36). The entry shape stays this
+    module's: moving to templates.serialize_templates (with version history) would change the export
+    format and is left to D40."""
     system = {
         str(t.get("id"))
         for p in raw.get("projects") or []
@@ -332,7 +268,7 @@ def _templates(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str
             entry["deviceTypes"] = sorted(families, key=lambda d: sorted(d.items()))
         if isinstance(t.get("templateContent"), str):
             entry["content"] = redact_template(t["templateContent"])
-        params = [_param(p) for p in t.get("templateParams") or [] if isinstance(p, dict)]
+        params = [param_view(p) for p in t.get("templateParams") or [] if isinstance(p, dict)]
         if not t.get("customParamsOrder"):
             # The API returns variables in no fixed order unless the template sets one.
             params.sort(key=lambda p: str(p.get("parameterName")))
@@ -839,7 +775,7 @@ async def _ssids_raw(r: Reader, site_ids: list[str], paths: dict[str, str]) -> d
 async def _templates_raw(r: Reader) -> dict[str, Any]:
     """Project listing + full records of the non-system templates.
 
-    TODO(D36): switch to D36's template serializer once it lands (see `_templates`)."""
+    Masking is the templates module's (D36); see `_templates` for the entry shape."""
     projects = ensure_list(
         await r.run(partial(r.app.api.get, "/dna/intent/api/v1/template-programmer/project"))
     )
