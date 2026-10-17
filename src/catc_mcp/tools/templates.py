@@ -23,7 +23,7 @@ from catc_mcp._core import (
     list_result,
     object_result,
 )
-from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key, max_chars
+from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key, mask_all, max_chars
 from catc_mcp._core.http import OffsetLimit, fetch_all, page_of
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import (
@@ -73,10 +73,12 @@ def param_summary(p: dict[str, Any]) -> dict[str, Any]:
 
 
 def param_view(p: dict[str, Any]) -> dict[str, Any]:
-    """param_summary with a secret variable's default and choices masked."""
+    """param_summary with a secret variable's default and choices masked (shared with config export)."""
     out = param_summary(p)
     if secret_param(p):
-        out.update({k: MASK for k in ("defaultValue", "choices") if out.get(k) not in (None, "", [])})
+        out.update(
+            {k: mask_all(out[k]) for k in ("defaultValue", "choices") if out.get(k) not in (None, "", [])}
+        )
     return out
 
 
@@ -345,18 +347,36 @@ def _version_no(v: Any) -> int:
 
 # A masked value that is only a template variable ($pw, ${pw}, {{ pw }}) is no secret: kept as is.
 VARIABLE_ONLY_RE = re.compile(r"^(\$!?\{?[\w.]+\}?|\{\{.*\}\})$")
-# Secret-looking variable names on top of the core's SECRET_KEY_RE (same rules as config export, D39).
+# The one secret-masking rule set for templates and config export (D39 imports these).
+# Secret-looking key and variable names on top of the core's SECRET_KEY_RE: SNMPv3 auth/priv phrases
+# and keys, hashes, tokens, whatever an endpoint or a template calls them.
 TEMPLATE_SECRET_NAME_RE = re.compile(
     r"(phrase|passw|pwd|(^|[_-])pw$|secret|psk|community|token|hash|cipher_?text|(^|[a-z_])key(value)?s?$)",
     re.IGNORECASE,
 )
+# Names, labels and enums that look like secrets and aren't (on top of the core's NOT_SECRET_KEYS).
+NOT_SECRET = {
+    "authType",
+    "privacyType",
+    "snmpMode",
+    "authProtocol",
+    "privacyProtocol",
+    "cliCredentials",
+    "snmpv2cReadCredentials",
+    "snmpv2cWriteCredentials",
+    "snmpv3Credentials",
+    "httpReadCredentials",
+    "httpWriteCredentials",
+    "passphraseType",
+    "keyWrap",
+}
 SECRET_DATA_TYPES = {"SECUREDSTRING", "SECURESTRING", "PASSWORD", "SECRET"}
 # Set-assignments in template bodies, one match per statement (several may share a line):
 # Velocity `#set($password = "x")` and Jinja `{% set secret = "x" %}`.
 TEMPLATE_SET_RES = [
     re.compile(
         r"(?P<keep>#set\s*\(\s*\$!?\{?(?P<name>\w+)\}?\s*=\s*)"
-        r"(?P<val>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^)]*?)(?P<end>\s*\))"
+        r"(?P<val>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^)\n]*?)(?P<end>\s*\))"
     ),
     re.compile(r"(?P<keep>\{%-?\s*set\s+(?P<name>\w+)\s*=\s*)(?P<val>.*?)(?P<end>\s*-?%\})"),
 ]
@@ -364,8 +384,10 @@ TEMPLATE_SET_RES = [
 
 def secret_name(name: str) -> bool:
     """A variable or key name that holds a secret (password, enable_secret, snmp_community, api_token
-    ...); the core's NOT_SECRET_KEYS (passwordPolicy ...) are names, not secrets."""
-    return name not in NOT_SECRET_KEYS and (is_secret_key(name) or bool(TEMPLATE_SECRET_NAME_RE.search(name)))
+    ...). The core's NOT_SECRET_KEYS (passwordPolicy ...) and NOT_SECRET win over both patterns."""
+    if name in NOT_SECRET_KEYS or name in NOT_SECRET:
+        return False
+    return is_secret_key(name) or bool(TEMPLATE_SECRET_NAME_RE.search(name))
 
 
 def _mask_sets(line: str) -> str:
@@ -686,6 +708,8 @@ async def deployments(
         m = DEPLOY_ID_RE.search(progress)
         if m and m.group(1) not in tasks:
             tm = DEPLOY_TEMPLATE_RE.search(progress)
+            # Filter only on a named template; a task without `Template: <id>` fails open (its status
+            # record is read and matched by name later).
             if template_ids is not None and tm and tm.group(1) not in template_ids:
                 continue
             tasks[m.group(1)] = {"_started": float(t.get("startTime") or 0), "_template": tm and tm.group(1)}

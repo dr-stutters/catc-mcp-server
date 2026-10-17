@@ -547,3 +547,70 @@ async def test_drift_unknown_version(api: respx.MockRouter) -> None:
     api.get(f"{TP}/template/deploy/status/{status['deploymentId']}").respond(json=status)
     out = await call("catc_template_drift", {"project": "mcp-d36-src", "response_format": "json"})
     assert [r["state"] for r in out["results"]] == ["unknown version"]
+
+
+PARITY_CONTENT = "\n".join(
+    [
+        "username admin privilege 15 secret 9 $9$hash",
+        "enable secret $enable",
+        '#set($password = "Cisco123") #set($host = "r1") #set($enable_secret=$vault)',
+        '{% set snmp_community = "pub" %}{% set api_token = "T0k9x" %}',
+        '#set($passwordPolicy = "strong")',
+        "ip host {{ host }} 192.0.2.1",
+    ]
+)
+PARITY_PARAMS = [
+    {"parameterName": "password", "dataType": "STRING", "defaultValue": "Cisco123"},
+    {"parameterName": "blob", "dataType": "STRING", "defaultValue": "s3", "sensitiveField": True},
+    {"parameterName": "k", "dataType": "SECUREDSTRING", "defaultValue": "s4"},
+    {"parameterName": "passwordPolicy", "dataType": "STRING", "defaultValue": "strong"},
+    {"parameterName": "host", "dataType": "STRING", "defaultValue": "r1"},
+]
+
+
+def test_masking_parity_with_config_export() -> None:
+    """The template export (D36) and config export (D39) mask a template identically."""
+    from catc_mcp.tools import config_io
+
+    raw = {
+        "id": "t-1",
+        "name": "parity",
+        "projectName": "p",
+        "templateContent": PARITY_CONTENT,
+        "templateParams": PARITY_PARAMS,
+        "versions": [],
+    }
+    mine = serialize_templates([{"name": "p"}], [raw])["projects"][0]["templates"][0]
+    _, (theirs,) = config_io._templates({"projects": [], "templates": [raw]})
+    assert mine["content"] == theirs["content"]
+    for secret in ("$9$hash", "Cisco123", "\"pub\"", "T0k9x"):
+        assert secret not in mine["content"]
+    for kept in ("$enable", "$vault", '"strong"', '"r1"', "{{ host }}"):
+        assert kept in mine["content"]
+
+    def masked(params: list[dict[str, Any]]) -> set[str]:
+        return {str(p["parameterName"]) for p in params if p.get("defaultValue") == "********"}
+
+    assert masked(mine["params"]) == masked(theirs["params"]) == {"password", "blob", "k"}
+
+
+async def test_import_sends_variables_with_every_version(api: respx.MockRouter) -> None:
+    calls = mock_import_target(api, [])
+    t = full_with_versions(VARS)
+    second = {
+        **t["versions"][0],
+        "version": 2,
+        "versionId": "v2",
+        "templateContent": "ip host {{ host_name }} {{ host_ip }}\n! v2",
+    }
+    t["versions"] = [t["versions"][0], second]
+    doc = serialize_templates([{"name": "mcp-d36-src"}], [t])
+    _, done = await preview_then_apply("catc_import_templates", {"export": doc, "project": "mcp-d36-copy"})
+    assert done["result"]["imported"][0]["versions_committed"] == 2
+    bodies = calls["created"] + calls["puts"]  # create (v1), update (v2), update (draft)
+    assert len(bodies) == 3
+    assert all([p["parameterName"] for p in b["templateParams"]] == ["host_name", "host_ip"] for b in bodies)
+    assert [c[2] for c in calls["commits"]] == [
+        t["versions"][0]["templateContent"],
+        second["templateContent"],
+    ]

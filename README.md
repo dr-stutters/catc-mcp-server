@@ -277,7 +277,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (74)
+### Read (79)
 
 | Tool | What it does |
 |---|---|
@@ -288,7 +288,9 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_config_drift` | Config drift across sites: which devices' running configuration differs from a golden device (lines missing compared with it, and extra lines) or no longer contains what a template renders to (lines missing; a 'no X' template line counts as present when X is absent). |
 | `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
 | `catc_diff_config` | Compare two config exports, or an export with live Catalyst Center: items added or removed and, for changed items, each field that differs (before and after values). |
+| `catc_diff_template_versions` | Unified diff between two versions of a template (or a version and the uncommitted draft), with lines added and removed. |
 | `catc_export_config` | Export Catalyst Center design intent as YAML, by name and in a stable order: the site hierarchy, network settings set at each site (not inherited), credentials (type, description and username only: secrets are never exported), template projects and templates (secrets in template bodies masked), network profiles with their templates and sites, global IP pools and site reservations, SSIDs (passphrases masked), wireless profiles, tags with their dynamic rules, and compliance policies with their rules and sites. |
+| `catc_export_templates` | Export a template project, or one template, as a JSON document: content, variables, device types and every committed version with its comment, author and time. |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
 | `catc_get_compliance_detail` | Compliance report for one device per category (startup vs running config, image, PSIRT, EoX, network settings, network profile, fabric): status, message, last check time, whether Catalyst Center can remediate it and, with include_diff, what differs. |
@@ -346,6 +348,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_list_tag_members` | Members of one tag: network devices (hostname, IP, platform) or interfaces, whether added statically or by a dynamic rule. |
 | `catc_list_tags` | Tags used to group devices and interfaces (for templates, provisioning and filtering): name, description, whether it is a system tag, dynamic membership rules and id. |
 | `catc_list_template_projects` | Template projects (folders of templates) with description, id and template count. |
+| `catc_list_template_versions` | Version history of a template: every committed version with its number, commit time, author, comment, size and lines added/removed against the version before, and whether the template has uncommitted changes. |
 | `catc_list_templates` | Configuration templates (Template Editor) with project, language (Jinja/Velocity), software type, device families, committed version count and id. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
@@ -354,9 +357,11 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_site_health_report` | One report on a site over a window: health now, the device and client trends with their dips and direction, when issues were raised, the worst devices and clients with the issue behind each, issues that keep coming back, AI-driven insights where available, and a one-line verdict. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
+| `catc_template_drift` | Template drift per device: for every device a template was deployed to, the version it last received against the template's latest committed version. |
+| `catc_template_usage` | Where a template is used: the network profiles it is attached to, the sites those profiles are assigned to, and the devices it was deployed to with the version each one runs against the latest committed version (current / behind / failed). |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (41)
+### Write (43)
 
 | Tool | What it does |
 |---|---|
@@ -365,6 +370,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_assign_profile_to_sites` | Assign a network profile to sites (areas, buildings or floors; child sites inherit it). |
 | `catc_assign_site_credentials` | Set which global credentials (CLI, SNMPv2c read/write, SNMPv3, HTTP read/write) a site uses (Design > Network Settings > Device Credentials). |
 | `catc_attach_template_to_profile` | Attach a Day-N CLI template to switching or wireless network profiles, so it belongs to the profiles' sites (the UI's provisioning flow offers it there). |
+| `catc_clone_template` | Copy a template under a new name, in the same or another project. |
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
 | `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http server']. |
 | `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
@@ -389,6 +395,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_delete_template_project` | Delete a template project together with every template in it. |
 | `catc_delete_wireless_profile` | Delete a wireless network profile. |
 | `catc_detach_template_from_profile` | Detach a Day-N CLI template from network profiles. |
+| `catc_import_templates` | Import templates from a catc_export_templates document: creates missing projects, then each template with its committed versions replayed in order (version comments kept; numbers start at 1 on this Catalyst Center) and the uncommitted draft on top. |
 | `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |

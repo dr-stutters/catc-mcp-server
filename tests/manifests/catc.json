@@ -164,6 +164,10 @@
       "tier": "read",
       "title": "Client 360"
     },
+    "catc_clone_template": {
+      "tier": "write",
+      "title": "Clone template"
+    },
     "catc_commit_template": {
       "tier": "write",
       "title": "Commit template"
@@ -312,6 +316,10 @@
       "tier": "read",
       "title": "Diff configuration exports"
     },
+    "catc_diff_template_versions": {
+      "tier": "read",
+      "title": "Diff template versions"
+    },
     "catc_distribute_image": {
       "tier": "dangerous",
       "title": "Distribute software image"
@@ -319,6 +327,10 @@
     "catc_export_config": {
       "tier": "read",
       "title": "Export configuration"
+    },
+    "catc_export_templates": {
+      "tier": "read",
+      "title": "Export templates"
     },
     "catc_get_client": {
       "tier": "read",
@@ -431,6 +443,10 @@
     "catc_health_trend": {
       "tier": "read",
       "title": "Health trend"
+    },
+    "catc_import_templates": {
+      "tier": "write",
+      "title": "Import templates"
     },
     "catc_issue_recurrence": {
       "tier": "read",
@@ -548,6 +564,10 @@
       "tier": "read",
       "title": "List template projects"
     },
+    "catc_list_template_versions": {
+      "tier": "read",
+      "title": "List template versions"
+    },
     "catc_list_templates": {
       "tier": "read",
       "title": "List templates"
@@ -611,6 +631,14 @@
     "catc_tag_golden_image": {
       "tier": "write",
       "title": "Tag golden image"
+    },
+    "catc_template_drift": {
+      "tier": "read",
+      "title": "Template drift"
+    },
+    "catc_template_usage": {
+      "tier": "read",
+      "title": "Template usage"
     },
     "catc_top_problems": {
       "tier": "read",

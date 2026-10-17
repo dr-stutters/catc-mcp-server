@@ -484,7 +484,7 @@ def test_core_not_secret_keys_are_left_alone() -> None:
 def test_velocity_set_lines_with_several_directives() -> None:
     body = '#set($password = "a)b") #set($secret=$x) #set( $host = "h" )\n#set($enable_pw = \'y\')'
     assert config_io.redact_template(body).splitlines() == [
-        '#set($password = "********") #set($secret="********") #set( $host = "h" )',
+        '#set($password = "********") #set($secret=$x) #set( $host = "h" )',  # a variable stays
         '#set($enable_pw = "********")',
     ]
 
