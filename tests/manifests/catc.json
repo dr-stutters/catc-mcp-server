@@ -1,5 +1,5 @@
 {
-  "core_version": "0.13.0",
+  "core_version": "0.14.0",
   "manifest": 1,
   "prefix": "catc",
   "prompts": {
@@ -167,6 +167,14 @@
     "catc_compare_device_configs": {
       "tier": "read",
       "title": "Compare device configs"
+    },
+    "catc_compliance_report": {
+      "tier": "read",
+      "title": "Compliance report"
+    },
+    "catc_config_drift": {
+      "tier": "read",
+      "title": "Config drift"
     },
     "catc_create_compliance_policy": {
       "tier": "write",
@@ -583,6 +591,10 @@
     "catc_unassign_profile_from_sites": {
       "tier": "write",
       "title": "Unassign network profile from sites"
+    },
+    "catc_update_compliance_policy": {
+      "tier": "write",
+      "title": "Update compliance policy"
     },
     "catc_update_issue_status": {
       "tier": "write",

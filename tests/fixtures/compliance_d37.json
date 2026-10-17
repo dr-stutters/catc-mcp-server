@@ -1,0 +1,54 @@
+{
+  "_note": "Recorded from Catalyst Center 3.2.2 (lab r1/r2, D37), ids replaced; r2 lacks service password-encryption.",
+  "site_devices_run1": {
+    "response": [
+      {
+        "id": "a48c0161-62a9-40ea-881f-c149763519d5",
+        "networkDeviceId": "22222222-0000-0000-0000-000000000002",
+        "status": "NON_COMPLIANT",
+        "severity": "MAJOR",
+        "acknowledgementStatus": "UNACKNOWLEDGED",
+        "lastComplianceExecutionTime": 1792201879830,
+        "lastStatusChangeTime": 1792201879830,
+        "details": [
+          {"complianceType": "NETWORK_RULES", "severity": "MAJOR", "status": "NON_COMPLIANT",
+           "lastComplianceRun": 1792201879000, "lastStatusChangeTime": 1792201879000, "statusDescription": null},
+          {"complianceType": "RUNNING_CONFIG", "severity": "MAJOR", "status": "COMPLIANT",
+           "lastComplianceRun": 1792201849319, "lastStatusChangeTime": 1792201849319},
+          {"complianceType": "PSIRT", "severity": "CRITICAL", "status": "COMPLIANT",
+           "lastComplianceRun": 1792201841057, "lastStatusChangeTime": 1792201841057},
+          {"complianceType": "EOX", "severity": "MAJOR", "status": "NOT_APPLICABLE",
+           "lastComplianceRun": 1792201841416, "lastStatusChangeTime": 1792201841362,
+           "statusDescription": "MLCN10301: EoX details for this device could not be found."}
+        ]
+      },
+      {
+        "id": "27ddcd82-b47a-4904-99fd-60673f9769fe",
+        "networkDeviceId": "11111111-0000-0000-0000-000000000001",
+        "status": "COMPLIANT",
+        "severity": "NOT_APPLICABLE",
+        "lastComplianceExecutionTime": 1792201879615,
+        "lastStatusChangeTime": 1792201879615,
+        "details": [
+          {"complianceType": "NETWORK_RULES", "severity": "MAJOR", "status": "COMPLIANT",
+           "lastComplianceRun": 1792201879000, "lastStatusChangeTime": 1792201879000},
+          {"complianceType": "RUNNING_CONFIG", "severity": "MAJOR", "status": "NON_COMPLIANT",
+           "lastComplianceRun": 1792201849326, "lastStatusChangeTime": 1792100000000},
+          {"complianceType": "PSIRT", "severity": "CRITICAL", "status": "COMPLIANT",
+           "lastComplianceRun": 1792201841057, "lastStatusChangeTime": 1792201841057}
+        ]
+      }
+    ],
+    "version": "1.0"
+  },
+  "device_policies": {"response": [{"policyId": "eeeeeeee-1111-2222-3333-444444444444", "policyName": "mcp-d37-pwenc", "violationsCount": 1}]},
+  "device_violations": {
+    "response": [
+      {"ruleName": "password-encryption",
+       "violations": [{"violationMessage": "Missing: service password-encryption", "severity": "MAJOR", "sequenceNumber": 1}],
+       "errors": []}
+    ]
+  },
+  "golden_config": "Building configuration...\n\nCurrent configuration : 4321 bytes\n!\n! Last configuration change at 05:50:01 UTC\n!\nversion 17.18\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\nservice password-encryption\n!\nhostname r1\n!\ncrypto pki certificate chain TP-self-signed-1\n certificate self-signed 01\n  3082 0330 3082\n  \tquit\nusername admin privilege 15 secret 9 $9$abc\n!\ninterface GigabitEthernet1\n ip address 198.18.128.152 255.255.192.0\n negotiation auto\n!\nline vty 0 4\n transport input ssh\n!\nend\n",
+  "drifted_config": "Building configuration...\n\nCurrent configuration : 4300 bytes\n!\nversion 17.18\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname r2\n!\ncrypto pki certificate chain TP-self-signed-2\n certificate self-signed 01\n  3082 0444\n  \tquit\nusername admin privilege 15 secret 9 $9$xyz\n!\ninterface GigabitEthernet1\n ip address 198.18.128.153 255.255.192.0\n negotiation auto\n!\nline vty 0 4\n transport input ssh telnet\n!\nend\n"
+}
