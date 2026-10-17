@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (2026-10-17)
+
+Wave 4 Phase B, against Catalyst Center 3.2.2: templates depth (D36), compliance depth (D37), assurance analytics
+(D38), config export and diff (D39) and config import (D40), plus `catc_status` reporting SD-Access availability
+(D13 stays blocked: the lab's SD Access package is not deployed). Also ships Phase A (the 0.9.0 notes below), which
+was never released on its own.
 
 ### Added
 - **Config import (D40, #76).** `catc_import_config` (dangerous tier, preview-first) builds Catalyst Center
@@ -86,7 +91,7 @@
   provisioning flow leave no such record. Config export (D39) now masks templates with the same shared rules: a
   value that is only a template variable (`#set($secret = $x)`) stays, and `sensitiveField` variables are masked.
 
-## 0.9.0 (unreleased)
+## 0.9.0 (not released on its own; included in 0.10.0)
 
 ### Added
 - **`catc-mcp-server check` preflight (D32, #68; core C21).** Runs without an MCP client: the token login
