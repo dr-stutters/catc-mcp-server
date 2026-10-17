@@ -39,6 +39,18 @@
   3.2.2 (an assurance task is polled); network/device trends over a day use 1-hour buckets in 7-day chunks (the
   API's limits); site filters match the site and below, not siblings; a per-device trend 404 (e.g. during a
   resync) is reported as no data. Found live: a cat8000v's health score ignores a down link, so the outage shows as issues and issue bursts, not a dip.
+- **Config export and diff (D39, #75).** `catc_export_config(scope, sections)` writes the site hierarchy, the
+  network settings set at each site, credentials (type, description, username: never secrets), template projects
+  and templates, network profiles with their templates and sites, IP pools and reservations, SSIDs (passphrases
+  masked), wireless profiles, tags and compliance policies as YAML, by name and in a stable order, with a
+  `format`/`version` header (version 1) for config import (D40). `catc_diff_config(before, after?)` compares two
+  exports, or an export with live Catalyst Center, by item identity: added/removed items and each changed field.
+  Secrets are masked by a final pass over the whole document (secret-looking key names, template `#set`/`{% set %}`
+  assignments, secret variable defaults). Reads are bounded (8 in flight); a site or item that fails is skipped
+  and listed in `meta.warnings`; built-in (SYSTEM) compliance policies are left out. Diff values over 400
+  characters are cut and the rows held under the response limit.
+  Both run as MCP background tasks. Format: [docs/config-export.md](docs/config-export.md). New dependency:
+  PyYAML. The templates section uses its own minimal serializer until D36's lands.
 
 ## 0.9.0 (unreleased)
 
