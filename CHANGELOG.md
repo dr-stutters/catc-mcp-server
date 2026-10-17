@@ -51,6 +51,23 @@
   characters are cut and the rows held under the response limit.
   Both run as MCP background tasks. Format: [docs/config-export.md](docs/config-export.md). New dependency:
   PyYAML. The templates section uses its own minimal serializer until D36's lands.
+- **Templates depth (D36, #72).** Read: `catc_list_template_versions` (every committed version with time,
+  author, comment and +/- lines against the one before; flags uncommitted changes),
+  `catc_diff_template_versions` (unified diff of two versions, or a version and the draft; secrets masked),
+  `catc_export_templates` (a project or one template as JSON, format `catc-mcp-templates` v1: content,
+  variables, device types and every version with its comment; secrets masked and listed: IOS secret lines,
+  Velocity/Jinja set-assignments of secret-named variables, and defaults of variables that are sensitive, typed as
+  secrets or named like one (`redact_template()` / `secret_name()` are shared with config export); the document
+  comes from the pure `serialize_templates()`, which config export (D39) reuses), `catc_template_usage` (network
+  profiles, their sites, and the devices it was deployed to with the version each runs) and
+  `catc_template_drift` (per device: last version deployed vs latest committed: current / behind / failed).
+  Write: `catc_import_templates` (preview-first; creates missing projects, replays the versions in order with
+  their comments and leaves the draft on top; import as a copy with `name` / `project`; refuses existing names,
+  composite templates and any mask token still in the content) and `catc_clone_template` (Catalyst Center's clone: content and
+  variables, no versions). `catc_deploy_template` takes `version` to push an older committed version (a
+  rollback). Drift comes from the deploy tasks Catalyst Center keeps (their deployment status names the
+  version; `GET /task` pages from offset 0 on 3.2.2, not 1 as its spec says), and Day-N templates pushed by the
+  provisioning flow leave no such record.
 
 ## 0.9.0 (unreleased)
 

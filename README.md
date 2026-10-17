@@ -230,6 +230,10 @@ Typical flows:
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
   called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
+- **Template versions:** `catc_list_template_versions` → `catc_diff_template_versions`;
+  `catc_template_usage` / `catc_template_drift` show which devices run an older version (roll back with
+  `catc_deploy_template(version=...)`); move templates with their history between projects or Catalyst
+  Centers with `catc_export_templates` → `catc_import_templates` (`name=` imports a copy).
 - **Standards:** `catc_create_compliance_policy` (regex/string rules on the running config) →
   `catc_run_compliance` → `catc_list_compliance_violations`.
 - **Baseline and drift:** `catc_export_config` (sites, settings, credentials by name, templates, profiles,
