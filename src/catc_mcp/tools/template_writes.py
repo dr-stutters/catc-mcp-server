@@ -353,6 +353,87 @@ def still_masked(t: dict[str, Any], versions: list[dict[str, Any]]) -> list[str]
     return out
 
 
+async def put_template_content(
+    app: CatcApp, ctx: Context | None, tid: str, content: str, params: list[Any] | None
+) -> None:
+    """Replace a template's draft content (and variables, when given), keeping its other fields."""
+    current = await app.api.get(f"{TP}/template/{tid}")
+    body = {
+        k: v for k, v in (current if isinstance(current, dict) else {}).items() if k != "validationErrors"
+    }
+    body["templateContent"] = content
+    if params is not None:
+        body["templateParams"] = params
+    await app.run_job("PUT", f"{TP}/template", body, ctx=ctx, what="update template")
+
+
+async def create_imported_template(
+    app: CatcApp,
+    ctx: Context | None,
+    *,
+    project_id: str,
+    project: str,
+    name: str,
+    t: dict[str, Any],
+    versions: list[dict[str, Any]],
+    draft: str,
+    created: dict[str, str | None],
+) -> dict[str, Any]:
+    """Create one exported template in a project: the first version's content (or the draft), each
+    version committed in order with its comment, then the draft on top. `created["template_id"]` is
+    set as soon as the template exists, so a caller can say what an interrupted import left behind.
+    Shared by catc_import_templates and catc_import_config."""
+    contents = [str(v.get("content") or "") for v in versions] or [draft]
+    params = [x for x in ensure_list(t.get("params")) if isinstance(x, dict)]
+    # Variables (defaults, choices, labels) go with every version, not only the draft.
+    send_params = params or None
+    body: dict[str, Any] = {
+        "name": name,
+        "projectName": project,
+        "projectId": project_id,
+        "language": t.get("language") or "JINJA",
+        "softwareType": t.get("softwareType") or "IOS-XE",
+        "deviceTypes": ensure_list(t.get("deviceTypes")) or [{"productFamily": "Switches and Hubs"}],
+        "templateContent": contents[0],
+        "description": t.get("description") or "",
+    }
+    if t.get("softwareVariant"):
+        body["softwareVariant"] = t["softwareVariant"]
+    if send_params:
+        body["templateParams"] = params
+    job = await app.run_job(
+        "POST", f"{TP}/project/{project_id}/template", body, ctx=ctx, what="create template"
+    )
+    new_id, warnings = template_task_result(job.get("data"))
+    if not new_id:
+        raise UpstreamError(f"Catalyst Center created {project}/{name} but returned no template id.")
+    tid = created["template_id"] = str(new_id)
+    committed = 0
+    for i, v in enumerate(versions):
+        if i:
+            await put_template_content(app, ctx, tid, contents[i], send_params)
+        comment = str(v.get("comment") or "") or f"imported version {v.get('version')}"
+        await app.run_job(
+            "POST",
+            f"{TP}/template/version",
+            {"templateId": tid, "comments": comment},
+            ctx=ctx,
+            what="commit template",
+        )
+        committed += 1
+    if versions and draft != contents[-1]:
+        await put_template_content(app, ctx, tid, draft, send_params)
+    out: dict[str, Any] = {
+        "template": f"{project}/{name}",
+        "template_id": tid,
+        "versions_committed": committed,
+        "uncommitted_draft": not versions or draft != contents[-1],
+    }
+    if warnings:
+        out["template_warnings"] = warnings
+    return out
+
+
 def import_blockers(t: dict[str, Any], label: str, versions: list[dict[str, Any]]) -> list[str]:
     out = []
     if t.get("composite"):
@@ -528,74 +609,22 @@ def register_depth(reg: ToolRegistrar) -> None:
                 proj = projects[pname] = {"id": job.get("data"), "name": pname}
             return str(proj["id"])
 
-        async def put_content(tid: str, content: str, params: list[Any] | None) -> None:
-            current = await app.api.get(f"{TP}/template/{tid}")
-            body = {
-                k: v
-                for k, v in (current if isinstance(current, dict) else {}).items()
-                if k != "validationErrors"
-            }
-            body["templateContent"] = content
-            if params is not None:
-                body["templateParams"] = params
-            await app.run_job("PUT", f"{TP}/template", body, ctx=ctx, what="update template")
-
         async def import_one(p: dict[str, Any], t: dict[str, Any]) -> dict[str, Any]:
             pname = project or str(p["name"])
             tname = name or str(t["name"])
             pid = await ensure_project(pname, str(p.get("description") or ""))
             versions, draft = import_steps(t, keep_versions)
-            contents = [str(v.get("content") or "") for v in versions] or [draft]
-            params = [x for x in ensure_list(t.get("params")) if isinstance(x, dict)]
-
-            # Variables (defaults, choices, labels) go with every version, not only the draft.
-            send_params = params or None
-
-            body: dict[str, Any] = {
-                "name": tname,
-                "projectName": pname,
-                "projectId": pid,
-                "language": t.get("language") or "JINJA",
-                "softwareType": t.get("softwareType") or "IOS-XE",
-                "deviceTypes": ensure_list(t.get("deviceTypes")) or [{"productFamily": "Switches and Hubs"}],
-                "templateContent": contents[0],
-                "description": t.get("description") or "",
-            }
-            if t.get("softwareVariant"):
-                body["softwareVariant"] = t["softwareVariant"]
-            if send_params:
-                body["templateParams"] = params
-            job = await app.run_job(
-                "POST", f"{TP}/project/{pid}/template", body, ctx=ctx, what="create template"
+            return await create_imported_template(
+                app,
+                ctx,
+                project_id=pid,
+                project=pname,
+                name=tname,
+                t=t,
+                versions=versions,
+                draft=draft,
+                created=partial,
             )
-            new_id, warnings = template_task_result(job.get("data"))
-            if not new_id:
-                raise UpstreamError(f"Catalyst Center created {pname}/{tname} but returned no template id.")
-            tid = partial["template_id"] = str(new_id)
-            committed = 0
-            for i, v in enumerate(versions):
-                if i:
-                    await put_content(tid, contents[i], send_params)
-                comment = str(v.get("comment") or "") or f"imported version {v.get('version')}"
-                await app.run_job(
-                    "POST",
-                    f"{TP}/template/version",
-                    {"templateId": tid, "comments": comment},
-                    ctx=ctx,
-                    what="commit template",
-                )
-                committed += 1
-            if versions and draft != contents[-1]:
-                await put_content(tid, draft, send_params)
-            out: dict[str, Any] = {
-                "template": f"{pname}/{tname}",
-                "template_id": tid,
-                "versions_committed": committed,
-                "uncommitted_draft": not versions or draft != contents[-1],
-            }
-            if warnings:
-                out["template_warnings"] = warnings
-            return out
 
         partial: dict[str, str | None] = {"template_id": None}
 

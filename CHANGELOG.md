@@ -3,6 +3,22 @@
 ## Unreleased
 
 ### Added
+- **Config import (D40, #76).** `catc_import_config` (dangerous tier, preview-first) builds Catalyst Center
+  design intent from a `catc_export_config` document: a PoC's design on a production Catalyst Center, or a
+  rebuilt lab. It reads a live export of the document's scope (the nearest existing ancestor when the scope
+  doesn't exist yet), matches every item by name and plans steps in dependency order: sites (create, or update
+  building/floor attributes) → credentials (created with `secrets`, by `TYPE:description`; never overwritten) →
+  network settings per site (a category PUT whole when it differs; credential slots by name) → global pools →
+  reservations → template projects → templates (created and committed as version 1; never overwritten) →
+  switching profiles (create, attach missing templates, assign sites not already covered by an assigned
+  parent) → tags. Nothing is deleted or unassigned; existing credentials, pools, reservations, templates and
+  tags that differ are listed as `skip` with what differs. SSIDs, wireless profiles and compliance policies
+  are counted as not imported. The preview blocks a new credential without its secrets, any value still
+  masked in the export (an AAA shared secret, a template line), references to sites, credentials, pools or
+  templates that exist neither on Catalyst Center nor in the export, and a building without a country and
+  location. Applying runs the steps one by one and stops at the first failure with `applied`, `failed` and
+  `not_applied`; running the import again plans only what is still missing. Template and switching-profile
+  creation are now shared helpers (`create_imported_template`, `create_switching_profile`).
 - **`catc_status` reports whether SD-Access is deployed (D13, #20).** A new `catc.sda` block reads
   `/dna/system/api/v1/installedRelease` and gives the state of the optional `sda` (SD Access) and `aca` (Access
   Control Application) packages, `available`, and the reason when they aren't deployed. `/dnac-packages` lists
