@@ -6,6 +6,7 @@ import httpx
 import respx
 from fastmcp import Client
 
+from catc_mcp._core.testing import call_tool
 from catc_mcp.server import create_server
 
 from .conftest import make_settings
@@ -212,3 +213,33 @@ async def test_delete_fabric_site_in_use_refused(api: respx.MockRouter) -> None:
     out, _ = await flow("catc_delete_sda_object", {"kind": "fabric_site", "id": FID})
     text = " ".join(out["blockers"])
     assert "anycast gateway" in text and "CORP" in text
+
+
+async def test_status_reports_sda_not_deployed(api: respx.MockRouter) -> None:
+    """D13: the lab 3.2.2 image ships SD Access as an optional package left SKIPPED."""
+    api.get("/dna/system/api/v1/installedRelease").respond(
+        json={
+            "response": {
+                "packages": [
+                    {"name": "sda", "status": "SKIPPED"},
+                    {"name": "aca", "status": "SKIPPED"},
+                    {"name": "ncp", "status": "DEPLOYED"},
+                ]
+            }
+        }
+    )
+    out = await call_tool(server(), "catc_status")
+    sda = out["catc"]["sda"]
+    assert sda["available"] is False and sda["packages"] == {"sda": "SKIPPED", "aca": "SKIPPED"}
+    assert "NCSP11008" in sda["reason"]
+
+
+async def test_status_reports_sda_deployed(api: respx.MockRouter) -> None:
+    out = await call_tool(server(), "catc_status")
+    assert out["catc"]["sda"] == {"available": True, "packages": {"sda": "DEPLOYED", "aca": "DEPLOYED"}}
+
+
+async def test_status_survives_unreadable_release(api: respx.MockRouter) -> None:
+    api.get("/dna/system/api/v1/installedRelease").respond(403, json={"message": "no"})
+    out = await call_tool(server(), "catc_status")
+    assert out["catc"]["sda"]["available"] == "unknown" and out["catc"]["devices"] == 0
