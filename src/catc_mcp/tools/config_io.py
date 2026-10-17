@@ -27,7 +27,7 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from catc_mcp._core import InvalidRequest, ToolRegistrar, UpstreamError, get_client, text_result
-from catc_mcp._core.formatting import MASK, is_secret_key, mask_all, max_chars
+from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key, mask_all, max_chars
 from catc_mcp._core.formatting import _is_flag as is_flag
 from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, safe_id
@@ -116,6 +116,9 @@ TEMPLATE_FIELDS = ["description", "language", "softwareType", "composite", "fail
 
 # Most Catalyst Center reads in flight at once, across the whole export.
 PARALLEL = 8
+# Request budget for the per-site reads (sites x 9 settings categories; sites for SSIDs). Over it,
+# the first sites by path are read and a warning says to export a smaller scope for the rest.
+MAX_SITE_REQUESTS = 1800
 
 # Secret-looking key names on top of the core's SECRET_KEY_RE: SNMPv3 auth/priv phrases and keys,
 # hashes, tokens, whatever an endpoint calls them.
@@ -142,8 +145,11 @@ NOT_SECRET = {
 SECRET_DATA_TYPES = {"SECUREDSTRING", "SECURESTRING", "PASSWORD", "SECRET"}
 # Template bodies: `#set($password = "x")` (Velocity) and `{% set secret = "x" %}` (Jinja).
 TEMPLATE_SET_RES = [
+    # The value is one quoted string or anything up to the closing parenthesis, so several #set
+    # directives on one line are each matched.
     re.compile(
-        r"(?P<keep>#set\s*\(\s*\$!?\{?(?P<name>\w+)\}?\s*=\s*)(?P<val>.*?)(?P<end>\)\s*(##.*)?)$", re.M
+        r"(?P<keep>#set\s*\(\s*\$!?\{?(?P<name>\w+)\}?\s*=\s*)"
+        r"""(?P<val>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^)\n]*?)(?P<end>\s*\))"""
     ),
     re.compile(r"(?P<keep>\{%-?\s*set\s+(?P<name>\w+)\s*=\s*)(?P<val>.*?)(?P<end>\s*-?%\})"),
 ]
@@ -190,7 +196,10 @@ def clean(v: Any) -> Any:
 
 
 def secret_name(key: str) -> bool:
-    return key not in NOT_SECRET and (is_secret_key(key) or bool(EXTRA_SECRET_RE.search(key)))
+    """The core's exclusions (passwordPolicy, secretStorage...) and ours win over both patterns."""
+    if key in NOT_SECRET_KEYS or key in NOT_SECRET:
+        return False
+    return is_secret_key(key) or bool(EXTRA_SECRET_RE.search(key))
 
 
 def mask_doc(v: Any) -> Any:
@@ -762,6 +771,8 @@ class Reader:
         self.warnings: list[str] = []
 
     async def run(self, fn: Callable[[], Awaitable[Any]]) -> Any:
+        """One Catalyst Center call under the limit. `fn` must not call run/get itself: the
+        semaphore isn't reentrant, so nesting can hold every slot and wait forever."""
         async with self.sem:
             return await fn()
 
@@ -769,11 +780,12 @@ class Reader:
         return await self.run(partial(self.app.get_response, path, params))
 
     async def each(self, calls: Mapping[str, Callable[[], Awaitable[Any]]], what: str) -> dict[str, Any]:
-        """{key: result} for the calls that worked; each failure becomes a warning '<what> <key>: ...'."""
+        """{key: result} for the calls that worked; each failure becomes a warning '<what> <key>: ...'.
+        Takes no slot itself: each call acquires one through run/get, once per request."""
 
         async def one(fn: Callable[[], Awaitable[Any]]) -> Any:
             try:
-                return await self.run(fn)
+                return await fn()
             except UpstreamError as e:
                 return e
 
@@ -787,12 +799,28 @@ class Reader:
         return out
 
 
+def within_budget(
+    r: Reader, site_ids: list[str], paths: dict[str, str], per_site: int, what: str
+) -> list[str]:
+    """The sites (by path) whose reads fit MAX_SITE_REQUESTS; a warning when some don't."""
+    ordered = sorted(site_ids, key=lambda i: segs(paths.get(i) or i))
+    room = max(1, MAX_SITE_REQUESTS // per_site)
+    if len(ordered) > room:
+        r.warnings.append(
+            f"{what}: {len(ordered)} sites in scope, read the first {room} by path "
+            f"({MAX_SITE_REQUESTS}-request budget); export a smaller scope for the rest "
+            f"(first skipped: {paths.get(ordered[room], ordered[room])})"
+        )
+    return ordered[:room]
+
+
 async def _site_settings(r: Reader, site_ids: list[str], paths: dict[str, str]) -> dict[str, Any]:
+    site_ids = within_budget(r, site_ids, paths, len(SETTINGS), "settings")
     calls: dict[str, Callable[[], Awaitable[Any]]] = {}
     for sid in site_ids:
         for cat, suffix in SETTINGS.items():
             path = f"/dna/intent/api/v1/sites/{safe_id(sid, 'site id')}/{suffix}"
-            calls[f"{paths.get(sid, sid)} {cat}"] = partial(r.app.get_response, path, {"_inherited": "false"})
+            calls[f"{paths.get(sid, sid)} {cat}"] = partial(r.get, path, {"_inherited": "false"})
     keys = {f"{paths.get(sid, sid)} {cat}": (sid, cat) for sid in site_ids for cat in SETTINGS}
     out: dict[str, dict[str, Any]] = {}
     for key, val in (await r.each(calls, "settings")).items():
@@ -802,7 +830,8 @@ async def _site_settings(r: Reader, site_ids: list[str], paths: dict[str, str]) 
 
 
 async def _ssids_raw(r: Reader, site_ids: list[str], paths: dict[str, str]) -> dict[str, Any]:
-    calls = {paths.get(sid, sid): partial(site_ssids, r.app, sid) for sid in site_ids}
+    site_ids = within_budget(r, site_ids, paths, 1, "ssids")
+    calls = {paths.get(sid, sid): partial(r.run, partial(site_ssids, r.app, sid)) for sid in site_ids}
     by_path = {paths.get(sid, sid): sid for sid in site_ids}
     return {by_path[k]: v for k, v in (await r.each(calls, "ssids")).items()}
 
@@ -827,7 +856,10 @@ async def _templates_raw(r: Reader) -> dict[str, Any]:
         if tid not in system:
             names[tid] = f"{t.get('projectName')}/{t.get('name')}"
     tp = "/dna/intent/api/v1/template-programmer/template"
-    calls = {names[i]: partial(r.app.api.get, f"{tp}/{safe_id(i, 'template id')}") for i in sorted(names)}
+    calls = {
+        names[i]: partial(r.run, partial(r.app.api.get, f"{tp}/{safe_id(i, 'template id')}"))
+        for i in sorted(names)
+    }
     full = await r.each(calls, "template")
     return {"projects": projects, "templates": [v for v in full.values() if isinstance(v, dict)]}
 
