@@ -97,6 +97,21 @@ def unique_by_id(objs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list({str(o["id"]): o for o in objs}.values())
 
 
+async def create_switching_profile(app: CatcApp, ctx: Context | None, name: str) -> dict[str, Any]:
+    """Create an empty switching profile: the documented SDA API, or the UI's /api/v1/siteprofile
+    where that endpoint is missing (404 on a CatC without the SDA package). Returns its id and route."""
+    # Fall back only when the SDA endpoint itself is missing, not on a later task-poll 404.
+    try:
+        sent = await app.api.request("POST", SWITCH_PROFILES, json=[{"profileName": name}])
+        via = SWITCH_PROFILES
+    except NotFound:
+        sent = await app.api.request("POST", SITE_PROFILE, json=site_profile_body(name))
+        via = SITE_PROFILE
+    job = await app.wait_job(sent, ctx=ctx, what="create profile")
+    created = [p for p in await list_profiles(app) if p.get("name") == name]
+    return {"name": name, "profile_id": created[0].get("id") if created else None, "via": via, **job}
+
+
 async def run_each(app: CatcApp, ctx: Context, paths: list[str], what: str) -> None:
     """DELETE each path in turn; on a failure say which ones were done and which are left."""
     done: list[str] = []
@@ -152,16 +167,7 @@ def register(reg: ToolRegistrar) -> None:
         )
 
         async def apply() -> Any:
-            # Fall back only when the SDA endpoint itself is missing, not on a later task-poll 404.
-            try:
-                sent = await app.api.request("POST", SWITCH_PROFILES, json=[{"profileName": name}])
-                via = SWITCH_PROFILES
-            except NotFound:
-                sent = await app.api.request("POST", SITE_PROFILE, json=site_profile_body(name))
-                via = SITE_PROFILE
-            job = await app.wait_job(sent, ctx=ctx, what="create profile")
-            created = [p for p in await list_profiles(app) if p.get("name") == name]
-            return {"name": name, "profile_id": created[0].get("id") if created else None, "via": via, **job}
+            return await create_switching_profile(app, ctx, name)
 
         return await preview_or_apply(
             ctx,

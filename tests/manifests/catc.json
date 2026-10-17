@@ -444,6 +444,10 @@
       "tier": "read",
       "title": "Health trend"
     },
+    "catc_import_config": {
+      "tier": "dangerous",
+      "title": "Import configuration"
+    },
     "catc_import_templates": {
       "tier": "write",
       "title": "Import templates"

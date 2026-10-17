@@ -25,6 +25,7 @@ LONG = {
     "catc_add_anycast_gateway",
     "catc_export_config",
     "catc_diff_config",
+    "catc_import_config",
 }
 
 
