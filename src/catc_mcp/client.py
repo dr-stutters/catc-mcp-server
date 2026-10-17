@@ -219,6 +219,12 @@ class CatcApp:
             if isinstance(val, dict):
                 val = val.get("count")
             out[key] = val if isinstance(val, int) else f"unavailable ({type(val).__name__})"
+        from catc_mcp.tools.sda import sda_application  # tools import the client
+
+        try:
+            out["sda"] = await sda_application(self)
+        except UpstreamError as e:
+            out["sda"] = {"available": "unknown", "reason": str(e)[:200]}
         if self.settings.username:
             try:
                 out["account"] = await self.account()

@@ -65,6 +65,7 @@ The suite's own lab seeds all of this with a script kept in the private lab repo
 ## Notes
 
 - The SD-Access test skips when Catalyst Center refuses fabric sites because the SD-Access application isn't
-  running.
+  running (NCSP11008). `catc_status` shows it in `catc.sda`: the optional `sda` and `aca` packages must be
+  DEPLOYED, not SKIPPED (System > Software Management).
 - SWIM distribute/activate are covered by mocked unit tests only.
 - [pnp.md](pnp.md) covers what PnP needs on CML (DHCP option 43, the day-0 workaround).
