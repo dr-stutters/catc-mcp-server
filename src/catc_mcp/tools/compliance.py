@@ -4,12 +4,15 @@ template (D37)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import contextlib
 import functools
 import hashlib
 import json
+import os
 import re
+import tempfile
 from collections import Counter
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -39,7 +42,7 @@ from catc_mcp.common import (
     resolve_template,
 )
 from catc_mcp.tools.archive import archive_files, file_text
-from catc_mcp.tools.compliance_policies import violation_rows
+from catc_mcp.tools.compliance_policies import site_map, violation_rows
 from catc_mcp.tools.inventory import redact_config
 
 STATUSES = ["COMPLIANT", "NON_COMPLIANT", "IN_PROGRESS", "NOT_AVAILABLE", "NOT_APPLICABLE", "ERROR"]
@@ -177,6 +180,37 @@ async def device_site_name(app: CatcApp, device_id: str) -> str:
     )
 
 
+async def site_members(app: CatcApp, root: str, device_ids: list[str] | None = None) -> dict[str, str]:
+    """{device id: site hierarchy} for the devices assigned at `root` or below. Lists each site's
+    direct members (one paged call per site in the subtree), unless the caller gives fewer device
+    ids than there are sites: then it asks once per device instead, whichever is fewer calls."""
+    names = await site_map(app)
+    subtree = {i: n for i, n in names.items() if root == "Global" or n == root or n.startswith(root + "/")}
+    if device_ids is not None and len(device_ids) < len(subtree):
+        found = await bounded(4, [functools.partial(device_site_name, app, i) for i in device_ids])
+        return {i: (w if isinstance(w, str) else "(unknown)") for i, w in zip(device_ids, found, strict=True)}
+
+    async def members(site_id: str) -> list[str]:
+        page = await fetch_all(
+            app.pager,
+            app.api,
+            "/dna/intent/api/v1/networkDevices/assignedToSite",
+            {"siteId": site_id},
+            cap=5000,
+        )
+        return [str(a["deviceId"]) for a in page.items if isinstance(a, dict) and a.get("deviceId")]
+
+    ids = sorted(subtree, key=lambda i: subtree[i].count("/"))  # deepest last: its assignment wins
+    found = await bounded(4, [functools.partial(members, i) for i in ids])
+    out: dict[str, str] = {}
+    for sid, devs in zip(ids, found, strict=True):
+        if isinstance(devs, BaseException):
+            raise devs
+        for d in devs:
+            out[d] = subtree[sid]
+    return out
+
+
 async def rule_violations(app: CatcApp, device_id: str) -> list[dict[str, Any]]:
     """The user-policy (NETWORK_RULES) violations of one device: policy, rule, severity, message."""
     did = safe_id(device_id, "device id")
@@ -222,17 +256,54 @@ def load_history(path: Path | None) -> dict[str, list[dict[str, Any]]]:
     return data if isinstance(data, dict) else {}
 
 
-def save_history(path: Path | None, data: dict[str, list[dict[str, Any]]]) -> bool:
-    if path is None:
-        return False
+HISTORY_LOCK = asyncio.Lock()
+
+
+@contextlib.contextmanager
+def file_lock(path: Path) -> Iterator[None]:
+    """An exclusive lock on <path>.lock across processes (best effort where fcntl is missing)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_suffix(".lock"), "a") as fh:
+        try:
+            import fcntl
+
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        except ImportError:  # Windows: in-process lock only
+            pass
+        yield
+
+
+def save_history(path: Path, data: dict[str, list[dict[str, Any]]]) -> bool:
+    """Write atomically: a unique temp file in the same directory, then rename over the old one."""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data))
-        tmp.replace(path)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+        with os.fdopen(fd, "w") as fh:
+            json.dump(data, fh)
+        os.replace(tmp, path)
     except OSError:
+        with contextlib.suppress(OSError, UnboundLocalError):
+            os.unlink(tmp)
         return False
     return True
+
+
+def record_snapshot(
+    path: Path | None, key: str, snapshot: dict[str, Any]
+) -> tuple[dict[str, Any] | None, bool]:
+    """Store this report's snapshot; return the latest earlier-run snapshot (or None) and whether
+    the store worked. Read-modify-write runs under an in-process and a file lock."""
+    if path is None:
+        return None, True
+    try:
+        with file_lock(path):
+            history = load_history(path)
+            snaps = [x for x in history.get(key, []) if isinstance(x, dict)]
+            earlier = [x for x in snaps if x.get("run_ms") != snapshot["run_ms"]]
+            history[key] = (earlier + [snapshot])[-HISTORY_KEEP:]
+            ok = save_history(path, history)
+    except OSError:
+        return None, False
+    return (earlier[-1] if earlier else None), ok
 
 
 def compare_snapshots(prev: dict[str, Any], cur: dict[str, Any], names: dict[str, str]) -> dict[str, Any]:
@@ -271,8 +342,14 @@ def register_report(reg: ToolRegistrar) -> None:
             bool, Field(description="List the policy rule violations of non-compliant devices")
         ] = True,
         max_devices: Annotated[
-            int, Field(ge=0, le=500, description="How many non-compliant devices to detail (default 50)")
-        ] = 50,
+            int,
+            Field(
+                ge=0,
+                le=500,
+                description="How many non-compliant devices to detail (default 25; each with policy "
+                "violations costs 2+ API calls)",
+            ),
+        ] = 25,
     ) -> ToolResult:
         """Which devices are out of standard: compliance at a site (and below) from the last
         compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX,
@@ -294,14 +371,16 @@ def register_report(reg: ToolRegistrar) -> None:
         recs = [r for r in page.items if isinstance(r, dict) and r.get("networkDeviceId")]
         ids = [str(r["networkDeviceId"]) for r in recs]
         names = await inventory_names(app, ids) or {}
-        sites = await bounded(8, [functools.partial(device_site_name, app, i) for i in ids])
-        site_of = {i: (s if isinstance(s, str) else "(unknown)") for i, s in zip(ids, sites, strict=True)}
+        members = await site_members(app, str(st.get("nameHierarchy") or "Global"), ids)
+        site_of = {i: members.get(i, "(unassigned)") for i in ids}
 
         by_status: Counter[str] = Counter()
         by_category: dict[str, Counter[str]] = {}
         by_severity: Counter[str] = Counter()
         by_site: dict[str, dict[str, Any]] = {}
         bad_devices: list[dict[str, Any]] = []
+        # Category-level keys for every device, so the snapshot doesn't depend on max_devices or
+        # include_rule_violations (rule detail is only fetched for the detailed devices).
         bad_keys: list[str] = []
         new_items: list[dict[str, Any]] = []
         persisting = 0
@@ -373,7 +452,6 @@ def register_report(reg: ToolRegistrar) -> None:
                 b["rule_violations"] = rows
                 for v in rows:
                     rule_counts[(str(v.get("policy")), str(v.get("rule")), str(v.get("severity")))] += 1
-                    bad_keys.append(f"{b['deviceUuid']}|{v.get('policy')}/{v.get('rule')}")
 
         trend: dict[str, Any] = {
             "in_last_run": {"new_non_compliant": new_items, "persisting_non_compliant": persisting}
@@ -385,22 +463,19 @@ def register_report(reg: ToolRegistrar) -> None:
             "bad": sorted(set(bad_keys)),
         }
         path = history_path(ctx)
-        key = history_key(ctx, sid, categories)
-        history = load_history(path)
-        snaps = [x for x in history.get(key, []) if isinstance(x, dict)]
-        earlier = [x for x in snaps if x.get("run_ms") != latest_run]
-        if earlier:
-            trend["since_previous_report"] = compare_snapshots(earlier[-1], snapshot, names)
+        async with HISTORY_LOCK:
+            previous, saved = await asyncio.to_thread(
+                record_snapshot, path, history_key(ctx, sid, categories), snapshot
+            )
+        if previous is not None:
+            trend["since_previous_report"] = compare_snapshots(previous, snapshot, names)
         elif path is not None:
             trend["since_previous_report"] = (
                 "No earlier report for this site at an earlier compliance run yet; the next report "
                 "after a new compliance run will compare against this one."
             )
-        if path is not None:
-            snaps = [x for x in snaps if x.get("run_ms") != latest_run] + [snapshot]
-            history[key] = snaps[-HISTORY_KEEP:]
-            if not save_history(path, history):
-                errors.append(f"Couldn't save the report history to {path}.")
+        if not saved:
+            errors.append(f"Couldn't save the report history to {path}.")
 
         out: dict[str, Any] = {
             "site": st.get("nameHierarchy"),
@@ -514,20 +589,19 @@ async def scope_devices(
             d = await resolve_device(app, ref)
             out[str(d["id"])] = d
         return list(out.values())
-    params: dict[str, Any] = {"family": family} if family else {}
-    page = await fetch_all(app.pager, app.api, "/dna/intent/api/v1/network-device", params, cap=2000)
-    devs = [d for d in page.items if isinstance(d, dict) and d.get("id")]
-    if site:
-        st = await resolve_site(app, site)
-        if st.get("type") != "global":
-            root = str(st.get("nameHierarchy"))
-            where = await bounded(8, [functools.partial(device_site_name, app, str(d["id"])) for d in devs])
-            devs = [
-                d
-                for d, w in zip(devs, where, strict=True)
-                if isinstance(w, str) and (w == root or w.startswith(root + "/"))
-            ]
-    return devs
+    st = await resolve_site(app, site) if site else None
+    if st is None or st.get("type") == "global":
+        params: dict[str, Any] = {"family": family} if family else {}
+        page = await fetch_all(app.pager, app.api, "/dna/intent/api/v1/network-device", params, cap=2000)
+        return [d for d in page.items if isinstance(d, dict) and d.get("id")]
+    ids = sorted(await site_members(app, str(st.get("nameHierarchy"))))
+    devs: list[dict[str, Any]] = []
+    for n in range(0, len(ids), 100):
+        found = await app.get_response(
+            "/dna/intent/api/v1/network-device", {"id": ",".join(ids[n : n + 100])}
+        )
+        devs += [d for d in ensure_list(found) if isinstance(d, dict) and d.get("id")]
+    return [d for d in devs if not family or d.get("family") == family]
 
 
 def register_drift(reg: ToolRegistrar) -> None:
@@ -574,6 +648,14 @@ def register_drift(reg: ToolRegistrar) -> None:
         max_lines: Annotated[
             int, Field(ge=1, le=500, description="Differing lines listed per device (default 30)")
         ] = 30,
+        max_devices: Annotated[
+            int,
+            Field(
+                ge=1,
+                le=200,
+                description="Check at most this many devices (default 50; each costs 2-3 API calls)",
+            ),
+        ] = 50,
     ) -> ToolResult:
         """Config drift across sites: which devices' running configuration differs from a golden
         device (lines missing compared with it, and extra lines) or no longer contains what a
@@ -636,7 +718,7 @@ def register_drift(reg: ToolRegistrar) -> None:
                 if isinstance(res, dict) and res.get("validationErrors"):
                     return {**row, "error": f"template render errors: {res['validationErrors']}"[:300]}
                 cli = redact_config(str(res.get("cliPreview") or "") if isinstance(res, dict) else "")
-                expected = config_paths(cli, compile_patterns(DEFAULT_IGNORE[-2:], "ignore"), None)
+                expected = config_paths(cli, ign, onl)
                 missing = template_missing(expected, have)
                 extra: list[str] = []
                 row["template_lines"] = len(expected)
@@ -652,7 +734,13 @@ def register_drift(reg: ToolRegistrar) -> None:
                 row["extra"] = extra[:max_lines]
             return row
 
-        rows = await bounded(5, [functools.partial(check, d) for d in devs])
+        if len(devs) > max_devices:
+            notes.append(
+                f"Checked {max_devices} of {len(devs)} devices (by hostname); raise max_devices or narrow "
+                "devices/site for the rest."
+            )
+            devs = sorted(devs, key=lambda d: str(d.get("hostname")))[:max_devices]
+        rows = await bounded(4, [functools.partial(check, d) for d in devs])
         results = [
             r if isinstance(r, dict) else {"device": d.get("hostname"), "error": str(r)[:300]}
             for d, r in zip(devs, rows, strict=True)

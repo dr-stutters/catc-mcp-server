@@ -23,7 +23,9 @@
   new and fixed items against the previous report at an earlier run, kept in the cache directory).
   `catc_config_drift` (read): devices whose latest archived running config differs from a golden device
   (missing and extra lines as `parent > child`) or lacks what a template renders to per device (`no X` lines
-  honoured), with `only` / `ignore` regexes; hostname, version, certificates and similar lines are ignored.
+  honoured), with `only` / `ignore` regexes applied to both sides; hostname, version, certificates and
+  similar lines are ignored. Site membership is read per site (or per device when that is fewer calls); the
+  report details 25 devices and drift checks 50 by default (`max_devices`), saying when it cut the list.
   Live: a policy requiring `service password-encryption`, r1 compliant and r2 not; the report and both drift
   modes show r2.
 

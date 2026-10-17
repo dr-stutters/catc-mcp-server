@@ -29,6 +29,9 @@ R1 = {"id": R1_ID, "hostname": "r1.mcp.lab", "managementIpAddress": "10.0.0.1", 
 R2 = {"id": R2_ID, "hostname": "r2.mcp.lab", "managementIpAddress": "10.0.0.2", "family": "Routers"}
 GLOBAL = {"id": "cccccccc-0000-0000-0000-000000000000", "nameHierarchy": "Global", "type": "global"}
 BLDG = "Global/Lab/B1"
+LAB_SITE = {"id": "cccccccc-0000-0000-0000-000000000001", "nameHierarchy": "Global/Lab", "type": "area"}
+BLDG_SITE = {"id": "cccccccc-0000-0000-0000-000000000002", "nameHierarchy": BLDG, "type": "building"}
+SITES = [GLOBAL, LAB_SITE, BLDG_SITE]
 TPL_ID = "dddddddd-1111-2222-3333-444444444444"
 IGNORE = [re.compile(p) for p in DEFAULT_IGNORE]
 
@@ -175,7 +178,22 @@ def mock_inventory(api: respx.MockRouter) -> None:
         api.get(f"/dna/intent/api/v1/networkDevices/{d['id']}/assignedToSite").respond(
             json={"response": {"deviceId": d["id"], "siteNameHierarchy": BLDG}}
         )
-    api.get("/dna/intent/api/v1/sites").respond(json={"response": [GLOBAL]})
+
+    def sites(request: httpx.Request) -> httpx.Response:
+        q = request.url.params.get("nameHierarchy")
+        return httpx.Response(
+            200, json={"response": [x for x in SITES if q is None or x["nameHierarchy"] == q]}
+        )
+
+    api.get("/dna/intent/api/v1/sites").mock(side_effect=sites)
+
+    def members(request: httpx.Request) -> httpx.Response:
+        here = request.url.params.get("siteId") == BLDG_SITE["id"]
+        return httpx.Response(
+            200, json={"response": [{"deviceId": d["id"]} for d in (R1, R2)] if here else []}
+        )
+
+    api.get("/dna/intent/api/v1/networkDevices/assignedToSite").mock(side_effect=members)
 
 
 def mock_report(api: respx.MockRouter, devices: dict[str, Any]) -> dict[str, Any]:
@@ -246,7 +264,7 @@ async def test_report_trend_between_runs(api: respx.MockRouter, tmp_path: Path) 
     second = await report(tmp_path)
     trend = second["trend"]["since_previous_report"]
     assert trend["resolved"] == [{"device": "r1.mcp.lab", "item": "RUNNING_CONFIG"}]
-    assert trend["non_compliant_items_before"] == 3 and trend["non_compliant_items_now"] == 2
+    assert trend["non_compliant_items_before"] == 2 and trend["non_compliant_items_now"] == 1
     assert "new" not in trend  # empty lists are dropped from the output
     history = json.loads((tmp_path / "compliance-history.json").read_text())
     assert len(next(iter(history.values()))) == 2
@@ -373,3 +391,97 @@ async def test_drift_argument_checks_and_missing_archive(api: respx.MockRouter) 
         await call("catc_config_drift", {"against": "golden", "golden_device": "r1.mcp.lab", "ignore": ["("]})
     with pytest.raises(ToolError, match="no archived running config"):
         await call("catc_config_drift", {"against": "golden", "golden_device": "r1.mcp.lab"})
+
+
+# --- review fixes: filters on template lines, stable trend keys, call volume, history writes ---
+
+
+async def test_template_lines_get_the_same_filters(api: respx.MockRouter) -> None:
+    mock_inventory(api)
+    mock_archive(api)
+    tpl = {"templateId": TPL_ID, "name": "base", "projectName": "mcp-d37"}
+    api.get("/dna/intent/api/v1/template-programmer/template").respond(json=[tpl])
+    api.put("/dna/intent/api/v1/template-programmer/template/preview").respond(
+        json={"cliPreview": "hostname r9\nversion 17.9\nservice password-encryption\nlogging host 10.9.9.9\n"}
+    )
+    args = {"against": "template", "template": "mcp-d37/base", "devices": ["r1.mcp.lab"]}
+    out = await call("catc_config_drift", args)
+    # hostname/version are ignored on both sides; the logging line is genuinely missing.
+    assert out["results"][0]["missing"] == ["logging host 10.9.9.9"]
+    scoped = await call("catc_config_drift", {**args, "only": ["^service "]})
+    assert scoped["in_line"] == ["r1.mcp.lab"] and scoped["results"][0]["template_lines"] == 1
+
+
+async def test_trend_does_not_depend_on_detail_parameters(api: respx.MockRouter, tmp_path: Path) -> None:
+    holder = mock_report(api, FIX["site_devices_run1"])
+    settings = make_settings(mcp_cache_dir=str(tmp_path))
+    run2 = copy.deepcopy(FIX["site_devices_run1"])
+    for rec in run2["response"]:
+        rec["lastComplianceExecutionTime"] += 3_600_000
+    async with Client(create_server(settings)) as c:
+        await c.call_tool("catc_compliance_report", {"max_devices": 50})
+        holder["now"] = run2
+        res = await c.call_tool(
+            "catc_compliance_report", {"max_devices": 0, "include_rule_violations": False}
+        )
+    trend = res.structured_content["trend"]["since_previous_report"]
+    assert "resolved" not in trend and "new" not in trend, trend
+    assert trend["non_compliant_items_before"] == trend["non_compliant_items_now"] == 2
+
+
+PER_SITE = "/dna/intent/api/v1/networkDevices/assignedToSite"
+
+
+def membership_calls(api: respx.MockRouter) -> tuple[int, int]:
+    """(per-device assignedToSite lookups, per-site member listings) made so far."""
+    paths = [str(c.request.url.path) for c in api.calls]
+    per_device = sum(1 for p in paths if p.endswith("/assignedToSite") and p != PER_SITE)
+    return per_device, paths.count(PER_SITE)
+
+
+async def test_report_maps_sites_with_few_calls(api: respx.MockRouter) -> None:
+    mock_report(api, FIX["site_devices_run1"])
+    out = await report(None)
+    assert out["by_site"][0]["site"] == BLDG
+    assert membership_calls(api) == (2, 0)  # 2 devices < 3 sites: one lookup per device
+
+
+async def test_drift_by_site_lists_site_members(api: respx.MockRouter) -> None:
+    mock_inventory(api)
+    mock_archive(api)
+    out = await call(
+        "catc_config_drift", {"against": "golden", "golden_device": "r1.mcp.lab", "site": "Global/Lab"}
+    )
+    assert membership_calls(api) == (0, 2)  # Global/Lab and its building, not each device
+    assert out["checked"] == 1 and out["drifted"] == ["r2.mcp.lab"]
+
+
+async def test_drift_truncation_is_reported(api: respx.MockRouter) -> None:
+    mock_inventory(api)
+    mock_archive(api)
+    api.get("/dna/intent/api/v1/template-programmer/template").respond(
+        json=[{"templateId": TPL_ID, "name": "base", "projectName": "p"}]
+    )
+    api.put("/dna/intent/api/v1/template-programmer/template/preview").respond(
+        json={"cliPreview": "service password-encryption\n"}
+    )
+    out = await call(
+        "catc_config_drift",
+        {"against": "template", "template": "p/base", "site": "Global/Lab", "max_devices": 1},
+    )
+    assert out["checked"] == 1 and "Checked 1 of 2 devices" in out["notes"][0]
+
+
+def test_history_writes_are_atomic_and_locked(tmp_path: Path) -> None:
+    from catc_mcp.tools.compliance import record_snapshot
+
+    path = tmp_path / "compliance-history.json"
+    first, ok = record_snapshot(path, "k", {"run_ms": 1, "bad": ["a|X"]})
+    assert first is None and ok
+    prev, ok = record_snapshot(path, "k", {"run_ms": 2, "bad": []})
+    assert prev == {"run_ms": 1, "bad": ["a|X"]} and ok
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "compliance-history.json",
+        "compliance-history.lock",
+    ]
+    assert [x["run_ms"] for x in json.loads(path.read_text())["k"]] == [1, 2]
