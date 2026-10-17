@@ -14,8 +14,14 @@ import respx
 from fastmcp.exceptions import ToolError
 
 from catc_mcp.tools.assurance_analytics import (
+    CHUNK_MS,
+    DEVICE_MINUTES,
+    NETWORK_INTERVALS,
+    SITE_INTERVALS,
+    device_interval,
     healthy_percent,
     issue_periods,
+    pick_interval,
     recurrence,
     series,
     summarize,
@@ -173,6 +179,28 @@ def test_issue_periods() -> None:
 # --- tools ---------------------------------------------------------------------------------------
 
 
+def test_week_and_month_trends_keep_enough_buckets() -> None:
+    # Over a day the network/device trend APIs take only 60-minute buckets (read in 7-day chunks).
+    assert device_interval(24, NETWORK_INTERVALS) == ("5MIN", 5)
+    assert device_interval(168, NETWORK_INTERVALS) == ("1HR", 60)  # 168 buckets, not 1-2 at 7 days
+    assert device_interval(168, DEVICE_MINUTES) == ("60", 60)
+    assert pick_interval(168, SITE_INTERVALS) == ("1HR", 60)
+    assert pick_interval(720, SITE_INTERVALS) == ("1DAY", 1440)
+
+
+async def test_health_trend_network_month_in_week_chunks(api: respx.MockRouter) -> None:
+    def week(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["trendInterval"] == "1HR" and body["endTime"] - body["startTime"] <= CHUNK_MS
+        good = [{"name": "goodDeviceCount", "value": "2"}]
+        return httpx.Response(200, json={"response": [{"timestamp": body["startTime"], "attributes": good}]})
+
+    route = api.post("/dna/data/api/v1/networkDevices/trendAnalytics").mock(side_effect=week)
+    out = await call("catc_health_trend", {"hours": 720})
+    assert route.call_count == 5 and out["interval"] == "1HR"  # 30 days = 4 weeks + 2 days
+    assert out["network_devices_healthy"]["samples"] == 5
+
+
 async def test_health_trend_network(api: respx.MockRouter) -> None:
     route = api.post("/dna/data/api/v1/networkDevices/trendAnalytics").respond(json=FIX["network_trend"])
     out = await call("catc_health_trend", {"hours": 2})
@@ -301,13 +329,41 @@ async def test_top_problem_devices_have_the_issue_behind_them(api: respx.MockRou
 
 async def test_top_problem_devices_by_site(api: respx.MockRouter) -> None:
     mock_lookups(api)
-    other = {**FIX["devices_query"]["response"][0], "siteHierarchy": "Global/elsewhere"}
-    other["aggregateAttributes"] = [{"name": "overallHealthScore", "function": "MIN", "value": 1}]
-    api.post("/dna/data/api/v1/networkDevices/query").respond(json={"response": [other]})
+    # A sibling whose name extends the site's ('mcp-test-bldg2') is not below it.
+    sibling = {**FIX["devices_query"]["response"][0], "siteHierarchy": "Global/mcp-test-lab/mcp-test-bldg2"}
+    sibling["aggregateAttributes"] = [{"name": "overallHealthScore", "function": "MIN", "value": 1}]
+    q = api.post("/dna/data/api/v1/networkDevices/query").respond(json={"response": [sibling]})
     issues = api.get("/dna/data/api/v1/assuranceIssues").respond(json={"response": [], "page": {"count": 0}})
     out = await call("catc_top_problems", {"site": BLDG})
     assert not out.get("results") and "no devices" in out["note"]
-    assert issues.calls.last.request.url.params["siteHierarchy"] == "Global/mcp-test-lab/mcp-test-bldg*"
+    assert issues.calls.last.request.url.params.get_list("siteHierarchy") == [
+        "Global/mcp-test-lab/mcp-test-bldg",
+        "Global/mcp-test-lab/mcp-test-bldg/*",
+    ]
+    filters = json.loads(q.calls.last.request.content)["filters"]
+    assert filters == [{"key": "siteId", "operator": "eq", "value": BLDG}]
+
+
+async def test_top_problem_clients_by_site_and_scan_note(api: respx.MockRouter) -> None:
+    mock_lookups(api)
+    worst = [
+        {
+            "macAddress": f"AA:BB:CC:00:01:{n:02X}",
+            "aggregateAttributes": [{"name": "overallScore", "function": "min", "value": 2}],
+        }
+        for n in range(100)
+    ]
+    q = api.post("/dna/data/api/v1/clients/query").respond(json={"response": worst})
+    api.get("/dna/data/api/v1/assuranceIssues").respond(json={"response": [], "page": {"count": 0}})
+    out = await call("catc_top_problems", {"kind": "clients", "site": BLDG, "limit": 5})
+    assert len(out["results"]) == 5 and "lowest health" in out["scan_limit"]
+    assert json.loads(q.calls.last.request.content)["filters"] == [
+        {
+            "key": "siteHierarchy",
+            "operator": "in",
+            "value": ["Global/mcp-test-lab/mcp-test-bldg", "Global/mcp-test-lab/mcp-test-bldg/*"],
+        }
+    ]
 
 
 async def test_top_problem_clients(api: respx.MockRouter) -> None:
@@ -347,13 +403,17 @@ async def test_issue_recurrence_tool(api: respx.MockRouter) -> None:
     assert not none.get("recurring") and "5+ times" in none["note"]
 
 
-async def test_ai_insights_unavailable_and_available(api: respx.MockRouter) -> None:
+async def test_ai_insights_none_found_and_available(api: respx.MockRouter) -> None:
     mock_lookups(api)
+    # The recorded response (aiDriven filter left out) has only non-AI issues: they are not reported.
     route = api.get("/dna/intent/api/v1/issues").respond(json=FIX["intent_issues"])
     out = await call("catc_ai_insights", {"site": BLDG})
-    assert out["status"] == "unavailable" and "cloud" in out["reason"]
+    assert out["status"] == "no_ai_issues" and "cloud" in out["note"]
     params = route.calls.last.request.url.params
     assert params["siteId"] == BLDG and params["aiDriven"] == "Yes"
+    await call("catc_ai_insights", {})
+    params = route.calls.last.request.url.params
+    assert params["aiDriven"] == "Yes" and "siteId" not in params  # filtered server-side network-wide too
     ai = {**FIX["intent_issues"]["response"][0], "aiDriven": "Yes", "name": "Excessive onboarding time"}
     api.get("/dna/intent/api/v1/issues").respond(json={"response": [ai]})
     out = await call("catc_ai_insights", {})
@@ -393,7 +453,7 @@ async def test_site_health_report(api: respx.MockRouter) -> None:
     assert out["trend"]["network_devices_healthy"]["min"] == 100 and out["trend"]["issue_bursts"]
     assert {d["device"] for d in out["problem_devices"]} == {"r1.mcp.lab", "r2.mcp.lab"}
     assert out["problem_clients"] == "none in the window" and out["issues"]["in_window"] >= 2
-    assert out["ai_insights"]["status"] == "unavailable"
+    assert out["ai_insights"]["status"] == "no_ai_issues"
     assert "issues raised in" in out["verdict"] and "worst device" in out["verdict"]
 
 

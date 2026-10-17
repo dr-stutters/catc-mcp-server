@@ -18,6 +18,8 @@ pytestmark = pytest.mark.live
 async def test_network_trend_and_top_problems(lab: Client[Any]) -> None:
     trend = await call(lab, "catc_health_trend", {"hours": 6})
     assert trend["network_devices_healthy"]["samples"] > 0, trend
+    week = await call(lab, "catc_health_trend", {"hours": 168})  # 1-hour buckets over a day
+    assert week["interval"] == "1HR" and week["network_devices_healthy"]["samples"] > 0, week
     top = await call(lab, "catc_top_problems", {"hours": 6})
     assert isinstance(top["results"], list)
     for row in top["results"]:
@@ -31,7 +33,7 @@ async def test_device_trend_recurrence_and_ai(lab: Client[Any]) -> None:
     rec = await call(lab, "catc_issue_recurrence", {"hours": 168, "min_times": 1, "device": router})
     assert all(g["times_opened"] >= 1 for g in rec["recurring"])
     ai = await call(lab, "catc_ai_insights", {"hours": 24})
-    assert ai["status"] in ("available", "unavailable") and (ai.get("reason") or ai.get("insights"))
+    assert ai["status"] in ("available", "no_ai_issues", "unavailable"), ai
 
 
 async def test_site_health_report(lab: Client[Any]) -> None:

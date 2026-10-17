@@ -55,10 +55,11 @@
   with start, length and depth, worse/better/steady, a trimmed series; site trends also give when issues were
   raised, device/client trends the issues open in the window), `catc_top_problems` (worst devices or clients in the
   window with the issue behind each), `catc_issue_recurrence` (the same issue opening again: times opened,
-  occurrences, gap between openings, each opening with when it closed), `catc_ai_insights` (AI-driven issues;
-  reports `unavailable` with the reason instead of failing when AI Network Analytics has no cloud connectivity)
+  occurrences, gap between openings, each opening with when it closed), `catc_ai_insights` (AI-driven issues,
+  filtered server-side; `no_ai_issues` when there are none, `unavailable` with the reason when the query fails)
   and `catc_site_health_report` (all of it for one site, with a one-line verdict). Site trends are asynchronous on
-  3.2.2 (an assurance task is polled); a per-device trend 404 (e.g. during a resync) is reported as no data. Found
+  3.2.2 (an assurance task is polled); network/device trends over a day use 1-hour buckets in 7-day chunks (the
+  API's limits); site filters match the site and below, not siblings; a per-device trend 404 (e.g. during a resync) is reported as no data. Found
   live: a cat8000v's health score ignores a down link, so the outage shows as issues and issue bursts, not a dip.
 
 ### Changed
