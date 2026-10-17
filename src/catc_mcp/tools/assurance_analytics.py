@@ -28,7 +28,7 @@ ISSUE_SCAN_CAP = 1000
 ASYNC_TREND_WAIT = 30.0  # seconds to wait for a site-trend assurance task
 MAX_POINTS = 24  # points shown per series; the summary and dips use every bucket
 
-AI_UNAVAILABLE = (
+AI_NEEDS = (
     "AI Network Analytics needs Catalyst Center to reach the Cisco AI cloud and the feature enabled "
     "(System > Settings > External Services > Cisco AI Analytics); Catalyst Center does not report "
     "that setting over its REST API."
@@ -151,17 +151,42 @@ def summarize(
 
 
 def pick_interval(hours: float, choices: list[tuple[str, int]]) -> tuple[str, int]:
-    """The finest interval that keeps the series at or under ~150 buckets."""
+    """The finest interval that fits the series in one page of MAX_BUCKETS buckets (a week at 1 hour,
+    30 days at 1 day)."""
     for name, minutes in choices:
-        if hours * 60 / minutes <= 150:
+        if hours * 60 / minutes <= MAX_BUCKETS:
             return name, minutes
     return choices[-1]
 
 
-NETWORK_INTERVALS = [("5MIN", 5), ("10MIN", 10), ("30MIN", 30), ("1HR", 60), ("7DAYS", 10080)]
+MAX_BUCKETS = 500  # page.limit of the trend APIs
+NETWORK_INTERVALS = [("5MIN", 5), ("10MIN", 10), ("30MIN", 30), ("1HR", 60)]
 SITE_INTERVALS = [("5MIN", 5), ("10MIN", 10), ("1HR", 60), ("1DAY", 1440)]
 CLIENT_INTERVALS = SITE_INTERVALS
-DEVICE_MINUTES = [(str(m), m) for m in (5, 10, 30, 60, 240, 1440)]
+DEVICE_MINUTES = [(str(m), m) for m in (5, 10, 30, 60)]
+# The network and per-device trend APIs accept only 60-minute buckets for a window over a day, and at
+# most 7 days per request (3.2.2): longer windows are read in 7-day chunks.
+CHUNK_MS = 7 * 86_400_000
+
+
+def device_interval(hours: float, choices: list[tuple[str, int]]) -> tuple[str, int]:
+    """The interval for the network/device trend APIs: the finest that fits up to a day, 1 hour above."""
+    if hours > 24:
+        return next(c for c in choices if c[1] == 60)
+    return pick_interval(hours, choices)
+
+
+async def chunked(fetch: Any, start: int, end: int) -> list[dict[str, Any]]:
+    """Trend buckets for [start, end] read in CHUNK_MS pieces with `fetch(start, end)`, oldest first."""
+    buckets: dict[int, dict[str, Any]] = {}
+    lo = start
+    while lo < end:
+        hi = min(lo + CHUNK_MS, end)
+        for b in trend_buckets(await fetch(lo, hi)):
+            if isinstance(b.get("timestamp"), int | float):
+                buckets[int(b["timestamp"])] = b
+        lo = hi
+    return [buckets[k] for k in sorted(buckets)]
 
 
 def window_ms(hours: float) -> tuple[int, int]:
@@ -298,7 +323,7 @@ async def scan_issues(
         **(extra or {}),
     }
     if site:
-        params["siteHierarchy"] = f"{site}*" if site.lower() != "global" else "Global*"
+        params["siteHierarchy"] = site_and_below(site)
     full = await fetch_all(
         app.data_pager,
         app.api,
@@ -308,6 +333,13 @@ async def scan_issues(
         max_page=PAGE_ISSUES,
     )
     return [i for i in full.items if isinstance(i, dict)], full.complete
+
+
+def site_and_below(path: str) -> list[str]:
+    """The site and every site below it, as siteHierarchy values ('Global/AU/SYD-1*' would also match
+    the sibling 'Global/AU/SYD-10')."""
+    path = path.rstrip("/")
+    return [path, f"{path}/*"]
 
 
 def issue_brief(i: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]:
@@ -437,22 +469,28 @@ async def post_all(
 
 
 async def problem_devices(
-    app: CatcApp, hours: float, *, site_path: str | None, limit: int, issues: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+    app: CatcApp, hours: float, *, site: dict[str, Any] | None, limit: int, issues: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], str | None]:
     """Devices whose health dipped below good in the window or that had issues, worst first, each with
-    the issue behind it."""
+    the issue behind it; plus a note when the scan was capped."""
     start, end = window_ms(hours)
+    body: dict[str, Any] = {
+        "startTime": start,
+        "endTime": end,
+        "aggregateAttributes": [
+            {"name": "overallHealthScore", "function": "min"},
+            {"name": "overallHealthScore", "function": "avg"},
+        ],
+    }
+    site_path = None
+    if site:
+        # siteId matches the site and the sites below it.
+        body["filters"] = [{"key": "siteId", "operator": "eq", "value": str(site["id"])}]
+        site_path = str(site.get("nameHierarchy") or "") or None
     devices = await post_all(
         app,
         "/dna/data/api/v1/networkDevices/query",
-        {
-            "startTime": start,
-            "endTime": end,
-            "aggregateAttributes": [
-                {"name": "overallHealthScore", "function": "min"},
-                {"name": "overallHealthScore", "function": "avg"},
-            ],
-        },
+        body,
         sort={"name": "overallHealthScore", "order": "asc", "function": "min"},
     )
     by_entity: dict[str, list[dict[str, Any]]] = {}
@@ -463,8 +501,8 @@ async def problem_devices(
     for d in devices:
         if not isinstance(d, dict):
             continue
-        site = str(d.get("siteHierarchy") or "")
-        if site_path and not (site == site_path or site.startswith(site_path.rstrip("/") + "/")):
+        dev_site = str(d.get("siteHierarchy") or "")
+        if site_path and not (dev_site == site_path or dev_site.startswith(site_path.rstrip("/") + "/")):
             continue
         agg = {
             f"{a.get('name')}:{str(a.get('function') or '').lower()}": num(a.get("value"))
@@ -483,7 +521,7 @@ async def problem_devices(
         row: dict[str, Any] = {
             "device": d.get("name"),
             "ip": d.get("managementIpAddress"),
-            "site": site or None,
+            "site": dev_site or None,
             "worst_health": worst,
             "avg_health": round(avg, 1) if avg is not None else None,
             "health_now": now,
@@ -501,14 +539,23 @@ async def problem_devices(
             -r.get("issues", 0),
         )
     )
-    return rows[:limit]
+    note = (
+        f"only the {DEVICE_SCAN_CAP} lowest-health devices were read"
+        if len(devices) >= DEVICE_SCAN_CAP
+        else None
+    )
+    return rows[:limit], note
+
+
+CLIENT_SCAN = 100  # clients/query page: the worst clients by lowest health in the window
 
 
 async def problem_clients(
-    app: CatcApp, hours: float, *, site_path: str | None, limit: int, issues: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+    app: CatcApp, hours: float, *, site: dict[str, Any] | None, limit: int, issues: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], str | None]:
     """Clients whose health dipped below good in the window, worst first, with their issue or last
-    onboarding failure."""
+    onboarding failure; plus a note when only the worst CLIENT_SCAN were looked at."""
+    site_path = (str(site.get("nameHierarchy") or "") or None) if site else None
     start, end = window_ms(hours)
     body: dict[str, Any] = {
         "startTime": start,
@@ -531,13 +578,13 @@ async def problem_clients(
             {"name": "overallScore", "function": "avg"},
         ],
         "page": {
-            "limit": 100,
+            "limit": CLIENT_SCAN,
             "offset": 1,
             "sortBy": [{"name": "overallScore", "order": "asc", "function": "min"}],
         },
     }
     if site_path:
-        body["filters"] = [{"key": "siteHierarchy", "operator": "like", "value": f"{site_path}*"}]
+        body["filters"] = [{"key": "siteHierarchy", "operator": "in", "value": site_and_below(site_path)}]
     resp = await app.api.post("/dna/data/api/v1/clients/query", body)
     items = resp.get("response") if isinstance(resp, dict) else resp
     by_mac: dict[str, list[dict[str, Any]]] = {}
@@ -582,16 +629,22 @@ async def problem_clients(
             row["last_failure"] = fail
         rows.append({k: v for k, v in row.items() if v not in (None, "")})
     rows.sort(key=lambda r: (r.get("worst_health", 11), -r.get("issues", 0)))
-    return rows[:limit]
+    seen = len(items) if isinstance(items, list) else 0
+    note = (
+        f"only the {CLIENT_SCAN} clients with the lowest health in the window were checked"
+        if seen >= CLIENT_SCAN
+        else None
+    )
+    return rows[:limit], note
 
 
 async def ai_insights(app: CatcApp, hours: float, site_id: str | None) -> dict[str, Any]:
     """AI-driven issues in the window, or why there are none to show."""
     start, end = window_ms(hours)
-    params: dict[str, Any] = {"startTime": start, "endTime": end}
+    # aiDriven is filtered server-side, network-wide too (this endpoint has no paging).
+    params: dict[str, Any] = {"startTime": start, "endTime": end, "aiDriven": "Yes"}
     if site_id:
         params["siteId"] = site_id
-        params["aiDriven"] = "Yes"
     data = await app.get_response("/dna/intent/api/v1/issues", params)
     rows = [
         i
@@ -600,8 +653,9 @@ async def ai_insights(app: CatcApp, hours: float, site_id: str | None) -> dict[s
     ]
     if not rows:
         return {
-            "status": "unavailable",
-            "reason": f"no AI-driven issues in the last {hours:g}h. {AI_UNAVAILABLE}",
+            "status": "no_ai_issues",
+            "note": f"Catalyst Center answered and has no AI-driven issues in the last {hours:g}h: none "
+            f"were raised, or AI Network Analytics is off. {AI_NEEDS}",
         }
     return {
         "status": "available",
@@ -632,6 +686,17 @@ async def no_data_on_404(call: Any) -> Any:
         return await call
     except NotFound:
         return {"response": []}
+
+
+def problems(result: Any) -> Any:
+    """A problem_devices/clients result for the site report: the rows (with the scan note), 'none in
+    the window', or {'unavailable': reason}."""
+    if not isinstance(result, tuple):
+        return section(result)
+    rows, note = result
+    if not rows:
+        return "none in the window" + (f" ({note})" if note else "")
+    return {"rows": rows, "scan_limit": note} if note else rows
 
 
 def section(result: Any) -> Any:
@@ -678,20 +743,23 @@ def register(reg: ToolRegistrar) -> None:
         start, end = window_ms(hours)
         out: dict[str, Any] = {"scope": scope, "window_hours": hours}
         if scope == "network":
-            interval, minutes = pick_interval(hours, NETWORK_INTERVALS)
-            body = await app.api.post(
-                "/dna/data/api/v1/networkDevices/trendAnalytics",
-                {
-                    "startTime": start,
-                    "endTime": end,
-                    "trendInterval": interval,
-                    "attributes": ["goodDeviceCount", "fairDeviceCount", "poorDeviceCount"],
-                    "page": {"limit": 500, "offset": 1, "timestampOrder": "asc"},
-                },
-            )
+            interval, minutes = device_interval(hours, NETWORK_INTERVALS)
+
+            async def network(lo: int, hi: int) -> Any:
+                return await app.api.post(
+                    "/dna/data/api/v1/networkDevices/trendAnalytics",
+                    {
+                        "startTime": lo,
+                        "endTime": hi,
+                        "trendInterval": interval,
+                        "attributes": ["goodDeviceCount", "fairDeviceCount", "poorDeviceCount"],
+                        "page": {"limit": MAX_BUCKETS, "offset": 1, "timestampOrder": "asc"},
+                    },
+                )
+
             out["interval"] = interval
             out["network_devices_healthy"] = summarize(
-                healthy_percent(trend_buckets(body)),
+                healthy_percent(await chunked(network, start, end)),
                 dip_below=GOOD_PERCENT if dip_below is None else dip_below,
                 bucket_min=minutes,
                 unit="%",
@@ -702,26 +770,30 @@ def register(reg: ToolRegistrar) -> None:
             out.update(await site_trends(app, site, hours, dip_below))
         elif scope == "device":
             dev = await resolve_device(app, str(target))
-            label, minutes = pick_interval(hours, DEVICE_MINUTES)
-            body = await no_data_on_404(
-                app.api.post(
-                    f"/dna/data/api/v1/networkDevices/{safe_id(str(dev['id']), 'device id')}/trendAnalytics",
-                    {
-                        "startTime": start,
-                        "endTime": end,
-                        "trendIntervalInMinutes": minutes,
-                        "aggregateAttributes": [
-                            {"name": "overallHealthScore", "function": "min"},
-                            {"name": "overallHealthScore", "function": "avg"},
-                        ],
-                        "page": {"limit": 500, "offset": 1, "timestampOrder": "asc"},
-                    },
+            label, minutes = device_interval(hours, DEVICE_MINUTES)
+            path = f"/dna/data/api/v1/networkDevices/{safe_id(str(dev['id']), 'device id')}/trendAnalytics"
+
+            async def device(lo: int, hi: int) -> Any:
+                return await no_data_on_404(
+                    app.api.post(
+                        path,
+                        {
+                            "startTime": lo,
+                            "endTime": hi,
+                            "trendIntervalInMinutes": minutes,
+                            "aggregateAttributes": [
+                                {"name": "overallHealthScore", "function": "min"},
+                                {"name": "overallHealthScore", "function": "avg"},
+                            ],
+                            "page": {"limit": MAX_BUCKETS, "offset": 1, "timestampOrder": "asc"},
+                        },
+                    )
                 )
-            )
+
             out["device"] = dev.get("hostname") or target
             out["interval"] = f"{label}MIN"
             out["health"] = summarize(
-                series(trend_buckets(body), "overallHealthScore:min"),
+                series(await chunked(device, start, end), "overallHealthScore:min"),
                 dip_below=GOOD_SCORE if dip_below is None else dip_below,
                 bucket_min=minutes,
                 unit="score 1-10",
@@ -774,13 +846,14 @@ def register(reg: ToolRegistrar) -> None:
         health or had issues are listed. Drill in with catc_health_trend, catc_get_issue or
         catc_device_360."""
         app: CatcApp = get_client(ctx)
-        site_path = None
-        if site:
-            site_path = str((await resolve_site(app, site)).get("nameHierarchy") or site)
+        s = await resolve_site(app, site) if site else None
+        site_path = str(s.get("nameHierarchy") or site) if s else None
         issues, complete = await scan_issues(app, hours, site=site_path)
         fn = problem_devices if kind == "devices" else problem_clients
-        rows = await fn(app, hours, site_path=site_path, limit=limit, issues=issues)
+        rows, cap_note = await fn(app, hours, site=s, limit=limit, issues=issues)
         out: dict[str, Any] = {"kind": kind, "window_hours": hours, "results": rows}
+        if cap_note:
+            out["scan_limit"] = cap_note
         if site_path:
             out["site"] = site_path
         if not rows:
@@ -843,15 +916,15 @@ def register(reg: ToolRegistrar) -> None:
         hours: Hours = 24,
     ) -> ToolResult:
         """AI-driven issues from Cisco AI Network Analytics (baseline deviations Catalyst Center learns
-        in the cloud) for the network or a site. Reports status 'unavailable' with the reason when there
-        are none, e.g. the appliance has no cloud connectivity or the feature is off; never fails for
-        that."""
+        in the cloud) for the network or a site. Status 'available' with the insights, 'no_ai_issues'
+        when Catalyst Center answered with none (none raised, or the feature is off: the API doesn't
+        say which), or 'unavailable' with the reason when the query failed; never fails itself."""
         app: CatcApp = get_client(ctx)
         site_id = str((await resolve_site(app, site))["id"]) if site else None
         try:
             out = await ai_insights(app, hours, site_id)
         except UpstreamError as e:
-            out = {"status": "unavailable", "reason": f"{str(e)[:200]}. {AI_UNAVAILABLE}"}
+            out = {"status": "unavailable", "reason": f"{str(e)[:200]}. {AI_NEEDS}"}
         return object_result({"window_hours": hours, **out})
 
     @reg.read(title="Site health report")
@@ -881,8 +954,8 @@ def register(reg: ToolRegistrar) -> None:
         dev_res: Any
         cli_res: Any
         dev_res, cli_res = await asyncio.gather(
-            problem_devices(app, hours, site_path=path, limit=5, issues=issues),
-            problem_clients(app, hours, site_path=path, limit=5, issues=issues),
+            problem_devices(app, hours, site=s, limit=5, issues=issues),
+            problem_clients(app, hours, site=s, limit=5, issues=issues),
             return_exceptions=True,
         )
         out: dict[str, Any] = {"site": path, "window_hours": hours}
@@ -891,8 +964,8 @@ def register(reg: ToolRegistrar) -> None:
             now = now[0] if now else {}
         out["now"] = site_now(now) if isinstance(now, dict) and "unavailable" not in now else now
         out["trend"] = section(trend_res)
-        out["problem_devices"] = section(dev_res) or "none in the window"
-        out["problem_clients"] = section(cli_res) or "none in the window"
+        out["problem_devices"] = problems(dev_res)
+        out["problem_clients"] = problems(cli_res)
         if isinstance(issues_res, tuple):
             active = [i for i in issues if str(i.get("status") or "").lower() == "active"]
             out["issues"] = {
@@ -904,7 +977,7 @@ def register(reg: ToolRegistrar) -> None:
             out["issues"] = section(issues_res)
         ai = section(ai_res)
         if isinstance(ai_res, UpstreamError):
-            ai = {"status": "unavailable", "reason": f"{ai['unavailable']}. {AI_UNAVAILABLE}"}
+            ai = {"status": "unavailable", "reason": f"{ai['unavailable']}. {AI_NEEDS}"}
         out["ai_insights"] = ai
         out["verdict"] = verdict(out)
         return object_result(out)
