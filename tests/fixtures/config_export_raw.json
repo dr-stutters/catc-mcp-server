@@ -23,6 +23,18 @@
        "scope": "RUNNING_CONFIG",
        "sequenceNumber": 1,
        "value": "ntp server 198.18.128.1"
+      },
+      {
+       "action": {
+        "doesNotMatchAction": "RAISE_A_VIOLATION",
+        "doesNotMatchViolationSeverity": "LOW",
+        "matchAction": "PASS"
+       },
+       "id": "11111111-0000-0000-0000-000000000004",
+       "operator": "CONTAINS_STRING",
+       "scope": "RUNNING_CONFIG",
+       "sequenceNumber": 1,
+       "value": "ntp server 198.18.128.2"
       }
      ],
      "rule": {
@@ -77,6 +89,18 @@
    "secure": true,
    "type": "HTTP_READ",
    "username": "api"
+  },
+  {
+   "description": "mcp-dup",
+   "id": "99999999-0000-0000-0000-000000000002",
+   "type": "CLI",
+   "username": "alice"
+  },
+  {
+   "description": "mcp-dup",
+   "id": "99999999-0000-0000-0000-000000000003",
+   "type": "CLI",
+   "username": "bob"
   }
  ],
  "ip_pools": [
@@ -256,8 +280,13 @@
   },
   "406c3e32-efd7-42cb-b0de-81749ce1889a": {
    "aaa": {
-    "aaaClient": {},
-    "aaaNetwork": {}
+    "aaaNetwork": {
+     "pan": "198.18.134.35",
+     "primaryServerIp": "198.18.134.35",
+     "protocol": "RADIUS",
+     "serverType": "ISE",
+     "sharedSecret": "radius-SECRET-3"
+    }
    },
    "banner": {
     "banner": {
@@ -302,7 +331,19 @@
    },
    "telemetry": {
     "applicationVisibility": null,
-    "snmpTraps": null,
+    "snmpTraps": {
+     "externalTrapServers": [
+      "192.0.2.50"
+     ],
+     "snmpv3": {
+      "authPhrase": "auth-SECRET-1",
+      "authProtocol": "SHA",
+      "privKeyValue": "priv-SECRET-2",
+      "privacyProtocol": "AES128",
+      "userName": "trapuser"
+     },
+     "useBuiltinTrapServer": true
+    },
     "syslogs": null,
     "wiredDataCollection": {
      "enableWiredDataCollection": true
@@ -466,6 +507,15 @@
       "name": "hostname",
       "operation": "ILIKE",
       "value": "%lab-r%"
+     }
+    },
+    {
+     "memberType": "interface",
+     "rules": {
+      "apiToken": "tag-SECRET-11",
+      "name": "portName",
+      "operation": "ILIKE",
+      "value": "Gi%"
      }
     }
    ],
@@ -644,6 +694,11 @@
       "projectAssociated": true,
       "projectId": "b54ac384-6120-42f5-9328-098c97038859",
       "projectName": "mcp-test-dayn",
+      "templateSource": "USER_DEFINED"
+     },
+     {
+      "id": "66666666-0000-0000-0000-000000000001",
+      "name": "mcp-test-secrets",
       "templateSource": "USER_DEFINED"
      }
     ]
@@ -903,12 +958,102 @@
      "templateId": "6ce38427-c5aa-4245-bc59-6ad066fd7a9b",
      "templateVersion": null
     }
+   },
+   {
+    "author": "admin",
+    "composite": false,
+    "containingTemplates": [],
+    "createTime": 1792201723848,
+    "customParamsOrder": false,
+    "description": "",
+    "deviceTypes": [
+     {
+      "productFamily": "Routers"
+     }
+    ],
+    "documentDatabase": false,
+    "editable": true,
+    "id": "66666666-0000-0000-0000-000000000001",
+    "language": "VELOCITY",
+    "lastUpdateTime": 1792201725445,
+    "latestVersionTime": 1792201725524,
+    "name": "mcp-test-secrets",
+    "noOfConflicts": 1,
+    "parentTemplateId": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+    "projectAssociated": true,
+    "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+    "projectName": "mcp-test-dayn",
+    "rollbackTemplateParams": [],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "tags": [],
+    "templateContent": "#set($password = \"vel-SECRET-4\")\n#set( $hostname = \"r1\" )\n{% set enable_secret = 'jinja-SECRET-5' %}\n{% set vlan = 10 %}\nusername admin privilege 15 secret 0 ios-SECRET-6\nhostname $hostname",
+    "templateDeploymentType": "DAYN",
+    "templateParams": [
+     {
+      "dataType": "STRING",
+      "defaultValue": "param-SECRET-7",
+      "parameterName": "snmp_community",
+      "required": false
+     },
+     {
+      "dataType": "STRING",
+      "defaultValue": "param-SECRET-8",
+      "parameterName": "enable_pw",
+      "required": false
+     },
+     {
+      "dataType": "SECUREDSTRING",
+      "defaultValue": "param-SECRET-9",
+      "parameterName": "vault",
+      "required": false
+     },
+     {
+      "dataType": "INTEGER",
+      "defaultValue": "10",
+      "parameterName": "vlan",
+      "required": false
+     }
+    ],
+    "templateSource": "USER_DEFINED",
+    "validationErrors": {
+     "rollbackTemplateErrors": [],
+     "templateErrors": [
+      {
+       "lineNumber": 1,
+       "message": "This command is reserved to be used by Cisco Catalyst Center",
+       "type": "POTENTIAL_CONFLICT"
+      }
+     ],
+     "templateId": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+     "templateVersion": null
+    }
    }
   ]
  },
  "wireless_profiles": [
   {
-   "additionalInterfaces": [],
+   "additionalInterfaces": [
+    "guest",
+    "voice"
+   ],
+   "apZones": [
+    {
+     "apZoneName": "zone-b",
+     "rfProfileName": "HIGH",
+     "ssids": [
+      "mcp-test-psk",
+      "mcp-test-guest"
+     ]
+    },
+    {
+     "apZoneName": "zone-a",
+     "rfProfileName": "LOW",
+     "ssids": [
+      "mcp-test-psk"
+     ]
+    }
+   ],
    "featureTemplates": [
     {
      "id": "x",
@@ -928,6 +1073,12 @@
      "interfaceName": "management",
      "ssidName": "mcp-test-psk",
      "wlanProfileName": "mcp-test-psk_profile"
+    },
+    {
+     "enableFabric": false,
+     "interfaceName": "guest",
+     "sharedKeyValue": "wl-SECRET-10",
+     "ssidName": "mcp-test-guest"
     }
    ],
    "wirelessProfileName": "mcp-test-wl"

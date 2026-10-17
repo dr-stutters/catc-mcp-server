@@ -14,7 +14,9 @@ Two layers:
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
-from collections.abc import Awaitable, Callable
+import json
+import re
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from functools import partial
 from typing import Annotated, Any, Literal
@@ -25,7 +27,8 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from catc_mcp._core import InvalidRequest, ToolRegistrar, UpstreamError, get_client, text_result
-from catc_mcp._core.formatting import mask_secrets, max_chars
+from catc_mcp._core.formatting import MASK, is_secret_key, mask_all, max_chars
+from catc_mcp._core.formatting import _is_flag as is_flag
 from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, list_all_templates, resolve_site
@@ -111,8 +114,59 @@ POOL_SPACE_FIELDS = [
 ]
 TEMPLATE_FIELDS = ["description", "language", "softwareType", "composite", "failurePolicy"]
 
-# Bounded concurrency for the per-site reads (settings, SSIDs).
+# Most Catalyst Center reads in flight at once, across the whole export.
 PARALLEL = 8
+
+# Secret-looking key names on top of the core's SECRET_KEY_RE: SNMPv3 auth/priv phrases and keys,
+# hashes, tokens, whatever an endpoint calls them.
+EXTRA_SECRET_RE = re.compile(
+    r"(phrase|passw|pwd|(^|[_-])pw$|secret|psk|community|token|hash|cipher_?text|(^|[a-z_])key(value)?s?$)",
+    re.IGNORECASE,
+)
+# Names, labels and enums that look like secrets and aren't.
+NOT_SECRET = {
+    "authType",
+    "privacyType",
+    "snmpMode",
+    "authProtocol",
+    "privacyProtocol",
+    "cliCredentials",
+    "snmpv2cReadCredentials",
+    "snmpv2cWriteCredentials",
+    "snmpv3Credentials",
+    "httpReadCredentials",
+    "httpWriteCredentials",
+    "passphraseType",
+    "keyWrap",
+}
+SECRET_DATA_TYPES = {"SECUREDSTRING", "SECURESTRING", "PASSWORD", "SECRET"}
+# Template bodies: `#set($password = "x")` (Velocity) and `{% set secret = "x" %}` (Jinja).
+TEMPLATE_SET_RES = [
+    re.compile(
+        r"(?P<keep>#set\s*\(\s*\$!?\{?(?P<name>\w+)\}?\s*=\s*)(?P<val>.*?)(?P<end>\)\s*(##.*)?)$", re.M
+    ),
+    re.compile(r"(?P<keep>\{%-?\s*set\s+(?P<name>\w+)\s*=\s*)(?P<val>.*?)(?P<end>\s*-?%\})"),
+]
+
+# Lists inside records that are sets (order means nothing): sorted by this field (None: the whole
+# value), ties broken by the item's canonical JSON. Lists not named here keep the API's order, which
+# carries meaning (server priority, composite template sequence, choice order).
+SET_LISTS: dict[str, str | None] = {
+    "additionalInterfaces": None,
+    "apZones": "apZoneName",
+    "ssidDetails": "ssidName",
+    "ssids": None,
+    "dynamicRules": None,
+    "nasOptions": None,
+    "deviceTypes": None,
+    "deviceFamilies": None,
+    "tags": None,
+    "templates": None,
+    "sites": None,
+    "rules": "name",
+    "conditions": "sequenceNumber",
+    "multiPSKSettings": "priority",
+}
 
 
 # --- pure layer: raw API records -> export document --------------------------------------------
@@ -133,6 +187,49 @@ def clean(v: Any) -> Any:
     if isinstance(v, list):
         return [clean(x) for x in v if x is not None]
     return v
+
+
+def secret_name(key: str) -> bool:
+    return key not in NOT_SECRET and (is_secret_key(key) or bool(EXTRA_SECRET_RE.search(key)))
+
+
+def mask_doc(v: Any) -> Any:
+    """Mask the value of every secret-named key (flags such as isAuthKeyPSK stay readable)."""
+    if isinstance(v, dict):
+        out = {}
+        for k, x in v.items():
+            if secret_name(str(k)) and not is_flag(x) and x not in (None, "", [], {}):
+                out[k] = mask_all(x)
+            else:
+                out[k] = mask_doc(x)
+        return out
+    if isinstance(v, list):
+        return [mask_doc(x) for x in v]
+    return v
+
+
+def redact_template(text: str) -> str:
+    """IOS secrets (redact_config) plus Velocity/Jinja set-assignments of secret-named variables."""
+    text = redact_config(text)
+
+    def sub(m: re.Match[str]) -> str:
+        return f'{m["keep"]}"{MASK}"{m["end"]}' if secret_name(m["name"]) else m[0]
+
+    for pat in TEMPLATE_SET_RES:
+        text = pat.sub(sub, text)
+    return text
+
+
+def _param(p: dict[str, Any]) -> dict[str, Any]:
+    out = param_summary(p)
+    secret = secret_name(str(p.get("parameterName") or "")) or str(p.get("dataType") or "").upper() in (
+        SECRET_DATA_TYPES
+    )
+    if secret:
+        for k in ("defaultValue", "choices"):
+            if out.get(k) not in (None, "", []):
+                out[k] = mask_all(out[k])
+    return out
 
 
 def segs(path: str) -> list[str]:
@@ -174,7 +271,7 @@ def _settings(
                 ids = {k: v.get("credentialsId") if isinstance(v, dict) else v for k, v in body.items()}
                 body = {k.removesuffix("Id"): cred_names.get(str(v), str(v)) for k, v in ids.items() if v}
             else:
-                body = mask_secrets(clean(body))
+                body = clean(body)
             if body:
                 site[cat] = body
         if site and sid in paths and in_scope(paths[sid], root):
@@ -184,7 +281,7 @@ def _settings(
 
 def _credentials(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
-        mask_secrets({f: c[f] for f in CRED_EXPORT_FIELDS if c.get(f) not in (None, "")})
+        {f: c[f] for f in CRED_EXPORT_FIELDS if c.get(f) not in (None, "")}
         for c in raw
         if isinstance(c, dict)
     ]
@@ -225,8 +322,8 @@ def _templates(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str
         if families:
             entry["deviceTypes"] = sorted(families, key=lambda d: sorted(d.items()))
         if isinstance(t.get("templateContent"), str):
-            entry["content"] = redact_config(t["templateContent"])
-        params = [param_summary(p) for p in t.get("templateParams") or [] if isinstance(p, dict)]
+            entry["content"] = redact_template(t["templateContent"])
+        params = [_param(p) for p in t.get("templateParams") or [] if isinstance(p, dict)]
         if not t.get("customParamsOrder"):
             # The API returns variables in no fixed order unless the template sets one.
             params.sort(key=lambda p: str(p.get("parameterName")))
@@ -320,7 +417,7 @@ def _ssids(raw: dict[str, list[dict[str, Any]]], paths: dict[str, str], root: st
         for s in items or []:
             if not isinstance(s, dict) or s.get("inheritedSiteUUID") not in (None, "", sid):
                 continue
-            out.append(mask_secrets({"site": paths[sid], **clean(s)}))
+            out.append({"site": paths[sid], **clean(s)})
     return out
 
 
@@ -404,8 +501,27 @@ def build_export(raw: dict[str, Any]) -> dict[str, Any]:
     errors = meta.get("errors") or {}
     for section in SECTIONS:
         if section in wanted and section not in errors:
-            doc[section] = builders[section]()
-    return canonical(doc)
+            # Final pass over everything built: no section relies on its builder to mask.
+            doc[section] = mask_doc(builders[section]())
+    doc = canonical(doc)
+    dups = duplicates(doc)
+    if dups:
+        warnings = list(doc["meta"].get("warnings") or [])
+        warnings += [
+            f"{s}: {n} items share the name {k!r} (diff tells them apart as #2, #3...)" for s, k, n in dups
+        ]
+        doc["meta"] = _ordered({**doc["meta"], "warnings": warnings})
+    return doc
+
+
+def duplicates(doc: dict[str, Any]) -> list[tuple[str, str, int]]:
+    """(section, identity, count) for identities used by more than one item."""
+    out = []
+    for section in SECTIONS:
+        if isinstance(doc.get(section), list):
+            keys = [item_key(section, x) for x in doc[section] if isinstance(x, dict)]
+            out += [(section, k, keys.count(k)) for k in sorted(set(keys)) if keys.count(k) > 1]
+    return out
 
 
 # --- pure layer: stable ordering, YAML, diff -----------------------------------------------------
@@ -426,22 +542,45 @@ def item_key(section: str, item: dict[str, Any]) -> str:
     return str(item.get("name"))
 
 
+def canon_json(v: Any) -> str:
+    return json.dumps(v, sort_keys=True, default=str, ensure_ascii=False)
+
+
 def _sort_key(section: str, item: dict[str, Any]) -> tuple[Any, ...]:
+    """Identity first; the item's canonical JSON breaks ties (duplicates never fall back to API order)."""
+    key = item_key(section, item)
     if section == "sites":
-        return (segs(str(item.get("path"))),)
-    if section in ("ip_reservations", "ssids"):
-        return (segs(str(item.get("site"))), item_key(section, item).lower())
-    return (item_key(section, item).lower(), item_key(section, item))
+        head: tuple[Any, ...] = (segs(str(item.get("path"))),)
+    elif section in ("ip_reservations", "ssids"):
+        head = (segs(str(item.get("site"))), key.lower())
+    else:
+        head = (key.lower(), key)
+    return (*head, canon_json(item))
 
 
-def _ordered(v: Any) -> Any:
-    """Mappings with KEY_FIRST keys first, then the rest alphabetically; list order kept."""
+def _set_key(field: str | None, x: Any) -> tuple[Any, ...]:
+    if field and isinstance(x, dict):
+        v = x.get(field)
+        if isinstance(v, int | float) and not isinstance(v, bool):
+            return (0, v, "", canon_json(x))
+        return (1, 0, str(v).lower(), canon_json(x))
+    if field == "sites" or (field is None and isinstance(x, str) and x.startswith("Global")):
+        return (1, 0, "/".join(segs(str(x))), canon_json(x))
+    return (1, 0, str(x).lower() if isinstance(x, str) else "", canon_json(x))
+
+
+def _ordered(v: Any, key: str | None = None) -> Any:
+    """Mappings with KEY_FIRST keys first, then the rest alphabetically. Lists named in SET_LISTS
+    are sorted; other lists keep their order."""
     if isinstance(v, dict):
         first = [k for k in KEY_FIRST if k in v]
         rest = sorted(k for k in v if k not in KEY_FIRST)
-        return {k: _ordered(v[k]) for k in [*first, *rest]}
+        return {k: _ordered(v[k], k) for k in [*first, *rest]}
     if isinstance(v, list):
-        return [_ordered(x) for x in v]
+        items = [_ordered(x) for x in v]
+        if key in SET_LISTS:
+            items.sort(key=partial(_set_key, SET_LISTS[key]))
+        return items
     return v
 
 
@@ -458,8 +597,11 @@ def canonical(doc: dict[str, Any]) -> dict[str, Any]:
         if section == "settings" and isinstance(val, dict):
             val = {k: val[k] for k in sorted(val, key=segs)}
         elif isinstance(val, list):
-            val = sorted((x for x in val if isinstance(x, dict)), key=partial(_sort_key, section))
-        out[section] = _ordered(val)
+            val = [_ordered(x) for x in val if isinstance(x, dict)]
+            val = sorted(val, key=partial(_sort_key, section))
+        out[section] = (
+            {k: _ordered(x) for k, x in val.items()} if isinstance(val, dict) else [_ordered(x) for x in val]
+        )
     return out
 
 
@@ -503,10 +645,32 @@ def load_export(text: str) -> dict[str, Any]:
     return doc
 
 
-def _as_items(section: str, val: Any) -> dict[str, Any]:
+def _groups(section: str, val: Any) -> dict[str, list[Any]]:
+    """{identity: [items]} in canonical order (settings: one item per site path)."""
     if isinstance(val, dict):
-        return val
-    return {item_key(section, x): x for x in ensure_list(val) if isinstance(x, dict)}
+        return {k: [v] for k, v in val.items()}
+    out: dict[str, list[Any]] = {}
+    items = sorted((x for x in ensure_list(val) if isinstance(x, dict)), key=partial(_sort_key, section))
+    for x in items:
+        out.setdefault(item_key(section, x), []).append(x)
+    return out
+
+
+def _pairs(key: str, a: list[Any], b: list[Any]) -> list[tuple[str, Any, Any]]:
+    """Match the items that share an identity: identical ones first, the rest in order; a repeated
+    identity is labelled '#2', '#3'... so no item is lost."""
+    a, b = list(a), list(b)
+    matched: list[tuple[Any, Any]] = []
+    for x in list(a):
+        if x in b:
+            a.remove(x)
+            b.remove(x)
+            matched.append((x, x))
+    rest = max(len(a), len(b))
+    matched += [(a[n] if n < len(a) else None, b[n] if n < len(b) else None) for n in range(rest)]
+    if len(matched) == 1:
+        return [(key, *matched[0])]
+    return [(key if n == 0 else f"{key} #{n + 1}", x, y) for n, (x, y) in enumerate(matched)]
 
 
 def _walk(before: Any, after: Any, path: list[str], out: list[tuple[list[str], Any, Any]]) -> None:
@@ -526,75 +690,130 @@ def diff_exports(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any
     for section in SECTIONS:
         if section not in before or section not in after:
             continue
-        a, b = _as_items(section, before[section]), _as_items(section, after[section])
+        ga, gb = _groups(section, before[section]), _groups(section, after[section])
         counts = {"added": 0, "removed": 0, "changed": 0}
-        for key in sorted(set(a) | set(b), key=lambda k: (segs(k), k)):
-            if key not in b:
+        rows = []
+        for key in sorted(set(ga) | set(gb), key=lambda k: (segs(k), k)):
+            rows += _pairs(key, ga.get(key, []), gb.get(key, []))
+        for key, old, new in rows:
+            if new is None:
                 counts["removed"] += 1
-                changes.append({"section": section, "item": key, "change": "removed", "before": a[key]})
-            elif key not in a:
+                changes.append({"section": section, "item": key, "change": "removed", "before": old})
+            elif old is None:
                 counts["added"] += 1
-                changes.append({"section": section, "item": key, "change": "added", "after": b[key]})
-            elif a[key] != b[key]:
+                changes.append({"section": section, "item": key, "change": "added", "after": new})
+            elif old != new:
                 counts["changed"] += 1
                 diffs: list[tuple[list[str], Any, Any]] = []
-                _walk(a[key], b[key], [], diffs)
-                for path, old, new in diffs:
+                _walk(old, new, [], diffs)
+                for path, was, now in diffs:
                     row: dict[str, Any] = {"section": section, "item": key, "change": "changed"}
                     row["field"] = ".".join(path)
-                    row |= {"before": old, "after": new}
+                    row |= {"before": was, "after": now}
                     changes.append(row)
         if any(counts.values()):
             summary[section] = counts
     return {"identical": not changes, "summary": summary, "changes": changes, "not_compared": skipped}
 
 
+DIFF_VALUE_CHARS = 400  # longest before/after value shown in a diff row (a template body, a whole item)
+
+
+def short(v: Any) -> Any:
+    """A diff value cut to DIFF_VALUE_CHARS, saying how long it was."""
+    if isinstance(v, str) and len(v) > DIFF_VALUE_CHARS:
+        return v[:DIFF_VALUE_CHARS] + f"... [{len(v)} characters; compare the exports for the rest]"
+    if isinstance(v, dict | list):
+        text = canon_json(v)
+        if len(text) > DIFF_VALUE_CHARS:
+            return f"{text[:DIFF_VALUE_CHARS]}... [{len(text)} characters; compare the exports for the rest]"
+    return v
+
+
+def cap_changes(
+    changes: list[dict[str, Any]], limit: int, budget: int
+) -> tuple[list[dict[str, Any]], str | None]:
+    """At most `limit` rows with long values shortened, and no more than `budget` characters of them."""
+    out: list[dict[str, Any]] = []
+    used = 0
+    for c in changes[:limit]:
+        row = {k: short(v) if k in ("before", "after") else v for k, v in c.items()}
+        used += len(canon_json(row))
+        if out and used > budget:
+            break
+        out.append(row)
+    if len(out) < len(changes):
+        why = "limit" if len(out) == min(limit, len(changes)) and len(changes) > limit else "response size"
+        return out, f"{len(changes)} changes; showing {len(out)} ({why}: pass section or raise limit)"
+    return out, None
+
+
 # --- fetch layer -------------------------------------------------------------------------------
 
 
-async def _bounded(calls: dict[str, Callable[[], Awaitable[Any]]]) -> dict[str, Any]:
-    """Run the calls with at most PARALLEL in flight; {key: result or the UpstreamError}."""
-    sem = asyncio.Semaphore(PARALLEL)
+class Reader:
+    """Reads for one export: at most PARALLEL calls in flight across every section, and per-item
+    failures (one site's settings, one template) recorded as warnings instead of failing a section.
+    429s are retried by the API client (Retry-After) and it paces itself, so nothing is added here."""
 
-    async def one(fn: Callable[[], Awaitable[Any]]) -> Any:
-        async with sem:
+    def __init__(self, app: CatcApp) -> None:
+        self.app = app
+        self.sem = asyncio.Semaphore(PARALLEL)
+        self.warnings: list[str] = []
+
+    async def run(self, fn: Callable[[], Awaitable[Any]]) -> Any:
+        async with self.sem:
+            return await fn()
+
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        return await self.run(partial(self.app.get_response, path, params))
+
+    async def each(self, calls: Mapping[str, Callable[[], Awaitable[Any]]], what: str) -> dict[str, Any]:
+        """{key: result} for the calls that worked; each failure becomes a warning '<what> <key>: ...'."""
+
+        async def one(fn: Callable[[], Awaitable[Any]]) -> Any:
             try:
-                return await fn()
+                return await self.run(fn)
             except UpstreamError as e:
                 return e
 
-    results = await asyncio.gather(*(one(fn) for fn in calls.values()))
-    return dict(zip(calls, results, strict=True))
+        results = await asyncio.gather(*(one(fn) for fn in calls.values()))
+        out = {}
+        for key, val in zip(calls, results, strict=True):
+            if isinstance(val, UpstreamError):
+                self.warnings.append(f"{what} {key}: {str(val)[:160]}")
+            else:
+                out[key] = val
+        return out
 
 
-async def _site_settings(app: CatcApp, site_ids: list[str]) -> dict[str, Any]:
+async def _site_settings(r: Reader, site_ids: list[str], paths: dict[str, str]) -> dict[str, Any]:
     calls: dict[str, Callable[[], Awaitable[Any]]] = {}
     for sid in site_ids:
         for cat, suffix in SETTINGS.items():
             path = f"/dna/intent/api/v1/sites/{safe_id(sid, 'site id')}/{suffix}"
-            calls[f"{sid}|{cat}"] = partial(app.get_response, path, {"_inherited": "false"})
+            calls[f"{paths.get(sid, sid)} {cat}"] = partial(r.app.get_response, path, {"_inherited": "false"})
+    keys = {f"{paths.get(sid, sid)} {cat}": (sid, cat) for sid in site_ids for cat in SETTINGS}
     out: dict[str, dict[str, Any]] = {}
-    for key, val in (await _bounded(calls)).items():
-        sid, cat = key.split("|", 1)
-        if isinstance(val, UpstreamError):
-            raise val
+    for key, val in (await r.each(calls, "settings")).items():
+        sid, cat = keys[key]
         out.setdefault(sid, {})[cat] = val
     return out
 
 
-async def _ssids_raw(app: CatcApp, site_ids: list[str]) -> dict[str, Any]:
-    results = await _bounded({sid: partial(site_ssids, app, sid) for sid in site_ids})
-    for val in results.values():
-        if isinstance(val, UpstreamError):
-            raise val
-    return results
+async def _ssids_raw(r: Reader, site_ids: list[str], paths: dict[str, str]) -> dict[str, Any]:
+    calls = {paths.get(sid, sid): partial(site_ssids, r.app, sid) for sid in site_ids}
+    by_path = {paths.get(sid, sid): sid for sid in site_ids}
+    return {by_path[k]: v for k, v in (await r.each(calls, "ssids")).items()}
 
 
-async def _templates_raw(app: CatcApp) -> dict[str, Any]:
+async def _templates_raw(r: Reader) -> dict[str, Any]:
     """Project listing + full records of the non-system templates.
 
     TODO(D36): switch to D36's template serializer once it lands (see `_templates`)."""
-    projects = ensure_list(await app.api.get("/dna/intent/api/v1/template-programmer/project"))
+    projects = ensure_list(
+        await r.run(partial(r.app.api.get, "/dna/intent/api/v1/template-programmer/project"))
+    )
     projects = [p for p in projects if isinstance(p, dict)]
     system = {
         str(t.get("id"))
@@ -602,56 +821,51 @@ async def _templates_raw(app: CatcApp) -> dict[str, Any]:
         for t in p.get("templates") or []
         if t.get("templateSource") == "SYSTEM_DEFINED"
     }
-    ids = sorted(
-        {
-            str(t.get("templateId") or t.get("id"))
-            for t in await list_all_templates(app)
-            if str(t.get("templateId") or t.get("id")) not in system
-        }
-    )
+    names = {}
+    for t in await r.run(partial(list_all_templates, r.app)):
+        tid = str(t.get("templateId") or t.get("id"))
+        if tid not in system:
+            names[tid] = f"{t.get('projectName')}/{t.get('name')}"
     tp = "/dna/intent/api/v1/template-programmer/template"
-    full = await _bounded({i: partial(app.api.get, f"{tp}/{safe_id(i, 'template id')}") for i in ids})
-    templates = []
-    for val in full.values():
-        if isinstance(val, UpstreamError):
-            raise val
-        if isinstance(val, dict):
-            templates.append(val)
-    return {"projects": projects, "templates": templates}
+    calls = {names[i]: partial(r.app.api.get, f"{tp}/{safe_id(i, 'template id')}") for i in sorted(names)}
+    full = await r.each(calls, "template")
+    return {"projects": projects, "templates": [v for v in full.values() if isinstance(v, dict)]}
 
 
-async def _profiles_raw(app: CatcApp) -> list[dict[str, Any]]:
-    out = []
-    for p in await list_profiles(app):
+async def _profiles_raw(r: Reader) -> list[dict[str, Any]]:
+    profiles = await r.run(partial(list_profiles, r.app))
+
+    async def one(p: dict[str, Any]) -> dict[str, Any]:
         pid = str(p["id"])
-        tpls, sites = await asyncio.gather(profile_template_ids(app, pid), profile_site_ids(app, pid))
-        out.append({"profile": p, "templates": tpls, "site_ids": sites})
-    return out
+        tpls, sites = await asyncio.gather(
+            r.run(partial(profile_template_ids, r.app, pid)), r.run(partial(profile_site_ids, r.app, pid))
+        )
+        return {"profile": p, "templates": tpls, "site_ids": sites}
+
+    got = await r.each({str(p.get("name")): partial(one, p) for p in profiles}, "network profile")
+    return list(got.values())
 
 
-async def _policies_raw(app: CatcApp) -> list[dict[str, Any]]:
-    out = []
-    for p in await list_policies(app):
+async def _policies_raw(r: Reader) -> list[dict[str, Any]]:
+    """User compliance policies (SYSTEM ones are built in and the same everywhere)."""
+    policies = [p for p in await r.run(partial(list_policies, r.app)) if p.get("source") != "SYSTEM"]
+
+    async def one(p: dict[str, Any]) -> dict[str, Any]:
         pid = safe_id(str(p["id"]), "policy id")
-        rules = [r for r in ensure_list(await app.get_response(f"{CP}/{pid}/rules")) if isinstance(r, dict)]
+        rules = [x for x in ensure_list(await r.get(f"{CP}/{pid}/rules")) if isinstance(x, dict)]
         conds = await asyncio.gather(
-            *(
-                app.get_response(f"{CP}/{pid}/rules/{safe_id(str(r['id']), 'rule id')}/conditions")
-                for r in rules
-            )
+            *(r.get(f"{CP}/{pid}/rules/{safe_id(str(x['id']), 'rule id')}/conditions") for x in rules)
         )
-        assigned = await app.get_response(f"{CP}/{pid}/siteAssignments")
+        assigned = await r.get(f"{CP}/{pid}/siteAssignments")
         site_ids = assigned.get("siteIds") if isinstance(assigned, dict) else assigned
-        out.append(
-            {
-                "policy": p,
-                "rules": [
-                    {"rule": r, "conditions": ensure_list(c)} for r, c in zip(rules, conds, strict=True)
-                ],
-                "site_ids": [str(i) for i in ensure_list(site_ids)],
-            }
-        )
-    return out
+        return {
+            "policy": p,
+            "rules": [{"rule": x, "conditions": ensure_list(c)} for x, c in zip(rules, conds, strict=True)],
+            "site_ids": [str(i) for i in ensure_list(site_ids)],
+        }
+
+    got = await r.each({str(p.get("name")): partial(one, p) for p in policies}, "compliance policy")
+    return list(got.values())
 
 
 async def _tags_raw(app: CatcApp) -> list[dict[str, Any]]:
@@ -661,41 +875,47 @@ async def _tags_raw(app: CatcApp) -> list[dict[str, Any]]:
 
 async def collect(app: CatcApp, scope: str, sections: list[str]) -> dict[str, Any]:
     """Read everything the sections need into the raw dict `build_export` takes. A section whose
-    reads fail is left out and named in meta.errors."""
+    reads fail is left out and named in meta.errors; a failed item inside a section (one site, one
+    template) is skipped and named in meta.warnings."""
+    r = Reader(app)
     root_site = await resolve_site(app, scope)
     root = str(root_site.get("nameHierarchy"))
     sites, complete = await all_sites(app)
+    paths = {str(s.get("id")): str(s.get("nameHierarchy")) for s in sites}
     scoped = [str(s["id"]) for s in sites if in_scope(str(s.get("nameHierarchy", "")), root)]
     needs_creds = "credentials" in sections or "settings" in sections
     needs_pools = "ip_pools" in sections or "ip_reservations" in sections
     needs_templates = any(s in sections for s in ("templates", "template_projects", "network_profiles"))
     reads: dict[str, Callable[[], Awaitable[Any]]] = {}
     if "settings" in sections:
-        reads["settings"] = lambda: _site_settings(app, scoped)
+        reads["settings"] = partial(_site_settings, r, scoped, paths)
     if needs_creds:
-        reads["credentials_raw"] = lambda: all_credentials(app)
+        reads["credentials_raw"] = partial(r.run, partial(all_credentials, app))
     if needs_templates:
-        reads["templates"] = lambda: _templates_raw(app)
+        reads["templates"] = partial(_templates_raw, r)
     if "network_profiles" in sections:
-        reads["network_profiles"] = lambda: _profiles_raw(app)
+        reads["network_profiles"] = partial(_profiles_raw, r)
     if needs_pools:
-        reads["ip_pools"] = lambda: all_pools(app, GLOBAL_POOLS)
+        reads["ip_pools"] = partial(r.run, partial(all_pools, app, GLOBAL_POOLS))
     if "ip_reservations" in sections:
-        reads["ip_reservations"] = lambda: all_pools(app, RESERVED_POOLS)
+        reads["ip_reservations"] = partial(r.run, partial(all_pools, app, RESERVED_POOLS))
     if "ssids" in sections:
-        reads["ssids"] = lambda: _ssids_raw(app, scoped)
+        reads["ssids"] = partial(_ssids_raw, r, scoped, paths)
     if "wireless_profiles" in sections:
-        reads["wireless_profiles"] = lambda: wireless_profiles(app)
+        reads["wireless_profiles"] = partial(r.run, partial(wireless_profiles, app))
     if "tags" in sections:
-        reads["tags"] = lambda: _tags_raw(app)
+        reads["tags"] = partial(r.run, partial(_tags_raw, app))
     if "compliance_policies" in sections:
-        reads["compliance_policies"] = lambda: _policies_raw(app)
+        reads["compliance_policies"] = partial(_policies_raw, r)
     results = await asyncio.gather(*(fn() for fn in reads.values()), return_exceptions=True)
     raw: dict[str, Any] = {"sites": sites}
     errors: dict[str, str] = {}
     for key, val in zip(reads, results, strict=True):
         if isinstance(val, UpstreamError):
             errors[key] = str(val)[:200]
+        elif isinstance(val, Exception):
+            # Not an API error (an unexpected record shape): still leave the section out, not the export.
+            errors[key] = f"{type(val).__name__}: {str(val)[:180]}"
         elif isinstance(val, BaseException):
             raise val
         else:
@@ -725,6 +945,8 @@ async def collect(app: CatcApp, scope: str, sections: list[str]) -> dict[str, An
         section_errors["sites"] = "partial: more than 20000 sites"
     if section_errors:
         meta["errors"] = dict(sorted(section_errors.items()))
+    if r.warnings:
+        meta["warnings"] = sorted(r.warnings)
     raw["meta"] = {k: v for k, v in meta.items() if v is not None}
     return raw
 
@@ -812,13 +1034,13 @@ def register(reg: ToolRegistrar) -> None:
             result["changes"] = [c for c in result["changes"] if c["section"] == section]
             result["summary"] = {k: v for k, v in result["summary"].items() if k == section}
             result["identical"] = not result["changes"]
-        total = len(result["changes"])
-        result["changes"] = result["changes"][:limit]
-        if total > limit:
-            result["truncated"] = f"{total} changes; showing {limit} (raise limit or pass section)"
+        result["changes"], note = cap_changes(result["changes"], limit, max_chars() // 2)
+        if note:
+            result["truncated"] = note
         result["before"] = str(meta.get("exported_at") or "before")
         result["after"] = b_label
         result["scope"] = meta.get("scope")
-        if (b.get("meta") or {}).get("errors"):
-            result["after_errors"] = b["meta"]["errors"]
+        for key in ("errors", "warnings"):
+            if (b.get("meta") or {}).get(key):
+                result[f"after_{key}"] = b["meta"][key]
         return result

@@ -13,16 +13,27 @@ The code is `src/catc_mcp/tools/config_io.py`: a fetch layer (`collect`) and a p
   counters (pool usage, version counts) are left out, so two exports of an unchanged Catalyst Center
   differ only in `meta.exported_at`.
 - **Stable order.** Header (`format`, `version`, `meta`), then the sections in the order below. List
-  sections are sorted by identity (sites by path segments, so a parent comes before its children);
-  `settings` by site path. In every mapping the keys `path`, `site`, `project`, `name`, `ssid`, `type`,
-  `description` come first (in that order), the rest alphabetically. Lists inside a record keep the
-  API's order where it means something (DNS/NTP/DHCP server order, compliance conditions by
-  `sequenceNumber`); template variables are sorted by name unless the template sets a custom order.
+  sections are sorted by identity (sites by path segments, so a parent comes before its children),
+  ties broken by the item's canonical JSON; `settings` by site path. In every mapping the keys `path`,
+  `site`, `project`, `name`, `ssid`, `type`, `description` come first (in that order), the rest
+  alphabetically.
+- **Lists inside a record.** Set-like lists are sorted (by the field shown, then canonical JSON):
+  `ssidDetails` (ssidName), `apZones` (apZoneName), `rules` (name), `conditions` (sequenceNumber),
+  `multiPSKSettings` (priority), and `additionalInterfaces`, `ssids`, `dynamicRules`, `nasOptions`,
+  `deviceTypes`, `deviceFamilies`, `tags`, `templates`, `sites`. Template variables are sorted by name
+  unless the template sets a custom order. Every other list keeps Catalyst Center's stored order,
+  because there the order is the setting: DNS/NTP/DHCP/AAA/syslog/trap server lists (primary first),
+  `containingTemplates` (a composite's run order), variable `choices`.
 - **Round trip.** `dump(load(text)) == text`, byte for byte. Multi-line strings (template bodies) are
   YAML literal blocks.
-- **Secrets are never exported.** Credentials carry type, description and non-secret fields only;
-  SSID passphrases and any key that looks like a secret are `********`; passwords, secrets and SNMP
-  communities in template bodies are masked as in `catc_get_template`. An import supplies them
+- **Secrets are never exported.** Credentials carry type, description and non-secret fields only.
+  A final pass over the whole document masks (`********`) the value of every key whose name looks
+  secret: the core's list (password, passphrase, secret, community, keys...) plus phrase, pwd, `_pw`,
+  psk, token, hash and names ending in key/keyValue (SNMPv3 `authPhrase`, `privKeyValue`...). Flags
+  such as `isAuthKeyPSK` and labels such as `cliCredentials` stay readable. In templates: IOS lines
+  with passwords/secrets/communities (as `catc_get_template`), Velocity `#set($password = ...)` and
+  Jinja `{% set secret = ... %}` assignments to secret-named variables, and the default value and
+  choices of a variable with a secret-looking name or a secure data type. An import supplies secrets
   separately.
 - **Empty values.** `null` and empty mappings are dropped; empty lists are kept (in a settings body,
   `[]` clears a list).
@@ -39,7 +50,14 @@ meta:
   sections: [sites, settings, ...]   # what was asked for
   errors:                       # only when a section could not be read; that section is absent
     ssids: '403 Forbidden ...'
+  warnings:                     # items skipped inside a section, and repeated identities
+  - 'settings Global/Lab/Bldg/Floor 1 dns: 404 ...'
+  - "credentials: 2 items share the name 'CLI:lab' (diff tells them apart as #2, #3...)"
 ```
+
+Reads run at most 8 at a time across the whole export; Catalyst Center 429s are retried by the API
+client (it honours Retry-After and paces itself). One site, template, profile or policy that fails to
+read is skipped and named in `warnings`; the rest of its section is exported.
 
 ## Sections
 
@@ -56,7 +74,7 @@ meta:
 | `ssids` | `site:ssid` | SSIDs as `GET /sites/{id}/wirelessSettings/ssids` returns them, at the site that defines them (inherited copies are skipped), passphrases masked. |
 | `wireless_profiles` | `name` | `ssidDetails` (SSID, interface, fabric, FlexConnect, WLAN/policy profile names), `additionalInterfaces`, `apZones`. |
 | `tags` | `name` | User tags: `description`, `dynamicRules` (as the API returns them). |
-| `compliance_policies` | `name` | `description`, `rules` (by name: `softwareType`, `deviceFamilies`, `suggestedFix`, `impact`, `conditions` with `scope`, `operator`, `value`, `action`, `sequenceNumber`, ...), `sites` (root assignments in scope). |
+| `compliance_policies` | `name` | User policies only (`source: SYSTEM` ones are built in): `description`, `rules` (by name: `softwareType`, `deviceFamilies`, `suggestedFix`, `impact`, `conditions` with `scope`, `operator`, `value`, `action`, `sequenceNumber`, ...), `sites` (root assignments in scope). |
 
 `scope` limits the site-bound parts (sites, settings, reservations, SSIDs and the `sites` lists of
 profiles and policies). Global objects (credentials, templates, pools, wireless profiles, tags,
@@ -74,8 +92,12 @@ policies) are always exported in full; pass `sections` to leave them out.
 - {section: sites, item: Global/Lab/Old, change: removed, before: {...}}
 ```
 
-Lists are compared whole (`field` names the list). A section present on only one side is listed in
-`not_compared`. `summary` counts added/removed/changed items per section.
+Lists are compared whole (`field` names the list). Items that share an identity (two credentials
+`CLI:lab`) are paired identical-first, then in canonical order, and labelled `CLI:lab #2`...; none
+is dropped. A section present on only one side is listed in `not_compared`. `summary` counts
+added/removed/changed items per section. Values longer than 400 characters (a template body, a whole
+added item) are cut and say their length, and the rows stop at `limit` or half the response limit,
+whichever comes first (`truncated` says so).
 
 ## Size
 

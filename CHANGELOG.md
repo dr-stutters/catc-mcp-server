@@ -49,6 +49,10 @@
   masked), wireless profiles, tags and compliance policies as YAML, by name and in a stable order, with a
   `format`/`version` header (version 1) for config import (D40). `catc_diff_config(before, after?)` compares two
   exports, or an export with live Catalyst Center, by item identity: added/removed items and each changed field.
+  Secrets are masked by a final pass over the whole document (secret-looking key names, template `#set`/`{% set %}`
+  assignments, secret variable defaults). Reads are bounded (8 in flight); a site or item that fails is skipped
+  and listed in `meta.warnings`; built-in (SYSTEM) compliance policies are left out. Diff values over 400
+  characters are cut and the rows held under the response limit.
   Both run as MCP background tasks. Format: [docs/config-export.md](docs/config-export.md). New dependency:
   PyYAML. The templates section uses its own minimal serializer until D36's lands.
 - **`catc-mcp-server check` preflight (D32, #68; core C21).** Runs without an MCP client: the token login

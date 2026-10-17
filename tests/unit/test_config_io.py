@@ -18,6 +18,7 @@ from catc_mcp.tools import config_io
 from catc_mcp.tools.config_io import (
     FORMAT,
     SECTIONS,
+    SET_LISTS,
     VERSION,
     build_export,
     canonical,
@@ -56,17 +57,21 @@ def test_round_trip_is_byte_identical() -> None:
 
 def shuffled(raw: dict[str, Any], seed: int) -> dict[str, Any]:
     """The raw records in another order: every mapping's keys, and every collection the API returns
-    (sites, credentials, templates, profiles, pools, SSIDs, tags, policies and their rules). Lists
-    inside a record (DNS servers, template params) keep their order: that order means something."""
+    (sites, credentials, templates, profiles, pools, SSIDs, tags, policies and their rules), and every
+    set-like list inside a record (SET_LISTS: SSID details, AP zones, dynamic rules, conditions...).
+    Ordered lists (DNS servers, composite members) keep their order: that order means something."""
     rng = random.Random(seed)
 
-    def keys(v: Any) -> Any:
+    def keys(v: Any, name: str | None = None) -> Any:
         if isinstance(v, dict):
             items = list(v.items())
             rng.shuffle(items)
-            return {k: keys(x) for k, x in items}
+            return {k: keys(x, k) for k, x in items}
         if isinstance(v, list):
-            return [keys(x) for x in v]
+            out = [keys(x) for x in v]
+            if name in SET_LISTS or name in ("templateParams", "rules"):
+                rng.shuffle(out)
+            return out
         return v
 
     def mix(items: list[Any]) -> list[Any]:
@@ -92,7 +97,7 @@ def shuffled(raw: dict[str, Any], seed: int) -> dict[str, Any]:
 
 def test_stable_ordering_whatever_the_api_order() -> None:
     base = export_text()
-    for seed in range(10):
+    for seed in range(20):
         assert export_text(shuffled(RAW, seed)) == base, seed
 
 
@@ -107,6 +112,9 @@ def test_no_ids_timestamps_or_secrets() -> None:
     text = export_text()
     assert not re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text)
     assert "should-not-appear" not in text and "hunter2" not in text
+    # Planted in the fixture under keys the core's regex doesn't know (authPhrase, privKeyValue,
+    # sharedKeyValue, apiToken), in Velocity/Jinja set lines, in IOS lines and in param defaults.
+    assert "SECRET" not in text, [line for line in text.splitlines() if "SECRET" in line]
     assert "1792201723848" not in text  # createTime
     doc = load_export(text)
     psk = next(s for s in doc["ssids"] if s["ssid"] == "mcp-test-psk")
@@ -302,3 +310,109 @@ async def test_export_over_the_response_limit_says_what_to_narrow(
     monkeypatch.setattr(config_io, "max_chars", lambda: 1000)
     with pytest.raises(ToolError, match=r"over the response limit .* sites \d+, settings \d+"):
         await call("catc_export_config", {"sections": ["sites", "settings"]})
+
+
+def test_template_secrets_are_masked() -> None:
+    doc = load_export(export_text())
+    t = next(x for x in doc["templates"] if x["name"] == "mcp-test-secrets")
+    assert t["content"].splitlines()[:4] == [
+        '#set($password = "********")',
+        '#set( $hostname = "r1" )',  # not a secret name: unchanged
+        '{% set enable_secret = "********" %}',
+        "{% set vlan = 10 %}",
+    ]
+    defaults = {p["parameterName"]: p.get("defaultValue") for p in t["params"]}
+    assert defaults == {
+        "enable_pw": "********",
+        "snmp_community": "********",
+        "vault": "********",
+        "vlan": "10",
+    }
+
+
+def test_settings_secrets_under_unusual_keys() -> None:
+    lab = load_export(export_text())["settings"]["Global/mcp-test-lab"]
+    v3 = lab["telemetry"]["snmpTraps"]["snmpv3"]
+    assert v3 == {
+        "authPhrase": "********",
+        "authProtocol": "SHA",
+        "privKeyValue": "********",
+        "privacyProtocol": "AES128",
+        "userName": "trapuser",
+    }
+    assert lab["aaa"]["aaaNetwork"]["sharedSecret"] == "********"
+    assert lab["credentials"]["cliCredentials"] == "CLI:mcp-test-cli"  # labels are not secrets
+
+
+def test_ties_on_the_sort_field_are_stable() -> None:
+    """Two conditions with sequenceNumber 1 and two credentials named CLI:mcp-dup sort by content."""
+    doc = load_export(export_text())
+    conds = doc["compliance_policies"][0]["rules"][0]["conditions"]
+    assert [c["sequenceNumber"] for c in conds] == [1, 1]
+    assert conds == sorted(conds, key=config_io.canon_json)  # the tie is broken by content
+    dups = [c["username"] for c in doc["credentials"] if c["description"] == "mcp-dup"]
+    assert dups == ["alice", "bob"]
+    assert any("CLI:mcp-dup" in w for w in doc["meta"]["warnings"])
+
+
+def test_diff_keeps_duplicates_apart() -> None:
+    a = load_export(export_text())
+    b = copy.deepcopy(a)
+    assert diff_exports(a, b)["identical"]
+    bob = next(c for c in b["credentials"] if c.get("username") == "bob")
+    bob["port"] = 2222
+    # Unchanged alice pairs with herself, so the one change is bob's port (on '#2').
+    out = diff_exports(a, b)
+    assert [(c["item"], c["field"], c["after"]) for c in out["changes"]] == [("CLI:mcp-dup #2", "port", 2222)]
+    b["credentials"] = [c for c in b["credentials"] if c.get("username") != "alice"]
+    out = diff_exports(a, b)
+    # Two items became one: one is reported removed, nothing disappears silently.
+    assert out["summary"]["credentials"]["removed"] == 1
+    assert {c["item"] for c in out["changes"]} == {"CLI:mcp-dup", "CLI:mcp-dup #2"}
+
+
+def test_diff_values_are_capped() -> None:
+    a = load_export(export_text())
+    b = copy.deepcopy(a)
+    t = next(x for x in b["templates"] if x["name"] == "mcp-test-cdp")
+    t["content"] = "\n".join(f"interface Loopback{i}" for i in range(500))
+    out = diff_exports(a, b)
+    rows, note = config_io.cap_changes(out["changes"], 200, 20_000)
+    (row,) = rows
+    assert len(row["after"]) < 500 and "characters; compare the exports" in row["after"] and note is None
+    many = [dict(row, item=f"x{i}") for i in range(500)]
+    rows, note = config_io.cap_changes(many, 2000, 20_000)
+    assert 0 < len(rows) < 500 and note and "response size" in note
+    rows, note = config_io.cap_changes(many, 10, 10**9)
+    assert len(rows) == 10 and note and "limit" in note
+
+
+async def test_one_failing_site_is_a_warning_not_a_lost_section(api: respx.MockRouter) -> None:
+    floor = next(s for s in RAW["sites"] if s["type"] == "floor")
+    api.get(f"/dna/intent/api/v1/sites/{floor['id']}/dnsSettings").respond(404, json={"response": {}})
+    mock_sites_and_settings(api, "mcp.lab")
+    text = await call("catc_export_config", {"sections": ["sites", "settings"]})
+    doc = load_export(text)
+    assert (
+        "settings" in doc and doc["settings"]["Global/mcp-test-lab"]["dns"]["dns"]["domainName"] == "mcp.lab"
+    )
+    (warning,) = doc["meta"]["warnings"]
+    assert warning.startswith(f"settings {floor['nameHierarchy']} dns:")
+
+
+async def test_system_compliance_policies_are_left_out(api: respx.MockRouter) -> None:
+    mock_sites_and_settings(api, "mcp.lab")
+    cp = "/dna/intent/api/v1/compliancePolicys"
+    user = "11111111-0000-0000-0000-00000000000a"
+    api.get(cp).respond(
+        json={
+            "response": [
+                {"id": user, "name": "mcp-user", "source": "USER"},
+                {"id": "11111111-0000-0000-0000-00000000000b", "name": "Built-in", "source": "SYSTEM"},
+            ]
+        }
+    )
+    api.get(f"{cp}/{user}/rules").respond(json={"response": []})
+    api.get(f"{cp}/{user}/siteAssignments").respond(json={"response": {"siteIds": []}})
+    doc = load_export(await call("catc_export_config", {"sections": ["compliance_policies"]}))
+    assert [p["name"] for p in doc["compliance_policies"]] == ["mcp-user"]
