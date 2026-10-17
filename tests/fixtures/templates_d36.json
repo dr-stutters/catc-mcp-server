@@ -1,0 +1,376 @@
+{
+ "deploy_status": {
+  "deploymentId": "0598bb03-e4bc-4506-8a23-18b85235f010",
+  "devices": [
+   {
+    "detailedStatusMessage": "Provisioning success for template mcp-d36-hosts",
+    "deviceId": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+    "duration": "0 minutes 4 seconds",
+    "endTime": "05:54:09 17/10/2026",
+    "identifier": "f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3",
+    "ipAddress": "198.18.128.152",
+    "maskedTemplateConfig": "ip host mcp-d36-a 192.0.2.61",
+    "name": "r1.mcp.lab",
+    "realizedClis": "ip host mcp-d36-a 192.0.2.61",
+    "startTime": "05:54:05 17/10/2026",
+    "status": "SUCCESS",
+    "targetType": "MANAGED_DEVICE_UUID"
+   }
+  ],
+  "duration": "0 minutes 4 seconds",
+  "endTime": "05:54:09 17/10/2026",
+  "projectName": "mcp-d36-src",
+  "startTime": "05:54:05 17/10/2026",
+  "status": "SUCCESS",
+  "templateId": "4489ca0f-ee3f-4ba8-ad5d-85a32de59942",
+  "templateName": "mcp-d36-hosts",
+  "templateVersion": "1"
+ },
+ "full": {
+  "4c56062f-4246-4357-a365-fec75cbf732e": {
+   "author": "mcp-catc-rw",
+   "composite": false,
+   "containingTemplates": [],
+   "createTime": 1792216254111,
+   "customParamsOrder": false,
+   "description": "D36 live test: harmless ip host entries",
+   "deviceTypes": [
+    {
+     "productFamily": "Routers"
+    }
+   ],
+   "documentDatabase": false,
+   "editable": true,
+   "id": "4c56062f-4246-4357-a365-fec75cbf732e",
+   "language": "JINJA",
+   "lastUpdateTime": 1792216272747,
+   "latestVersionTime": 1792216272800,
+   "name": "mcp-d36-hosts",
+   "noOfConflicts": 0,
+   "parentTemplateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+   "projectAssociated": true,
+   "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+   "projectName": "mcp-d36-src",
+   "rollbackTemplateParams": [],
+   "softwareType": "IOS-XE",
+   "softwareVariant": "XE",
+   "tags": [],
+   "templateContent": "ip host mcp-d36-a 192.0.2.61\nip host mcp-d36-b 192.0.2.62",
+   "templateDeploymentType": "DAYN",
+   "templateParams": [],
+   "templateSource": "USER_DEFINED",
+   "validationErrors": {
+    "rollbackTemplateErrors": [],
+    "templateErrors": [],
+    "templateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+    "templateVersion": null
+   }
+  },
+  "67ddc034-7e50-47f9-8ed2-d9a3958d3572": {
+   "author": "mitch",
+   "composite": false,
+   "containingTemplates": [],
+   "createTime": 1792216849939,
+   "customParamsOrder": false,
+   "description": "D36 vars",
+   "deviceTypes": [
+    {
+     "productFamily": "Routers"
+    }
+   ],
+   "documentDatabase": false,
+   "editable": true,
+   "id": "67ddc034-7e50-47f9-8ed2-d9a3958d3572",
+   "language": "JINJA",
+   "lastUpdateTime": 1792216881237,
+   "latestVersionTime": 1792216867145,
+   "name": "mcp-d36-vars",
+   "noOfConflicts": 0,
+   "parentTemplateId": "67ddc034-7e50-47f9-8ed2-d9a3958d3572",
+   "projectAssociated": true,
+   "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+   "projectName": "mcp-d36-src",
+   "rollbackTemplateParams": [],
+   "softwareType": "IOS-XE",
+   "softwareVariant": "XE",
+   "tags": [],
+   "templateContent": "ip host {{ host_name }} {{ host_ip }}\n! d36 draft line",
+   "templateDeploymentType": "DAYN",
+   "templateParams": [
+    {
+     "binding": "",
+     "customOrder": 0,
+     "dataType": "STRING",
+     "defaultValue": null,
+     "description": null,
+     "displayName": null,
+     "group": null,
+     "id": "004731c7-0bf0-40ae-919c-e5984a248368",
+     "instructionText": null,
+     "key": null,
+     "notParam": false,
+     "order": 2,
+     "paramArray": false,
+     "parameterName": "host_ip",
+     "provider": null,
+     "range": [],
+     "required": true,
+     "selection": null,
+     "sensitiveField": false
+    },
+    {
+     "binding": "",
+     "customOrder": 0,
+     "dataType": "STRING",
+     "defaultValue": null,
+     "description": null,
+     "displayName": null,
+     "group": null,
+     "id": "db30cba7-eb7d-4205-9ec8-e3c4ae183f6f",
+     "instructionText": null,
+     "key": null,
+     "notParam": false,
+     "order": 1,
+     "paramArray": false,
+     "parameterName": "host_name",
+     "provider": null,
+     "range": [],
+     "required": true,
+     "selection": null,
+     "sensitiveField": false
+    }
+   ],
+   "templateSource": "USER_DEFINED",
+   "validationErrors": {
+    "rollbackTemplateErrors": [],
+    "templateErrors": [],
+    "templateId": "67ddc034-7e50-47f9-8ed2-d9a3958d3572",
+    "templateVersion": null
+   }
+  }
+ },
+ "project": [
+  {
+   "description": "D36 live test source project",
+   "editable": true,
+   "id": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+   "isDeletable": true,
+   "lastUpdateTime": 1792216243744,
+   "name": "mcp-d36-src",
+   "templates": [
+    {
+     "composite": false,
+     "customParamsOrder": false,
+     "documentDatabase": false,
+     "editable": true,
+     "id": "4c56062f-4246-4357-a365-fec75cbf732e",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216272747,
+     "latestVersionTime": 1792216272800,
+     "name": "mcp-d36-hosts",
+     "noOfConflicts": 0,
+     "projectAssociated": true,
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "projectName": "mcp-d36-src",
+     "templateSource": "USER_DEFINED"
+    },
+    {
+     "composite": false,
+     "customParamsOrder": false,
+     "documentDatabase": false,
+     "editable": true,
+     "id": "ca91eaf5-75ef-489b-bb24-cd221ed8b08f",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216958620,
+     "latestVersionTime": 0,
+     "name": "mcp-d36-hosts-clone",
+     "noOfConflicts": 0,
+     "projectAssociated": true,
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "projectName": "mcp-d36-src",
+     "templateSource": "USER_DEFINED"
+    },
+    {
+     "composite": false,
+     "customParamsOrder": false,
+     "documentDatabase": false,
+     "editable": true,
+     "id": "9bbc547e-133a-43ed-abd0-3547c1536eaa",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216954244,
+     "latestVersionTime": 1792216954291,
+     "name": "mcp-d36-hosts-copy",
+     "noOfConflicts": 0,
+     "projectAssociated": true,
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "projectName": "mcp-d36-src",
+     "templateSource": "USER_DEFINED"
+    },
+    {
+     "composite": false,
+     "customParamsOrder": false,
+     "documentDatabase": false,
+     "editable": true,
+     "id": "67ddc034-7e50-47f9-8ed2-d9a3958d3572",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216881237,
+     "latestVersionTime": 1792216867145,
+     "name": "mcp-d36-vars",
+     "noOfConflicts": 0,
+     "projectAssociated": true,
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "projectName": "mcp-d36-src",
+     "templateSource": "USER_DEFINED"
+    }
+   ]
+  }
+ ],
+ "tasks": {
+  "response": [
+   {
+    "data": "4489ca0f-ee3f-4ba8-ad5d-85a32de59942",
+    "endTime": 1792216445601,
+    "id": "01a1486c-b00b-797f-b299-8fc048ee1ea2",
+    "instanceTenantId": "69ef89f0ab4e7b00134648ca",
+    "isError": false,
+    "progress": "Deployment of  Template: 4489ca0f-ee3f-4ba8-ad5d-85a32de59942.ApplicableTargets: [f64d8d9f-30b2-48f6-a6fe-73d2aaed0fa3]Template Deployemnt Id: 0598bb03-e4bc-4506-8a23-18b85235f010",
+    "rootId": "01a1486c-b00b-797f-b299-8fc048ee1ea2",
+    "serviceType": "NCTP",
+    "startTime": 1792216444940,
+    "username": "mitch",
+    "version": 1792216444940
+   }
+  ],
+  "version": "1.0"
+ },
+ "templates": [
+  {
+   "composite": false,
+   "deviceTypes": [
+    {
+     "productFamily": "Routers"
+    }
+   ],
+   "name": "mcp-d36-hosts",
+   "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+   "projectName": "mcp-d36-src",
+   "softwareType": "IOS-XE",
+   "tags": [],
+   "templateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+   "versionsInfo": [
+    {
+     "author": "mcp-catc-rw",
+     "description": "D36 live test: harmless ip host entries",
+     "id": "4489ca0f-ee3f-4ba8-ad5d-85a32de59942",
+     "version": "1",
+     "versionComment": "v1: host a",
+     "versionTime": 1792216261753
+    },
+    {
+     "author": "mcp-catc-rw",
+     "description": "D36 live test: harmless ip host entries",
+     "id": "daade461-5467-456e-a58f-8bea55281335",
+     "version": "2",
+     "versionComment": "v2: add host b",
+     "versionTime": 1792216272800
+    }
+   ]
+  },
+  {
+   "composite": false,
+   "deviceTypes": [
+    {
+     "productFamily": "Routers"
+    }
+   ],
+   "name": "mcp-d36-vars",
+   "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+   "projectName": "mcp-d36-src",
+   "softwareType": "IOS-XE",
+   "tags": [],
+   "templateId": "67ddc034-7e50-47f9-8ed2-d9a3958d3572",
+   "versionsInfo": [
+    {
+     "author": "mitch",
+     "description": "D36 vars",
+     "id": "ec4fac7d-73b2-41f4-8dc2-ef74e0a8904c",
+     "version": "1",
+     "versionComment": "vars v1",
+     "versionTime": 1792216867145
+    }
+   ]
+  }
+ ],
+ "versions": {
+  "4c56062f-4246-4357-a365-fec75cbf732e": {
+   "response": [
+    {
+     "author": "mcp-catc-rw",
+     "description": "D36 live test: harmless ip host entries",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216272747,
+     "name": "mcp-d36-hosts",
+     "products": [
+      {
+       "productFamily": "Routers"
+      }
+     ],
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "softwareFamily": "IOS-XE",
+     "templateContent": "ip host mcp-d36-a 192.0.2.61\nip host mcp-d36-b 192.0.2.62",
+     "templateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+     "type": "REGULAR",
+     "version": 2,
+     "versionId": "daade461-5467-456e-a58f-8bea55281335",
+     "versionTime": 1792216272800
+    },
+    {
+     "author": "mcp-catc-rw",
+     "description": "D36 live test: harmless ip host entries",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216261675,
+     "name": "mcp-d36-hosts",
+     "products": [
+      {
+       "productFamily": "Routers"
+      }
+     ],
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "softwareFamily": "IOS-XE",
+     "templateContent": "ip host mcp-d36-a 192.0.2.61",
+     "templateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+     "type": "REGULAR",
+     "version": 1,
+     "versionId": "4489ca0f-ee3f-4ba8-ad5d-85a32de59942",
+     "versionTime": 1792216261753
+    }
+   ],
+   "version": "1.0"
+  },
+  "67ddc034-7e50-47f9-8ed2-d9a3958d3572": {
+   "response": [
+    {
+     "author": "mitch",
+     "description": "D36 vars",
+     "language": "JINJA",
+     "lastUpdateTime": 1792216867081,
+     "name": "mcp-d36-vars",
+     "products": [
+      {
+       "productFamily": "Routers"
+      }
+     ],
+     "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+     "softwareFamily": "IOS-XE",
+     "templateContent": "ip host {{ host_name }} {{ host_ip }}",
+     "templateId": "67ddc034-7e50-47f9-8ed2-d9a3958d3572",
+     "type": "REGULAR",
+     "version": 1,
+     "versionId": "ec4fac7d-73b2-41f4-8dc2-ef74e0a8904c",
+     "versionTime": 1792216867145
+    }
+   ],
+   "version": "1.0"
+  }
+ }
+}
