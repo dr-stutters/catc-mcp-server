@@ -1,0 +1,1087 @@
+{
+ "compliance_policies": [
+  {
+   "policy": {
+    "description": "NTP configured",
+    "id": "11111111-0000-0000-0000-000000000001",
+    "name": "mcp-test-ntp",
+    "rulesCount": 1,
+    "sitesCount": 1,
+    "status": "ACTIVE"
+   },
+   "rules": [
+    {
+     "conditions": [
+      {
+       "action": {
+        "doesNotMatchAction": "RAISE_A_VIOLATION",
+        "doesNotMatchViolationSeverity": "MEDIUM",
+        "matchAction": "PASS"
+       },
+       "id": "11111111-0000-0000-0000-000000000003",
+       "operator": "CONTAINS_STRING",
+       "scope": "RUNNING_CONFIG",
+       "sequenceNumber": 1,
+       "value": "ntp server 198.18.128.1"
+      },
+      {
+       "action": {
+        "doesNotMatchAction": "RAISE_A_VIOLATION",
+        "doesNotMatchViolationSeverity": "LOW",
+        "matchAction": "PASS"
+       },
+       "id": "11111111-0000-0000-0000-000000000004",
+       "operator": "CONTAINS_STRING",
+       "scope": "RUNNING_CONFIG",
+       "sequenceNumber": 1,
+       "value": "ntp server 198.18.128.2"
+      }
+     ],
+     "rule": {
+      "description": "",
+      "deviceTypes": [
+       {
+        "deviceFamily": "Routers"
+       }
+      ],
+      "id": "11111111-0000-0000-0000-000000000002",
+      "impact": "",
+      "name": "ntp-server",
+      "softwareType": "IOS-XE",
+      "suggestedFix": "ntp server 198.18.128.1"
+     }
+    }
+   ],
+   "site_ids": [
+    "406c3e32-efd7-42cb-b0de-81749ce1889a",
+    "ec510a85-c946-4be2-94d0-22d76af7f403"
+   ]
+  }
+ ],
+ "credentials_raw": [
+  {
+   "description": "defaultNetConfPort",
+   "id": "434ea390-b0af-42b3-9501-2074e1129618",
+   "port": 830,
+   "type": "NETCONF"
+  },
+  {
+   "description": "mcp-test-snmp-ro",
+   "id": "850f1851-29c5-43eb-b02a-13e907a53f03",
+   "type": "SNMPV2_READ_COMMUNITY"
+  },
+  {
+   "description": "mcp-test-snmp-rw",
+   "id": "c1c94c28-efdc-416a-96a8-bd23c2f2ec53",
+   "type": "SNMPV2_WRITE_COMMUNITY"
+  },
+  {
+   "description": "mcp-test-cli",
+   "id": "f043d698-1328-466e-bd4c-bb9c95951dd7",
+   "type": "CLI",
+   "username": "netadmin"
+  },
+  {
+   "description": "mcp-test-http",
+   "id": "99999999-0000-0000-0000-000000000001",
+   "password": "should-not-appear",
+   "port": 443,
+   "secure": true,
+   "type": "HTTP_READ",
+   "username": "api"
+  },
+  {
+   "description": "mcp-dup",
+   "id": "99999999-0000-0000-0000-000000000002",
+   "type": "CLI",
+   "username": "alice"
+  },
+  {
+   "description": "mcp-dup",
+   "id": "99999999-0000-0000-0000-000000000003",
+   "type": "CLI",
+   "username": "bob"
+  }
+ ],
+ "ip_pools": [
+  {
+   "addressSpace": {
+    "assignedAddresses": "0",
+    "defaultAssignedAddresses": "3",
+    "dhcpServers": [
+     "198.18.133.1"
+    ],
+    "dnsServers": [
+     "198.18.133.1"
+    ],
+    "gatewayIpAddress": "10.90.0.1",
+    "prefixLength": 16,
+    "subnet": "10.90.0.0",
+    "totalAddresses": "65536",
+    "unassignableAddresses": "2"
+   },
+   "id": "77777777-0000-0000-0000-000000000001",
+   "name": "mcp-test-global",
+   "poolType": "Generic"
+  }
+ ],
+ "ip_reservations": [
+  {
+   "id": "77777777-0000-0000-0000-000000000002",
+   "ipV4AddressSpace": {
+    "assignedAddresses": "0",
+    "dhcpServers": [
+     "198.18.133.1"
+    ],
+    "dnsServers": [],
+    "gatewayIpAddress": "10.90.1.1",
+    "globalPoolId": "77777777-0000-0000-0000-000000000001",
+    "prefixLength": 24,
+    "slaacSupport": false,
+    "subnet": "10.90.1.0",
+    "totalAddresses": "256"
+   },
+   "name": "mcp-test-lan",
+   "poolType": "LAN",
+   "siteId": "ec510a85-c946-4be2-94d0-22d76af7f403",
+   "siteName": "Global/mcp-test-lab/mcp-test-bldg"
+  }
+ ],
+ "meta": {
+  "catalyst_center": "3.2.2-75131",
+  "exported_at": "2026-10-17T06:00:00Z",
+  "scope": "Global",
+  "sections": [
+   "sites",
+   "settings",
+   "credentials",
+   "template_projects",
+   "templates",
+   "network_profiles",
+   "ip_pools",
+   "ip_reservations",
+   "ssids",
+   "wireless_profiles",
+   "tags",
+   "compliance_policies"
+  ]
+ },
+ "network_profiles": [
+  {
+   "profile": {
+    "id": "4b63c2f2-f630-4a97-8db3-cfd6f27bcbd1",
+    "name": "mcp-test-sw-profile",
+    "type": "Switching"
+   },
+   "site_ids": [
+    "ec510a85-c946-4be2-94d0-22d76af7f403",
+    "1abe42c7-40d0-4c32-a57a-7d21aa951855"
+   ],
+   "templates": {
+    "1c866805-6446-4dfc-8555-3bd98e6796b0": "mcp-test-cdp"
+   }
+  }
+ ],
+ "settings": {
+  "1abe42c7-40d0-4c32-a57a-7d21aa951855": {
+   "aaa": {
+    "aaaClient": {},
+    "aaaNetwork": {}
+   },
+   "banner": {
+    "banner": null
+   },
+   "credentials": {
+    "cliCredentialsId": null,
+    "httpReadCredentialsId": null,
+    "httpWriteCredentialsId": null,
+    "snmpv2cReadCredentialsId": null,
+    "snmpv2cWriteCredentialsId": null,
+    "snmpv3CredentialsId": null
+   },
+   "dhcp": {
+    "dhcp": {}
+   },
+   "dns": {
+    "dns": null
+   },
+   "image_distribution": {
+    "imageDistribution": {}
+   },
+   "ntp": {
+    "ntp": null
+   },
+   "telemetry": {
+    "applicationVisibility": null,
+    "snmpTraps": null,
+    "syslogs": null,
+    "wiredDataCollection": null,
+    "wirelessTelemetry": null
+   },
+   "timezone": {
+    "timeZone": null
+   }
+  },
+  "2fc7ff5c-c456-45d1-a818-f027e1517d43": {
+   "aaa": {
+    "aaaClient": {},
+    "aaaNetwork": {}
+   },
+   "banner": {
+    "banner": {}
+   },
+   "credentials": {
+    "cliCredentialsId": null,
+    "httpReadCredentialsId": null,
+    "httpWriteCredentialsId": null,
+    "snmpv2cReadCredentialsId": null,
+    "snmpv2cWriteCredentialsId": null,
+    "snmpv3CredentialsId": null
+   },
+   "dhcp": {
+    "dhcp": {}
+   },
+   "dns": {
+    "dns": {}
+   },
+   "image_distribution": {
+    "imageDistribution": {}
+   },
+   "ntp": {
+    "ntp": {}
+   },
+   "telemetry": {
+    "applicationVisibility": {
+     "collector": {
+      "collectorType": "Builtin"
+     },
+     "enableOnWiredAccessDevices": false
+    },
+    "snmpTraps": {
+     "externalTrapServers": [],
+     "useBuiltinTrapServer": true
+    },
+    "syslogs": {
+     "externalSyslogServers": [],
+     "useBuiltinSyslogServer": true
+    },
+    "wiredDataCollection": {
+     "enableWiredDataCollection": false
+    },
+    "wirelessTelemetry": {
+     "enableWirelessTelemetry": true
+    }
+   },
+   "timezone": {
+    "timeZone": {
+     "identifier": "GMT"
+    }
+   }
+  },
+  "406c3e32-efd7-42cb-b0de-81749ce1889a": {
+   "aaa": {
+    "aaaNetwork": {
+     "pan": "198.18.134.35",
+     "primaryServerIp": "198.18.134.35",
+     "protocol": "RADIUS",
+     "serverType": "ISE",
+     "sharedSecret": "radius-SECRET-3"
+    }
+   },
+   "banner": {
+    "banner": {
+     "message": "mcp-test banner: authorised use only",
+     "type": "Custom"
+    }
+   },
+   "credentials": {
+    "cliCredentialsId": {
+     "credentialsId": "f043d698-1328-466e-bd4c-bb9c95951dd7"
+    },
+    "httpReadCredentialsId": null,
+    "httpWriteCredentialsId": null,
+    "snmpv2cReadCredentialsId": {
+     "credentialsId": "850f1851-29c5-43eb-b02a-13e907a53f03"
+    },
+    "snmpv2cWriteCredentialsId": {
+     "credentialsId": "c1c94c28-efdc-416a-96a8-bd23c2f2ec53"
+    },
+    "snmpv3CredentialsId": null
+   },
+   "dhcp": {
+    "dhcp": {}
+   },
+   "dns": {
+    "dns": {
+     "dnsServers": [
+      "198.18.133.1"
+     ],
+     "domainName": "mcp.lab"
+    }
+   },
+   "image_distribution": {
+    "imageDistribution": {}
+   },
+   "ntp": {
+    "ntp": {
+     "servers": [
+      "198.18.128.1"
+     ]
+    }
+   },
+   "telemetry": {
+    "applicationVisibility": null,
+    "snmpTraps": {
+     "externalTrapServers": [
+      "192.0.2.50"
+     ],
+     "snmpv3": {
+      "authPhrase": "auth-SECRET-1",
+      "authProtocol": "SHA",
+      "privKeyValue": "priv-SECRET-2",
+      "privacyProtocol": "AES128",
+      "userName": "trapuser"
+     },
+     "useBuiltinTrapServer": true
+    },
+    "syslogs": null,
+    "wiredDataCollection": {
+     "enableWiredDataCollection": true
+    },
+    "wirelessTelemetry": null
+   },
+   "timezone": {
+    "timeZone": {
+     "identifier": "Australia/Sydney"
+    }
+   }
+  },
+  "ec510a85-c946-4be2-94d0-22d76af7f403": {
+   "aaa": {
+    "aaaClient": {},
+    "aaaNetwork": {}
+   },
+   "banner": {
+    "banner": null
+   },
+   "credentials": {
+    "cliCredentialsId": null,
+    "httpReadCredentialsId": null,
+    "httpWriteCredentialsId": null,
+    "snmpv2cReadCredentialsId": null,
+    "snmpv2cWriteCredentialsId": null,
+    "snmpv3CredentialsId": null
+   },
+   "dhcp": {
+    "dhcp": {}
+   },
+   "dns": {
+    "dns": null
+   },
+   "image_distribution": {
+    "imageDistribution": {}
+   },
+   "ntp": {
+    "ntp": null
+   },
+   "telemetry": {
+    "applicationVisibility": null,
+    "snmpTraps": null,
+    "syslogs": null,
+    "wiredDataCollection": null,
+    "wirelessTelemetry": null
+   },
+   "timezone": {
+    "timeZone": null
+   }
+  }
+ },
+ "sites": [
+  {
+   "id": "2fc7ff5c-c456-45d1-a818-f027e1517d43",
+   "name": "Global",
+   "nameHierarchy": "Global",
+   "siteHierarchyId": "2fc7ff5c-c456-45d1-a818-f027e1517d43",
+   "type": "global"
+  },
+  {
+   "id": "406c3e32-efd7-42cb-b0de-81749ce1889a",
+   "name": "mcp-test-lab",
+   "nameHierarchy": "Global/mcp-test-lab",
+   "parentId": "2fc7ff5c-c456-45d1-a818-f027e1517d43",
+   "siteHierarchyId": "2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a",
+   "type": "area"
+  },
+  {
+   "address": "1 Lab St, Sydney NSW",
+   "country": "Australia",
+   "id": "ec510a85-c946-4be2-94d0-22d76af7f403",
+   "latitude": -33.86,
+   "longitude": 151.2,
+   "name": "mcp-test-bldg",
+   "nameHierarchy": "Global/mcp-test-lab/mcp-test-bldg",
+   "parentId": "406c3e32-efd7-42cb-b0de-81749ce1889a",
+   "siteHierarchyId": "2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403",
+   "type": "building"
+  },
+  {
+   "floorNumber": 1,
+   "height": 10.0,
+   "id": "1abe42c7-40d0-4c32-a57a-7d21aa951855",
+   "length": 100.0,
+   "name": "mcp-test-floor1",
+   "nameHierarchy": "Global/mcp-test-lab/mcp-test-bldg/mcp-test-floor1",
+   "parentId": "ec510a85-c946-4be2-94d0-22d76af7f403",
+   "rfModel": "Cubes And Walled Offices",
+   "siteHierarchyId": "2fc7ff5c-c456-45d1-a818-f027e1517d43/406c3e32-efd7-42cb-b0de-81749ce1889a/ec510a85-c946-4be2-94d0-22d76af7f403/1abe42c7-40d0-4c32-a57a-7d21aa951855",
+   "type": "floor",
+   "unitsOfMeasure": "feet",
+   "width": 100.0
+  }
+ ],
+ "ssids": {
+  "1abe42c7-40d0-4c32-a57a-7d21aa951855": [],
+  "2fc7ff5c-c456-45d1-a818-f027e1517d43": [
+   {
+    "authServers": [],
+    "authType": "WPA2_PERSONAL",
+    "id": "55555555-0000-0000-0000-000000000001",
+    "isAuthKeyPSK": true,
+    "isBroadcastSSID": true,
+    "isEnabled": true,
+    "passphrase": "hunter2hunter2",
+    "profileName": "mcp-test-psk_profile",
+    "rsnCipherSuiteCcmp128": true,
+    "sessionTimeOut": 1800,
+    "ssid": "mcp-test-psk",
+    "ssidRadioType": "2.4 and 5 GHz",
+    "wlanType": "Enterprise"
+   }
+  ],
+  "406c3e32-efd7-42cb-b0de-81749ce1889a": [
+   {
+    "authServers": [],
+    "authType": "WPA2_PERSONAL",
+    "id": "55555555-0000-0000-0000-000000000001",
+    "inheritedSiteName": "Global",
+    "inheritedSiteUUID": "2fc7ff5c-c456-45d1-a818-f027e1517d43",
+    "isAuthKeyPSK": true,
+    "isBroadcastSSID": true,
+    "isEnabled": true,
+    "passphrase": "hunter2hunter2",
+    "profileName": "mcp-test-psk_profile",
+    "rsnCipherSuiteCcmp128": true,
+    "sessionTimeOut": 1800,
+    "ssid": "mcp-test-psk",
+    "ssidRadioType": "2.4 and 5 GHz",
+    "wlanType": "Enterprise"
+   }
+  ],
+  "ec510a85-c946-4be2-94d0-22d76af7f403": []
+ },
+ "tags": [
+  {
+   "id": "08c528f6-0bcd-45cf-a5aa-f10ad604afd1",
+   "instanceTenantId": "69ef89f0ab4e7b00134648ca",
+   "name": "WAN",
+   "systemTag": true
+  },
+  {
+   "id": "1dcf4363-897d-4255-871b-6b1882392066",
+   "instanceTenantId": "69ef89f0ab4e7b00134648ca",
+   "name": "Day0Configuration",
+   "systemTag": true
+  },
+  {
+   "id": "3d85791a-100d-463a-add3-50581e5510be",
+   "instanceTenantId": "69ef89f0ab4e7b00134648ca",
+   "name": "AUTO_INV_EVENT_SYNC_DISABLED",
+   "systemTag": false
+  },
+  {
+   "description": "lab routers",
+   "dynamicRules": [
+    {
+     "memberType": "networkdevice",
+     "rules": {
+      "name": "hostname",
+      "operation": "ILIKE",
+      "value": "%lab-r%"
+     }
+    },
+    {
+     "memberType": "interface",
+     "rules": {
+      "apiToken": "tag-SECRET-11",
+      "name": "portName",
+      "operation": "ILIKE",
+      "value": "Gi%"
+     }
+    }
+   ],
+   "id": "22222222-0000-0000-0000-000000000001",
+   "instanceTenantId": "x",
+   "name": "mcp-test-routers",
+   "systemTag": false
+  }
+ ],
+ "templates": {
+  "projects": [
+   {
+    "description": "Onboarding Configuration",
+    "editable": true,
+    "id": "7edbd662-ea2f-4877-9c2e-11e4a3003b1f",
+    "isDeletable": false,
+    "lastUpdateTime": 1777310626999,
+    "name": "Onboarding Configuration",
+    "templates": []
+   },
+   {
+    "description": "Reference Templates",
+    "editable": false,
+    "id": "5d96754b-60e7-4159-880e-ad8e8425786d",
+    "isDeletable": false,
+    "lastUpdateTime": 1777310850763,
+    "name": "Reference Templates",
+    "templates": [
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": false,
+      "id": "72a0afc4-0b5c-4c69-b47f-f647eb34d71b",
+      "language": "JINJA",
+      "lastUpdateTime": 1777310851887,
+      "latestVersionTime": 0,
+      "name": "AAA-Configuration",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "5d96754b-60e7-4159-880e-ad8e8425786d",
+      "projectName": "Reference Templates",
+      "templateSource": "SYSTEM_DEFINED"
+     }
+    ]
+   },
+   {
+    "description": "Sample Jinja Templates",
+    "editable": false,
+    "id": "93ee2dfa-44d7-421c-9650-d6160522c04c",
+    "isDeletable": false,
+    "lastUpdateTime": 1777310847410,
+    "name": "Sample Jinja Templates",
+    "templates": [
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": false,
+      "id": "7a11d5b7-aa1b-42ef-86f5-6ba8fb77d513",
+      "language": "JINJA",
+      "lastUpdateTime": 1777310847725,
+      "latestVersionTime": 0,
+      "name": "Base Config",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "93ee2dfa-44d7-421c-9650-d6160522c04c",
+      "projectName": "Sample Jinja Templates",
+      "templateSource": "SYSTEM_DEFINED"
+     }
+    ]
+   },
+   {
+    "description": "Sample Velocity Templates",
+    "editable": false,
+    "id": "d4d4f82e-a5fb-41d0-a35a-77c7cd594fb1",
+    "isDeletable": false,
+    "lastUpdateTime": 1777310499315,
+    "name": "Sample Velocity Templates",
+    "templates": [
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": false,
+      "id": "c8c40315-6276-4ec4-8898-60b4ca32817f",
+      "language": "VELOCITY",
+      "lastUpdateTime": 1777310845010,
+      "latestVersionTime": 0,
+      "name": "For-Loop-Velocity",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "d4d4f82e-a5fb-41d0-a35a-77c7cd594fb1",
+      "projectName": "Sample Velocity Templates",
+      "templateSource": "SYSTEM_DEFINED"
+     }
+    ]
+   },
+   {
+    "description": "D36 live test source project",
+    "editable": true,
+    "id": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+    "isDeletable": true,
+    "lastUpdateTime": 1792216243744,
+    "name": "mcp-d36-src",
+    "templates": [
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": true,
+      "id": "4c56062f-4246-4357-a365-fec75cbf732e",
+      "language": "JINJA",
+      "lastUpdateTime": 1792216272747,
+      "latestVersionTime": 1792216272800,
+      "name": "mcp-d36-hosts",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+      "projectName": "mcp-d36-src",
+      "templateSource": "USER_DEFINED"
+     }
+    ]
+   },
+   {
+    "description": "mcp-test-dayn",
+    "editable": true,
+    "id": "b54ac384-6120-42f5-9328-098c97038859",
+    "isDeletable": true,
+    "lastUpdateTime": 1792201717268,
+    "name": "mcp-test-dayn",
+    "templates": [
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": true,
+      "id": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+      "language": "JINJA",
+      "lastUpdateTime": 1792201725445,
+      "latestVersionTime": 1792201725524,
+      "name": "mcp-test-cdp",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+      "projectName": "mcp-test-dayn",
+      "templateSource": "USER_DEFINED"
+     },
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": true,
+      "id": "6ce38427-c5aa-4245-bc59-6ad066fd7a9b",
+      "language": "JINJA",
+      "lastUpdateTime": 1792201722328,
+      "latestVersionTime": 1792201722558,
+      "name": "mcp-test-loopback",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+      "projectName": "mcp-test-dayn",
+      "templateSource": "USER_DEFINED"
+     },
+     {
+      "composite": false,
+      "customParamsOrder": false,
+      "documentDatabase": false,
+      "editable": true,
+      "id": "5914a4b6-dd94-4a92-ad49-e01283e18f88",
+      "language": "JINJA",
+      "lastUpdateTime": 1792201728413,
+      "latestVersionTime": 1792201728486,
+      "name": "mcp-test-port-open",
+      "noOfConflicts": 0,
+      "projectAssociated": true,
+      "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+      "projectName": "mcp-test-dayn",
+      "templateSource": "USER_DEFINED"
+     },
+     {
+      "id": "66666666-0000-0000-0000-000000000001",
+      "name": "mcp-test-secrets",
+      "templateSource": "USER_DEFINED"
+     }
+    ]
+   }
+  ],
+  "templates": [
+   {
+    "author": "admin",
+    "composite": false,
+    "containingTemplates": [],
+    "createTime": 1792201723848,
+    "customParamsOrder": false,
+    "description": "",
+    "deviceTypes": [
+     {
+      "productFamily": "Routers"
+     }
+    ],
+    "documentDatabase": false,
+    "editable": true,
+    "id": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+    "language": "JINJA",
+    "lastUpdateTime": 1792201725445,
+    "latestVersionTime": 1792201725524,
+    "name": "mcp-test-cdp",
+    "noOfConflicts": 1,
+    "parentTemplateId": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+    "projectAssociated": true,
+    "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+    "projectName": "mcp-test-dayn",
+    "rollbackTemplateParams": [],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "tags": [],
+    "templateContent": "cdp run\ninterface GigabitEthernet2\n cdp enable",
+    "templateDeploymentType": "DAYN",
+    "templateParams": [],
+    "templateSource": "USER_DEFINED",
+    "validationErrors": {
+     "rollbackTemplateErrors": [],
+     "templateErrors": [
+      {
+       "lineNumber": 1,
+       "message": "This command is reserved to be used by Cisco Catalyst Center",
+       "type": "POTENTIAL_CONFLICT"
+      }
+     ],
+     "templateId": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+     "templateVersion": null
+    }
+   },
+   {
+    "author": "mcp-catc-rw",
+    "composite": false,
+    "containingTemplates": [],
+    "createTime": 1792216254111,
+    "customParamsOrder": false,
+    "description": "D36 live test: harmless ip host entries",
+    "deviceTypes": [
+     {
+      "productFamily": "Routers"
+     }
+    ],
+    "documentDatabase": false,
+    "editable": true,
+    "id": "4c56062f-4246-4357-a365-fec75cbf732e",
+    "language": "JINJA",
+    "lastUpdateTime": 1792216272747,
+    "latestVersionTime": 1792216272800,
+    "name": "mcp-d36-hosts",
+    "noOfConflicts": 0,
+    "parentTemplateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+    "projectAssociated": true,
+    "projectId": "80e7f1ab-a39f-405a-9a44-7bf521f4a93b",
+    "projectName": "mcp-d36-src",
+    "rollbackTemplateParams": [],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "tags": [],
+    "templateContent": "ip host mcp-d36-a 192.0.2.61\nip host mcp-d36-b 192.0.2.62",
+    "templateDeploymentType": "DAYN",
+    "templateParams": [],
+    "templateSource": "USER_DEFINED",
+    "validationErrors": {
+     "rollbackTemplateErrors": [],
+     "templateErrors": [],
+     "templateId": "4c56062f-4246-4357-a365-fec75cbf732e",
+     "templateVersion": null
+    }
+   },
+   {
+    "author": "admin",
+    "composite": false,
+    "containingTemplates": [],
+    "createTime": 1792201726822,
+    "customParamsOrder": false,
+    "description": "",
+    "deviceTypes": [
+     {
+      "productFamily": "Switches and Hubs"
+     }
+    ],
+    "documentDatabase": false,
+    "editable": true,
+    "id": "5914a4b6-dd94-4a92-ad49-e01283e18f88",
+    "language": "JINJA",
+    "lastUpdateTime": 1792201728413,
+    "latestVersionTime": 1792201728486,
+    "name": "mcp-test-port-open",
+    "noOfConflicts": 0,
+    "parentTemplateId": "5914a4b6-dd94-4a92-ad49-e01283e18f88",
+    "projectAssociated": true,
+    "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+    "projectName": "mcp-test-dayn",
+    "rollbackTemplateParams": [],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "tags": [],
+    "templateContent": "interface {{ port }}\n authentication open",
+    "templateDeploymentType": "DAYN",
+    "templateParams": [
+     {
+      "binding": "",
+      "customOrder": 0,
+      "dataType": "STRING",
+      "defaultValue": null,
+      "description": null,
+      "displayName": null,
+      "group": null,
+      "id": "08d24fdb-131b-4b58-bfa4-d4e822549131",
+      "instructionText": null,
+      "key": null,
+      "notParam": false,
+      "order": 1,
+      "paramArray": false,
+      "parameterName": "port",
+      "provider": null,
+      "range": [],
+      "required": true,
+      "selection": null,
+      "sensitiveField": false
+     }
+    ],
+    "templateSource": "USER_DEFINED",
+    "validationErrors": {
+     "rollbackTemplateErrors": [],
+     "templateErrors": [],
+     "templateId": "5914a4b6-dd94-4a92-ad49-e01283e18f88",
+     "templateVersion": null
+    }
+   },
+   {
+    "author": "admin",
+    "composite": false,
+    "containingTemplates": [],
+    "createTime": 1792201719578,
+    "customParamsOrder": false,
+    "description": "",
+    "deviceTypes": [
+     {
+      "productFamily": "Routers"
+     }
+    ],
+    "documentDatabase": false,
+    "editable": true,
+    "id": "6ce38427-c5aa-4245-bc59-6ad066fd7a9b",
+    "language": "JINJA",
+    "lastUpdateTime": 1792201722328,
+    "latestVersionTime": 1792201722558,
+    "name": "mcp-test-loopback",
+    "noOfConflicts": 1,
+    "parentTemplateId": "6ce38427-c5aa-4245-bc59-6ad066fd7a9b",
+    "projectAssociated": true,
+    "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+    "projectName": "mcp-test-dayn",
+    "rollbackTemplateParams": [],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "tags": [],
+    "templateContent": "interface Loopback{{ loop_id }}\n description {{ desc }}\n ip address {{ ip }} 255.255.255.255",
+    "templateDeploymentType": "DAYN",
+    "templateParams": [
+     {
+      "binding": "",
+      "customOrder": 0,
+      "dataType": "STRING",
+      "defaultValue": null,
+      "description": null,
+      "displayName": null,
+      "group": null,
+      "id": "c304770a-7ec5-4efb-8d4d-99f011be3e10",
+      "instructionText": null,
+      "key": null,
+      "notParam": false,
+      "order": 1,
+      "paramArray": false,
+      "parameterName": "loop_id",
+      "provider": null,
+      "range": [],
+      "required": true,
+      "selection": null,
+      "sensitiveField": false
+     },
+     {
+      "binding": "",
+      "customOrder": 0,
+      "dataType": "STRING",
+      "defaultValue": null,
+      "description": null,
+      "displayName": null,
+      "group": null,
+      "id": "8d872b9c-4a81-4c21-8ee3-821a22d25ead",
+      "instructionText": null,
+      "key": null,
+      "notParam": false,
+      "order": 2,
+      "paramArray": false,
+      "parameterName": "desc",
+      "provider": null,
+      "range": [],
+      "required": true,
+      "selection": null,
+      "sensitiveField": false
+     },
+     {
+      "binding": "",
+      "customOrder": 0,
+      "dataType": "STRING",
+      "defaultValue": null,
+      "description": null,
+      "displayName": null,
+      "group": null,
+      "id": "b03f9c23-eee2-41ba-bc16-9b03e73d899d",
+      "instructionText": null,
+      "key": null,
+      "notParam": false,
+      "order": 3,
+      "paramArray": false,
+      "parameterName": "ip",
+      "provider": null,
+      "range": [],
+      "required": true,
+      "selection": null,
+      "sensitiveField": false
+     }
+    ],
+    "templateSource": "USER_DEFINED",
+    "validationErrors": {
+     "rollbackTemplateErrors": [],
+     "templateErrors": [
+      {
+       "lineNumber": 2,
+       "message": "This command is reserved to be used by Cisco Catalyst Center",
+       "type": "POTENTIAL_CONFLICT"
+      }
+     ],
+     "templateId": "6ce38427-c5aa-4245-bc59-6ad066fd7a9b",
+     "templateVersion": null
+    }
+   },
+   {
+    "author": "admin",
+    "composite": false,
+    "containingTemplates": [],
+    "createTime": 1792201723848,
+    "customParamsOrder": false,
+    "description": "",
+    "deviceTypes": [
+     {
+      "productFamily": "Routers"
+     }
+    ],
+    "documentDatabase": false,
+    "editable": true,
+    "id": "66666666-0000-0000-0000-000000000001",
+    "language": "VELOCITY",
+    "lastUpdateTime": 1792201725445,
+    "latestVersionTime": 1792201725524,
+    "name": "mcp-test-secrets",
+    "noOfConflicts": 1,
+    "parentTemplateId": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+    "projectAssociated": true,
+    "projectId": "b54ac384-6120-42f5-9328-098c97038859",
+    "projectName": "mcp-test-dayn",
+    "rollbackTemplateParams": [],
+    "softwareType": "IOS-XE",
+    "softwareVariant": "XE",
+    "tags": [],
+    "templateContent": "#set($password = \"vel-SECRET-4\")\n#set( $hostname = \"r1\" )\n{% set enable_secret = 'jinja-SECRET-5' %}\n{% set vlan = 10 %}\nusername admin privilege 15 secret 0 ios-SECRET-6\nhostname $hostname",
+    "templateDeploymentType": "DAYN",
+    "templateParams": [
+     {
+      "dataType": "STRING",
+      "defaultValue": "param-SECRET-7",
+      "parameterName": "snmp_community",
+      "required": false
+     },
+     {
+      "dataType": "STRING",
+      "defaultValue": "param-SECRET-8",
+      "parameterName": "enable_pw",
+      "required": false
+     },
+     {
+      "dataType": "SECUREDSTRING",
+      "defaultValue": "param-SECRET-9",
+      "parameterName": "vault",
+      "required": false
+     },
+     {
+      "dataType": "INTEGER",
+      "defaultValue": "10",
+      "parameterName": "vlan",
+      "required": false
+     }
+    ],
+    "templateSource": "USER_DEFINED",
+    "validationErrors": {
+     "rollbackTemplateErrors": [],
+     "templateErrors": [
+      {
+       "lineNumber": 1,
+       "message": "This command is reserved to be used by Cisco Catalyst Center",
+       "type": "POTENTIAL_CONFLICT"
+      }
+     ],
+     "templateId": "1c866805-6446-4dfc-8555-3bd98e6796b0",
+     "templateVersion": null
+    }
+   }
+  ]
+ },
+ "wireless_profiles": [
+  {
+   "additionalInterfaces": [
+    "guest",
+    "voice"
+   ],
+   "apZones": [
+    {
+     "apZoneName": "zone-b",
+     "rfProfileName": "HIGH",
+     "ssids": [
+      "mcp-test-psk",
+      "mcp-test-guest"
+     ]
+    },
+    {
+     "apZoneName": "zone-a",
+     "rfProfileName": "LOW",
+     "ssids": [
+      "mcp-test-psk"
+     ]
+    }
+   ],
+   "featureTemplates": [
+    {
+     "id": "x",
+     "ssids": [
+      "mcp-test-psk"
+     ]
+    }
+   ],
+   "id": "44444444-0000-0000-0000-000000000001",
+   "ssidDetails": [
+    {
+     "dot11beProfileId": "33333333-0000-0000-0000-000000000001",
+     "enableFabric": false,
+     "flexConnect": {
+      "enableFlexConnect": false
+     },
+     "interfaceName": "management",
+     "ssidName": "mcp-test-psk",
+     "wlanProfileName": "mcp-test-psk_profile"
+    },
+    {
+     "enableFabric": false,
+     "interfaceName": "guest",
+     "sharedKeyValue": "wl-SECRET-10",
+     "ssidName": "mcp-test-guest"
+    }
+   ],
+   "wirelessProfileName": "mcp-test-wl"
+  }
+ ]
+}

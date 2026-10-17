@@ -308,9 +308,17 @@
       "tier": "read",
       "title": "Device 360"
     },
+    "catc_diff_config": {
+      "tier": "read",
+      "title": "Diff configuration exports"
+    },
     "catc_distribute_image": {
       "tier": "dangerous",
       "title": "Distribute software image"
+    },
+    "catc_export_config": {
+      "tier": "read",
+      "title": "Export configuration"
     },
     "catc_get_client": {
       "tier": "read",
