@@ -33,6 +33,9 @@
 ### Changed
 - ROADMAP: the owner reopened the per-feature wireless models on 2026-10-18. D70 and D71 moved from Later to
   Next; the "Not planned" entry now covers only the feature writes outside D71's curated subset.
+- Bundled stutters-mcp-core v0.14.0 -> v0.14.2: raw `catc_api_call` writes mask secret fields (`passphrase`,
+  shared secrets, communities, keys), nested dicts and lists included, in the preview and the result. The request
+  sent to Catalyst Center is unchanged. Before this, a POST to `.../intended/ssids/update` showed the PSK in the preview.
 
 ## 0.10.0 (2026-10-17)
 
