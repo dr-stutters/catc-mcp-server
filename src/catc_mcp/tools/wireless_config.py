@@ -13,6 +13,7 @@ values differ by design. Writes are D71 (feature templates and intended deploy).
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
@@ -20,7 +21,7 @@ from typing import Annotated, Any, Literal
 from fastmcp import Context
 from pydantic import Field
 
-from catc_mcp._core import InvalidRequest, ToolRegistrar, compact, get_client, object_result
+from catc_mcp._core import InvalidRequest, ToolRegistrar, UpstreamError, compact, get_client, object_result
 from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key
 from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, safe_id
@@ -46,7 +47,9 @@ NOT_SECRET_KEYS.update(
 # Bookkeeping on every record: hoisted (deviceVersion) or dropped (configType names the feature).
 META_KEYS = ("configType", "deviceVersion")
 NAMES_SHOWN = 20  # names per feature in the summary
-CHILD_RECORDS = 25  # records whose sub-collections are fetched (children=True)
+CHILD_RECORDS = 25  # records whose sub-collections are fetched (children=True), first by name
+CHILD_CONCURRENCY = 8  # sub-collection requests in flight per feature and state
+UNSET = "(not set)"  # a field the deployed record lacks (compact would drop a None)
 
 
 @dataclass(frozen=True)
@@ -187,6 +190,17 @@ def record_name(feat: Feature, rec: dict[str, Any]) -> str:
     return str(rec.get(feat.name) or rec.get("id") or "?")
 
 
+def record_names(feat: Feature, recs: list[dict[str, Any]]) -> list[str]:
+    """Each record's name, with '#2', '#3'... on repeats so duplicates don't collapse."""
+    seen: dict[str, int] = {}
+    out = []
+    for r in recs:
+        n = record_name(feat, r)
+        seen[n] = seen.get(n, 0) + 1
+        out.append(n if seen[n] == 1 else f"{n}#{seen[n]}")
+    return out
+
+
 def feature_path(did: str, state: str, feat: Feature) -> str:
     return f"{CAMPUS}/{did}/{state}/{feat.path}"
 
@@ -199,32 +213,45 @@ async def read_records(app: CatcApp, path: str) -> tuple[list[dict[str, Any]], b
 async def read_feature(
     app: CatcApp, did: str, state: str, feat: Feature, *, children: bool, name: str | None = None
 ) -> dict[str, Any]:
-    """{records, complete, children?} for one feature; records are masked, children keyed by record name."""
+    """{records, names, complete, children?} for one feature: records masked, children keyed by record name
+    and `failed` naming the 'record/child' reads that errored (the diff must not read those as empty)."""
     recs, complete = await read_records(app, feature_path(did, state, feat))
     if name is not None:
         recs = [r for r in recs if name in (r.get(feat.name), r.get("id"))]
-    out: dict[str, Any] = {"records": [mask_record(r) for r in recs], "complete": complete}
+    names = record_names(feat, recs)
+    out: dict[str, Any] = {"records": [mask_record(r) for r in recs], "names": names, "complete": complete}
     if children and feat.children:
         base = feature_path(did, state, feat)
-        jobs: dict[str, Any] = {}
-        for r in recs[:CHILD_RECORDS]:
+        gate = asyncio.Semaphore(CHILD_CONCURRENCY)
+
+        async def child_rows(path: str) -> tuple[list[dict[str, Any]], bool]:
+            async with gate:
+                return await read_records(app, path)
+
+        jobs: dict[tuple[str, str], Any] = {}
+        # The same records on both sides of a diff: the first CHILD_RECORDS by name, not API order.
+        for n, r in sorted(zip(names, recs, strict=True), key=lambda x: x[0])[:CHILD_RECORDS]:
             if not r.get("id"):
                 continue
             rid = safe_id(str(r["id"]), "record id")
             for child in feat.children:
-                jobs[f"{record_name(feat, r)}\x00{child}"] = read_records(app, f"{base}/{rid}/{child}")
-        sec, errors = await gather_sections(jobs)
+                jobs[(n, child)] = child_rows(f"{base}/{rid}/{child}")
+        results = await asyncio.gather(*jobs.values(), return_exceptions=True)
         kids: dict[str, dict[str, Any]] = {}
-        for key, (items, _) in sec.items():
-            rec, child = key.split("\x00")
-            rows = [{k: v for k, v in mask_record(x).items() if k not in (*META_KEYS, "id")} for x in items]
+        failed: dict[str, str] = {}
+        for (n, child), res in zip(jobs, results, strict=True):
+            if isinstance(res, BaseException):
+                if not isinstance(res, UpstreamError):
+                    raise res
+                failed[f"{n}/{child}"] = str(res)[:200]
+                continue
+            rows = [{k: v for k, v in mask_record(x).items() if k not in (*META_KEYS, "id")} for x in res[0]]
             if rows:
-                kids.setdefault(rec, {})[child] = rows
+                kids.setdefault(n, {})[child] = rows
         out["children"] = kids
-        if errors:
-            out["children_unavailable"] = {k.replace("\x00", "/"): v for k, v in errors.items()}
+        out["failed"] = failed
         if len(recs) > CHILD_RECORDS:
-            out["children_note"] = f"Sub-collections fetched for the first {CHILD_RECORDS} records only."
+            out["children_note"] = f"Sub-collections read for the first {CHILD_RECORDS} records by name only."
     return out
 
 
@@ -238,17 +265,24 @@ def shown_record(rec: dict[str, Any], all_fields: bool) -> dict[str, Any]:
 
 
 def comparable(rec: dict[str, Any]) -> dict[str, Any]:
-    """Fields to compare: no ids, bookkeeping or secrets, and nothing unset."""
+    """Fields to compare: no ids, bookkeeping or secret values (flags such as authKeyMgmtPskEnabled are
+    compared: they only look secret by name), and nothing unset."""
     return {
         k: v
         for k, v in rec.items()
-        if k not in (*META_KEYS, "id") and not is_wlc_secret(k) and v not in (None, "", [], {})
+        if k not in (*META_KEYS, "id")
+        and not (is_wlc_secret(k) and not isinstance(v, bool))
+        and v not in (None, "", [], {})
     }
 
 
 def canon(rows: list[dict[str, Any]]) -> list[str]:
     return sorted(
-        json.dumps({k: v for k, v in r.items() if not is_wlc_secret(k)}, sort_keys=True, default=str)
+        json.dumps(
+            {k: v for k, v in r.items() if not (is_wlc_secret(k) and not isinstance(v, bool))},
+            sort_keys=True,
+            default=str,
+        )
         for r in rows
     )
 
@@ -256,15 +290,18 @@ def canon(rows: list[dict[str, Any]]) -> list[str]:
 def diff_feature(feat: Feature, intended: dict[str, Any], deployed: dict[str, Any]) -> dict[str, Any]:
     """Intended vs deployed for one feature, matched by record name. A field counts only when the intent
     sets it (the WLC reports device defaults the intent leaves alone); secrets are never compared."""
-    want = {record_name(feat, r): r for r in intended["records"]}
-    have = {record_name(feat, r): r for r in deployed["records"]}
+    want = dict(zip(intended["names"], intended["records"], strict=True))
+    have = dict(zip(deployed["names"], deployed["records"], strict=True))
+    failed = {**intended.get("failed", {}), **deployed.get("failed", {})}
     changed: dict[str, Any] = {}
     for n in sorted(want.keys() & have.keys()):
         a, b = comparable(want[n]), comparable(have[n])
-        fields = {k: {"intended": a[k], "deployed": b.get(k)} for k in sorted(a) if a[k] != b.get(k)}
+        fields = {k: {"intended": a[k], "deployed": b.get(k, UNSET)} for k in sorted(a) if a[k] != b.get(k)}
         kids_a = intended.get("children", {}).get(n, {})
         kids_b = deployed.get("children", {}).get(n, {})
         for child in sorted(kids_a.keys() | kids_b.keys()):
+            if f"{n}/{child}" in failed:
+                continue  # one side couldn't be read: no verdict rather than a false difference
             ca, cb = canon(kids_a.get(child, [])), canon(kids_b.get(child, []))
             if ca != cb:
                 fields[child] = {
@@ -281,6 +318,8 @@ def diff_feature(feat: Feature, intended: dict[str, Any], deployed: dict[str, An
     }
     if not (intended["complete"] and deployed["complete"]):
         out["note"] = "A collection was larger than 2000 records; the diff is partial."
+    if failed:
+        out["not_compared"] = failed
     result: dict[str, Any] = compact(out)
     return result
 
@@ -351,7 +390,9 @@ def register(reg: ToolRegistrar) -> None:
                 if not a["records"] and not b["records"]:
                     continue
                 d = diff_feature(f, a, b)
-                if d.get("only_intended") or d.get("only_deployed") or d.get("changed") or d.get("note"):
+                if any(
+                    d.get(k) for k in ("only_intended", "only_deployed", "changed", "note", "not_compared")
+                ):
                     result[key] = d
                 else:
                     in_sync.append(key)
@@ -378,9 +419,11 @@ def register(reg: ToolRegistrar) -> None:
                 "count": len(recs),
                 "records": [shown_record(r, all_fields) for r in recs],
             }
-            for k in ("children", "children_unavailable", "children_note"):
+            for k in ("children", "children_note"):
                 if got.get(k):
                     out[k] = got[k]
+            if got.get("failed"):
+                out["children_unavailable"] = got["failed"]
             if not recs:
                 what = f"named {name} " if name else ""
                 out["note"] = f"No {state} {feature} {what}on this WLC." + (f" {AP_NOTE}" if f.ap else "")

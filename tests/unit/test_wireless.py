@@ -383,3 +383,49 @@ async def test_wlc_config_refuses_a_switch(api: respx.MockRouter) -> None:
     api.get("/dna/intent/api/v1/network-device").respond(json={"response": [DEVICE]})
     with pytest.raises(ToolError, match="not a wireless controller"):
         await wlc_call({"wlc": "edge-sw1.lab.local"})
+
+
+async def test_wlc_config_diff_compares_auth_flags_and_keeps_duplicates(api: respx.MockRouter) -> None:
+    """authKeyMgmt*Enabled look secret by name but are flags: a security-mode drift must show."""
+    mock_wlc(api)
+    dup = wlan("corp_profile", "corp", 21, wlanId=21)
+    mock_campus(api, "intended", {"ssids/wlanProfiles": [wlan("corp_profile", "corp", 17), dup]})
+    mock_campus(
+        api,
+        "deployed",
+        {
+            "ssids/wlanProfiles": [
+                wlan("corp_profile", "corp", 17, authKeyMgmtPskEnabled=False, authKeyMgmtSaeEnabled=True),
+                {**dup, "wlanId": 22},
+            ]
+        },
+    )
+    out = await wlc_call({"wlc": "wlc1", "feature": "wlan_profiles", "diff": True})
+    changed = out["diff"]["wlan_profiles"]["changed"]
+    assert changed["corp_profile"] == {"authKeyMgmtPskEnabled": {"intended": True, "deployed": False}}
+    assert changed["corp_profile#2"] == {"wlanId": {"intended": 21, "deployed": 22}}
+
+
+async def test_wlc_config_diff_skips_unreadable_children(api: respx.MockRouter) -> None:
+    mock_wlc(api)
+    tag_d = {**POLICY_TAG, "id": "0000000c-aaaa-bbbb-cccc-dddddddddddd"}
+    rows = [{"policyTagName": "PT_mcp", "wlanPolicyWlanProfileName": "corp_profile"}]
+    mock_campus(
+        api,
+        "intended",
+        {
+            "ssids/policyTags": [POLICY_TAG],
+            f"ssids/policyTags/{POLICY_TAG['id']}/policyTagWlanPolicies": rows,
+            f"ssids/policyTags/{POLICY_TAG['id']}/policyTagRlanPolicies": [],
+        },
+    )
+    mock_campus(
+        api,
+        "deployed",
+        {"ssids/policyTags": [tag_d], f"ssids/policyTags/{tag_d['id']}/policyTagRlanPolicies": []},
+        fail=(f"ssids/policyTags/{tag_d['id']}/policyTagWlanPolicies",),
+    )
+    out = await wlc_call({"wlc": "wlc1", "feature": "policy_tags", "diff": True, "children": True})
+    d = out["diff"]["policy_tags"]
+    assert "changed" not in d  # no false "only_intended" mapping
+    assert "PT_mcp/policyTagWlanPolicies" in d["not_compared"]
