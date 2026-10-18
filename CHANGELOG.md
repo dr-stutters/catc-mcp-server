@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Bundled stutters-mcp-core v0.14.0 -> v0.14.2: raw `catc_api_call` writes mask secret fields (`passphrase`,
+  shared secrets, communities, keys), nested dicts and lists included, in the preview and the result. The request
+  sent to Catalyst Center is unchanged. Before this, a POST to `.../intended/ssids/update` showed the PSK in the preview.
+
 ## 0.10.0 (2026-10-17)
 
 Wave 4 Phase B, against Catalyst Center 3.2.2: templates depth (D36), compliance depth (D37), assurance analytics
