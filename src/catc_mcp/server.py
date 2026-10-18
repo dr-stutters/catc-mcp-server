@@ -44,6 +44,7 @@ from catc_mcp.tools import (
     topology,
     wireless,
     wireless_config,
+    wireless_writes,
 )
 
 INSTRUCTIONS = """
@@ -66,6 +67,9 @@ Workflows:
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
   locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
   catc_get_wireless_controller -> catc_get_wlc_config (feature config, intended vs deployed, diff=true).
+- Wireless per-device (a 9800 with Per-Device Configuration enabled, not site-based): catc_set_wlan_security /
+  catc_set_wlan_vlan / catc_set_rf_profile stage the change -> catc_get_wlc_config(diff=true) ->
+  catc_deploy_wlc_config -> catc_get_wlc_deployments.
 - Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
   settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then
   re-provision (catc_provision_devices). Use templates for everything else.
@@ -126,6 +130,7 @@ REGISTER = [
     sda.register,
     wireless.register,
     wireless_config.register,
+    wireless_writes.register,
     reports.register,
     config_io.register,
     config_import.register,

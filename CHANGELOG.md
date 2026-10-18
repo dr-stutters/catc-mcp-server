@@ -17,12 +17,33 @@
   fields the intent sets that differ on the WLC, and (with `children`) sub-collection rows only on one side.
   PSKs, MPSK keys, AP management and dot1x passwords, NTP trust keys, FTP passwords and URWB passphrases are
   masked and never compared (the WLC returns them encrypted). AP-dependent families say "no data" cleanly on
-  a WLC without APs. Live on Catalyst Center 3.2.2 the models exist only for WLCs it configures with wireless
-  feature templates (model config): a WLC provisioned through site-based network profiles (D14's
+  a WLC without APs. Live on Catalyst Center 3.2.2 the models exist only for WLCs with Per-Device
+  Configuration enabled (see D71): a WLC provisioned through site-based network profiles (D14's
   `catc_provision_wireless_controller`) answers every model read with 404 NCWS70003 "provisioned via
   Site-based Network profiles". One probe detects that and the tool returns `provisioning: site-based network
   profiles` with Catalyst Center's reason and where to look instead (`catc_get_wireless_controller`), not 27
   errors. The models page at most 100 records (3.2.2 refuses `limit` > 100; the spec says 500).
+
+- **Wireless per-device writes and intended deploy (D71, #118).** Three write-tier tools stage a change in a
+  Catalyst 9800 WLC's per-device intended configuration with `POST .../intended/<group>/update` (op `MERGE`:
+  only the given fields change), and nothing reaches the WLC until the deploy:
+  `catc_set_wlan_security(wlc, wlan, security, passphrase?, auth_list?)` (open, WPA2/WPA3 personal or
+  enterprise, WPA2/WPA3 transition; every AKM flag set explicitly so a mode change clears the old one; PMF
+  required for WPA3-only, optional for transition; the PSK is masked in previews and results and bound to the
+  confirm token by a keyed digest), `catc_set_wlan_vlan(wlc, vlan, wlan | policy_profile)` (the policy
+  profile's `interfaceName`, found from the WLAN through the policy tags; the preview lists every WLAN that
+  uses that policy profile) and `catc_set_rf_profile(wlc, rf_profile, ...)` (state, TX power range, DCA
+  channel width, client limit, description; the preview names the RF tags using it). The dangerous-tier
+  `catc_deploy_wlc_config(wlc)` previews the intended-vs-deployed diff per feature (D70's diff, now shared)
+  with a blast radius of one WLC, posts `.../intended/deploy`, then reports each config group's status from
+  `.../intended/deviceDeployments` for the deploy's activity; `catc_get_wlc_deployments(wlc, activity_id?)`
+  (read) lists them later, with Catalyst Center's error and remedy. Both are refused with the reason on a WLC
+  without writable per-device configuration (404 NCWS70003 on a site-based WLC), and the deploy preview is
+  blocked while the global provisioning settings require preview or ITSM approval (Catalyst Center refuses
+  the deploy then). Research in [docs/wireless-per-device.md](docs/wireless-per-device.md): SSID security,
+  VLAN and RF profile exist only in the per-device models, not in `featureTemplates/wireless/*` (design
+  templates that ride on site-based profiles), and per-device mode is enabled per WLC in the GUI only, with
+  no revert.
 
 ### Fixed
 - **`catc_provision_wireless_controller` on a WLC that was never provisioned.** Catalyst Center answers its
