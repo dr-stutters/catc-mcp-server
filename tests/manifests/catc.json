@@ -304,6 +304,10 @@
       "tier": "dangerous",
       "title": "Deploy template"
     },
+    "catc_deploy_wlc_config": {
+      "tier": "dangerous",
+      "title": "Deploy WLC config"
+    },
     "catc_detach_template_from_profile": {
       "tier": "write",
       "title": "Detach template from network profiles"
@@ -443,6 +447,10 @@
     "catc_get_wlc_config": {
       "tier": "read",
       "title": "WLC feature config"
+    },
+    "catc_get_wlc_deployments": {
+      "tier": "read",
+      "title": "WLC deployments"
     },
     "catc_health_trend": {
       "tier": "read",
@@ -627,6 +635,18 @@
     "catc_search_spec": {
       "tier": "read",
       "title": "Search the Cisco Catalyst Center API spec"
+    },
+    "catc_set_rf_profile": {
+      "tier": "write",
+      "title": "Set RF profile"
+    },
+    "catc_set_wlan_security": {
+      "tier": "write",
+      "title": "Set WLAN security"
+    },
+    "catc_set_wlan_vlan": {
+      "tier": "write",
+      "title": "Set WLAN VLAN"
     },
     "catc_site_health_report": {
       "tier": "read",

@@ -90,10 +90,11 @@ async def test_wireless_design_and_wlc_provisioning(lab_rw: Client[Any]) -> None
 async def test_wlc_feature_config_reads(lab: Client[Any]) -> None:
     """D70 on the WLC the flow above provisioned: summary, one feature in full, intended vs deployed.
 
-    Catalyst Center 3.2.2 keeps feature models only for WLCs it configures with wireless feature templates
-    (model config). A WLC provisioned through site-based network profiles (D14's flow) answers every model
-    read with 404 NCWS70003 "provisioned via Site-based Network profiles": the tool must say so once, cleanly,
-    for the summary, a feature and the diff. On a model-config WLC the records themselves are checked."""
+    Catalyst Center 3.2.2 keeps feature models only for WLCs with Per-Device Configuration enabled (see
+    docs/wireless-per-device.md). A WLC provisioned through site-based network profiles (D14's flow) answers
+    every model read with 404 NCWS70003 "provisioned via Site-based Network profiles": the tool must say so
+    once, cleanly, for the summary, a feature and the diff. On a per-device WLC the records themselves are
+    checked (run this test alone there: D14's flow above would provision it through site-based profiles)."""
     need("CATC_LIVE_WLC")
     require_reachable(WLC, "CATC_LIVE_WLC")
     try:
@@ -120,7 +121,7 @@ async def test_wlc_feature_config_reads(lab: Client[Any]) -> None:
                 and "catc_get_wireless_controller" in o["note"]
             )
         return
-    # A model-config WLC: real records.
+    # A per-device WLC: real records.
     assert "ap_tag_configs" in out["deployed"]["no_data"]  # no APs in CML
     wlans = out["wlan_profiles"]
     assert wlans["count"] == out["deployed"]["features"]["wlan_profiles"]["count"]
