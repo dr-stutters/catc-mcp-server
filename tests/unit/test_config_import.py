@@ -364,12 +364,12 @@ async def tool_flow(
 
 async def test_tool_preview_and_apply(api: respx.MockRouter, monkeypatch: pytest.MonkeyPatch) -> None:
     text = dump_export(doc())
-    args = {"export": text, "secrets": {"CLI:mcp-d40": {"password": "pw"}}}
+    args = {"export": text, "secrets": {"CLI:mcp-d40": {"password": "D40-Secret-pw-7h3"}}}
     preview, done = await tool_flow(args, EMPTY_LIVE, monkeypatch)
     assert preview["status"] == "preview", preview
     assert preview["preview"]["summary"]["sites"] == {"create": 3}
     assert preview["preview"]["not_imported"]["ssids"].startswith("1 item(s)")
-    assert "pw" not in str(preview)
+    assert "D40-Secret-pw-7h3" not in str(preview)  # a random confirm token can contain "pw"
     assert done["result"]["status"] == "applied"
 
 
