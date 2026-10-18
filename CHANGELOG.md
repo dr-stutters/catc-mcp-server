@@ -17,7 +17,18 @@
   fields the intent sets that differ on the WLC, and (with `children`) sub-collection rows only on one side.
   PSKs, MPSK keys, AP management and dot1x passwords, NTP trust keys, FTP passwords and URWB passphrases are
   masked and never compared (the WLC returns them encrypted). AP-dependent families say "no data" cleanly on
-  a WLC without APs.
+  a WLC without APs. Live on Catalyst Center 3.2.2 the models exist only for WLCs it configures with wireless
+  feature templates (model config): a WLC provisioned through site-based network profiles (D14's
+  `catc_provision_wireless_controller`) answers every model read with 404 NCWS70003 "provisioned via
+  Site-based Network profiles". One probe detects that and the tool returns `provisioning: site-based network
+  profiles` with Catalyst Center's reason and where to look instead (`catc_get_wireless_controller`), not 27
+  errors. The models page at most 100 records (3.2.2 refuses `limit` > 100; the spec says 500).
+
+### Fixed
+- **`catc_provision_wireless_controller` on a WLC that was never provisioned.** Catalyst Center answers its
+  `primaryManagedApLocations` read with 400 NCWS51004 ("No locations were discovered") instead of an empty
+  list, so the preview failed on a freshly discovered 9800. That now counts as no current locations (in
+  `catc_get_wireless_controller` too). Found in the D70 live run.
 
 ### Changed
 - ROADMAP: the owner reopened the per-feature wireless models on 2026-10-18. D70 and D71 moved from Later to

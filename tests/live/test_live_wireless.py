@@ -15,6 +15,7 @@ diff, with no secret in any output.
 from __future__ import annotations
 
 import contextlib
+import json
 from typing import Any
 
 import pytest
@@ -87,48 +88,43 @@ async def test_wireless_design_and_wlc_provisioning(lab_rw: Client[Any]) -> None
 
 
 async def test_wlc_feature_config_reads(lab: Client[Any]) -> None:
-    """D70 on the WLC the flow above provisioned: summary, one feature in full, intended vs deployed."""
+    """D70 on the WLC the flow above provisioned: summary, one feature in full, intended vs deployed.
+
+    Catalyst Center 3.2.2 keeps feature models only for WLCs it configures with wireless feature templates
+    (model config). A WLC provisioned through site-based network profiles (D14's flow) answers every model
+    read with 404 NCWS70003 "provisioned via Site-based Network profiles": the tool must say so once, cleanly,
+    for the summary, a feature and the diff. On a model-config WLC the records themselves are checked."""
     need("CATC_LIVE_WLC")
     require_reachable(WLC, "CATC_LIVE_WLC")
     try:
         await call(lab, "catc_get_device", {"device": WLC})
     except ToolError:
         pytest.skip(f"the WLC is not in the inventory (catc_create_discovery for {WLC})")
-    summary = await call(lab, "catc_get_wlc_config", {"wlc": WLC})
-    deployed = await call(lab, "catc_get_wlc_config", {"wlc": WLC, "state": "deployed"})
-    for out in (summary, deployed):
-        assert "unavailable" not in out, out.get("unavailable")
-        assert "ap_tag_configs" in out["no_data"]  # no APs in CML
-    if "wlan_profiles" not in deployed.get("features", {}):
-        pytest.skip("no deployed WLAN profiles: run test_wireless_design_and_wlc_provisioning first")
-    print("intended:", {k: v["count"] for k, v in summary.get("features", {}).items()})
-    print("deployed:", {k: v["count"] for k, v in deployed["features"].items()})
-
-    wlans = await call(
-        lab, "catc_get_wlc_config", {"wlc": WLC, "feature": "wlan_profiles", "state": "deployed"}
-    )
-    assert wlans["count"] == deployed["features"]["wlan_profiles"]["count"]
-    psk = [r for r in wlans["records"] if r.get("ssid") == PSK]
-    if psk:  # D14's PSK WLAN stays on the WLC: its passphrase must come back masked
-        assert psk[0].get("passphrase", "********") == "********"
-    assert "mcp-test-psk-1234" not in str(wlans)
-    tags = await call(
-        lab,
-        "catc_get_wlc_config",
-        {"wlc": WLC, "feature": "policy_tags", "state": "deployed", "children": True},
-    )
-    print("policy tags:", tags.get("children") or tags.get("note"))
-    ap = await call(
-        lab, "catc_get_wlc_config", {"wlc": WLC, "feature": "ap_tag_configs", "state": "deployed"}
-    )
-    assert ap["count"] == 0 and "join" in ap["note"]
-
-    diff = await call(lab, "catc_get_wlc_config", {"wlc": WLC, "diff": True})
-    assert "unavailable" not in diff, diff.get("unavailable")
-    assert set(diff["diff"]) | set(diff["in_sync"]), diff
-    assert "mcp-test-psk-1234" not in str(diff) and "passphrase" not in str(diff)
-    print(
-        "diff:",
-        {k: {x: v.get(x) for x in ("only_intended", "only_deployed")} for k, v in diff["diff"].items()},
-    )
-    print("in sync:", diff["in_sync"])
+    calls = {
+        "summary": {"wlc": WLC},
+        "deployed": {"wlc": WLC, "state": "deployed"},
+        "wlan_profiles": {"wlc": WLC, "feature": "wlan_profiles", "state": "deployed"},
+        "policy_tags": {"wlc": WLC, "feature": "policy_tags", "state": "deployed", "children": True},
+        "diff": {"wlc": WLC, "diff": True},
+    }
+    out = {k: await call(lab, "catc_get_wlc_config", a) for k, a in calls.items()}
+    for k, o in out.items():
+        print(k, json.dumps(o)[:600])
+        assert "unavailable" not in o, (k, o.get("unavailable"))
+        assert "mcp-test-psk-1234" not in str(o)
+    if out["summary"].get("provisioning") == "site-based network profiles":
+        for k, o in out.items():
+            assert o["provisioning"] == "site-based network profiles", k
+            assert (
+                "Site-based Network profiles" in o["catc_says"]
+                and "catc_get_wireless_controller" in o["note"]
+            )
+        return
+    # A model-config WLC: real records.
+    assert "ap_tag_configs" in out["deployed"]["no_data"]  # no APs in CML
+    wlans = out["wlan_profiles"]
+    assert wlans["count"] == out["deployed"]["features"]["wlan_profiles"]["count"]
+    for r in wlans["records"]:
+        assert r.get("passphrase", "********") == "********"
+    assert set(out["diff"]["diff"]) | set(out["diff"]["in_sync"])
+    assert "passphrase" not in str(out["diff"])

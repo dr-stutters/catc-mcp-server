@@ -251,7 +251,9 @@ Typical flows:
   sub-collections, e.g. a policy tag's WLAN-to-policy mappings); `state='deployed'` reads what the WLC
   reported back, and `diff=true` lists per feature the profiles only on one side and the fields that differ.
   PSKs, MPSK keys and AP passwords are masked and never compared. AP tag and location mappings stay empty
-  until APs join.
+  until APs join. The models exist only for WLCs Catalyst Center configures with wireless feature templates;
+  a WLC provisioned through site-based network profiles (`catc_provision_wireless_controller`) has none, and
+  the tool says so.
 - **Profiles:** `catc_attach_template_to_profile` / `catc_assign_profile_to_sites` record which Day-N
   templates belong to a site; the provisioning API doesn't push them (3.2.2), so deploy them with
   `catc_deploy_template`.

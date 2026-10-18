@@ -24,11 +24,22 @@ from pydantic import Field
 from catc_mcp._core import InvalidRequest, ToolRegistrar, UpstreamError, compact, get_client, object_result
 from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key
 from catc_mcp._core.http import fetch_all
-from catc_mcp.client import CatcApp, safe_id
+from catc_mcp.client import CatcApp, catc_error_detail, safe_id
 from catc_mcp.common import gather_sections, resolve_device
 from catc_mcp.tools.ops_writes import brief
 
 CAMPUS = "/dna/campus/api/v1/wirelessControllers"
+# The feature models page 1-100 (3.2.2 refuses limit > 100 with NCWS70003, although the spec says 500).
+PAGE = 100
+# A WLC provisioned through site-based network profiles (catc_provision_wireless_controller, D14) has no
+# feature models: every read answers 404 NCWS70003 with this detail.
+SITE_PROFILES = "Site-based Network profiles"
+SITE_PROFILES_NOTE = (
+    "Catalyst Center keeps the per-feature models (intended and deployed) only for WLCs it configures with "
+    "wireless feature templates (model config). This WLC is provisioned through site-based network profiles "
+    "(catc_provision_wireless_controller), so there are none to read. Its SSIDs, managed AP locations and "
+    "provisioning status: catc_get_wireless_controller; its live config: catc_run_show_commands."
+)
 # Secret fields the core key pattern doesn't catch (spec format=password, or a key/token by name).
 WLC_SECRET_KEYS = frozenset({"key", "wepKey", "ntpServerTrustKey", "spacesConnCfgToken"})
 # Enum fields the core pattern would mask that only name a key or crypt type (ASCII/HEX, AES, TYPE_8...).
@@ -206,7 +217,7 @@ def feature_path(did: str, state: str, feat: Feature) -> str:
 
 
 async def read_records(app: CatcApp, path: str) -> tuple[list[dict[str, Any]], bool]:
-    page = await fetch_all(app.pager, app.api, path, cap=2000)
+    page = await fetch_all(app.pager, app.api, path, cap=2000, max_page=PAGE)
     return [r for r in page.items if isinstance(r, dict)], page.complete
 
 
@@ -253,6 +264,21 @@ async def read_feature(
         if len(recs) > CHILD_RECORDS:
             out["children_note"] = f"Sub-collections read for the first {CHILD_RECORDS} records by name only."
     return out
+
+
+async def site_profiles_reason(app: CatcApp, path: str) -> str | None:
+    """Catalyst Center's reason when this WLC has no feature models at all (site-based provisioning), else
+    None. One 1-record read; the error body is kept (the client's 404 error drops its detail)."""
+    resp = await app.api.request(
+        "GET", path, params={"offset": 1, "limit": 1}, ok_status=(400, 404), expect="response"
+    )
+    if resp.status_code < 400:
+        return None
+    try:
+        detail = catc_error_detail(resp.json()) or ""
+    except ValueError:
+        detail = resp.text[:300]
+    return detail if SITE_PROFILES in detail else None
 
 
 def shown_record(rec: dict[str, Any], all_fields: bool) -> dict[str, Any]:
@@ -372,6 +398,18 @@ def register(reg: ToolRegistrar) -> None:
         did = safe_id(str(dev["id"]), "device id")
         out: dict[str, Any] = {"wlc": brief([dev])[0], "software": dev.get("softwareVersion")}
         feats = {feature: FEATURES[feature]} if feature else FEATURES
+        # One probe of the first requested family tells a WLC without feature models apart. Deployed-only
+        # families (AP trace/packet capture) are probed in their only state.
+        probe = next((f for f in feats.values() if not f.deployed_only), None) or next(iter(feats.values()))
+        probe_state = "deployed" if probe.deployed_only or (state == "deployed" and not diff) else "intended"
+        reason = await site_profiles_reason(app, feature_path(did, probe_state, probe))
+        if reason:
+            out |= {
+                "provisioning": "site-based network profiles",
+                "note": SITE_PROFILES_NOTE,
+                "catc_says": reason,
+            }
+            return object_result(out)
 
         if diff:
             jobs: dict[str, Any] = {}

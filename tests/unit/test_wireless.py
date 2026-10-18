@@ -126,6 +126,41 @@ async def test_provision_wlc(api: respx.MockRouter) -> None:
     assert done and prov.call_count == 1
 
 
+async def test_provision_wlc_never_provisioned(api: respx.MockRouter) -> None:
+    """A WLC with no managed AP locations yet answers 400 NCWS51004; the preview treats it as none."""
+    api.get(f"/dna/intent/api/v1/wirelessControllers/{DEV_ID}/primaryManagedApLocations").respond(
+        400,
+        json={
+            "response": {
+                "errorCode": "NCWS51000",
+                "message": "NCWS51000: The API request has validation errors.: NCWS51004: No locations were "
+                "discovered corresponding to the specified Wireless Controller",
+            }
+        },
+    )
+    mock_wlc(api)
+    mock_sites(api, [GLOBAL, AREA, BLDG])
+    api.get(PROFILES).respond(
+        json={
+            "response": [{"id": "p1", "wirelessProfileName": "campus", "ssidDetails": [{"ssidName": "corp"}]}]
+        }
+    )
+    api.get("/dna/intent/api/v1/networkProfilesForSites/p1/siteAssignments").respond(
+        json={"response": [{"id": BLDG["id"]}]}
+    )
+    for leaf in ("provisionStatus", "ssidDetails"):
+        api.get(f"/dna/intent/api/v1/wirelessControllers/{DEV_ID}/{leaf}").respond(json={"response": []})
+    async with Client(server()) as c:
+        out = await run(
+            c,
+            "catc_provision_wireless_controller",
+            {"device": "wlc1", "managed_ap_locations": ["Global/AU/SYD-1"]},
+        )
+        state = await run(c, "catc_get_wireless_controller", {"device": "wlc1"})
+    assert out["status"] == "preview" and out["preview"]["current_ap_locations_kept"] is False
+    assert "unavailable" not in state
+
+
 async def test_provision_wlc_blockers(api: respx.MockRouter) -> None:
     mock_wlc(api, site=None)
     mock_sites(api, [GLOBAL, AREA, BLDG])
@@ -429,3 +464,40 @@ async def test_wlc_config_diff_skips_unreadable_children(api: respx.MockRouter) 
     d = out["diff"]["policy_tags"]
     assert "changed" not in d  # no false "only_intended" mapping
     assert "PT_mcp/policyTagWlanPolicies" in d["not_compared"]
+
+
+async def test_wlc_config_site_profile_wlc_says_so(api: respx.MockRouter) -> None:
+    """Live 3.2.2: a WLC provisioned through site-based network profiles has no feature models; every read
+    answers 404 NCWS70003 with this detail. One note instead of 27 errors."""
+    mock_wlc(api)
+    body = {
+        "response": {
+            "errorCode": "NCWS70003",
+            "message": "Validation failed due to invalid request.",
+            "detail": "Cannot perform the request as the device is provisioned via Site-based Network "
+            "profiles",
+        },
+        "version": "1.0",
+    }
+    probe = api.get(url__regex=rf".*{CAMPUS}/(intended|deployed)/.*").respond(404, json=body)
+    for args in (
+        {"wlc": "wlc1"},
+        {"wlc": "wlc1", "feature": "policy_tags", "state": "deployed"},
+        {"wlc": "wlc1", "diff": True},
+    ):
+        out = await wlc_call(args)
+        assert out["provisioning"] == "site-based network profiles" and "unavailable" not in out
+        assert (
+            "Site-based Network profiles" in out["catc_says"]
+            and "catc_get_wireless_controller" in out["note"]
+        )
+    assert probe.call_count == 3  # one probe per call, nothing else
+
+
+async def test_wlc_config_pages_by_100(api: respx.MockRouter) -> None:
+    """3.2.2 refuses limit > 100 on the feature models (the spec says 500)."""
+    mock_wlc(api)
+    route = api.get(f"{CAMPUS}/intended/ssids/policyTags").respond(json={"response": [POLICY_TAG]})
+    await wlc_call({"wlc": "wlc1", "feature": "policy_tags"})
+    limits = {int(c.request.url.params["limit"]) for c in route.calls}
+    assert limits and max(limits) <= 100
