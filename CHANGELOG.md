@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.11.0 (2026-10-18)
+
+Wireless feature models on a Catalyst 9800 (Wave 6 D70 and D71, proven live on two 9800-CLs in CML against Catalyst Center 3.2.2): `catc_get_wlc_config` reads the intended and deployed per-device models and diffs them; `catc_set_wlan_security`, `catc_set_wlan_vlan`, `catc_set_rf_profile` stage changes and `catc_deploy_wlc_config` pushes them with a preview. Also the core v0.14.3 bundle (secret masking in raw `catc_api_call` previews, HMAC-keyed confirm tokens) and a WLC provisioning fix. Wave 5's D46/D42/D41 and Wave 6's other items are not in this release.
+
 ### Added
 - **Wireless feature config reads (D70, #117).** `catc_get_wlc_config(wlc, feature=None, state="intended")`
   (read tier) reads the `/dna/campus/api/v1/wirelessControllers/{id}/{intended|deployed}/...` feature models
