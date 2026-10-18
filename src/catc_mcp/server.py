@@ -43,6 +43,7 @@ from catc_mcp.tools import (
     templates,
     topology,
     wireless,
+    wireless_config,
 )
 
 INSTRUCTIONS = """
@@ -64,7 +65,7 @@ Workflows:
   catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric.
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
   locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
-  catc_get_wireless_controller.
+  catc_get_wireless_controller -> catc_get_wlc_config (feature config, intended vs deployed, diff=true).
 - Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
   settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then
   re-provision (catc_provision_devices). Use templates for everything else.
@@ -124,6 +125,7 @@ REGISTER = [
     ops_writes.register,
     sda.register,
     wireless.register,
+    wireless_config.register,
     reports.register,
     config_io.register,
     config_import.register,

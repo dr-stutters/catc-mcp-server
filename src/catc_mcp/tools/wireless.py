@@ -24,6 +24,7 @@ from catc_mcp._core import (
     NotFound,
     Plan,
     ToolRegistrar,
+    ValidationFailed,
     compact,
     get_client,
     object_result,
@@ -79,6 +80,19 @@ def profile_ssids(profile: dict[str, Any]) -> list[str]:
     return [str(s.get("ssidName")) for s in ensure_list(profile.get("ssidDetails")) if isinstance(s, dict)]
 
 
+async def current_ap_locations(app: CatcApp, did: str) -> list[dict[str, Any]]:
+    """A WLC's primary managed AP locations. A WLC that was never given any answers 400 NCWS51004 ("No
+    locations were discovered") instead of an empty list (3.2.2): that is no locations, not an error."""
+    try:
+        cur = await app.get_response(f"{WLC}/{did}/primaryManagedApLocations")
+    except ValidationFailed as e:
+        if "NCWS51004" in str(e):
+            return []
+        raise
+    locs = cur.get("managedApLocations", []) if isinstance(cur, dict) else ensure_list(cur)
+    return [x for x in locs if isinstance(x, dict)]
+
+
 def provision_status(st: Any) -> Any:
     """The WLC provisioning status without ids, with a readable time."""
     if not isinstance(st, dict):
@@ -107,7 +121,7 @@ def register(reg: ToolRegistrar) -> None:
         sec, errors = await gather_sections(
             {
                 "provision_status": app.get_response(f"{WLC}/{did}/provisionStatus"),
-                "managed_ap_locations": app.get_response(f"{WLC}/{did}/primaryManagedApLocations"),
+                "managed_ap_locations": current_ap_locations(app, did),
                 "ssids": app.get_response(f"{WLC}/{did}/ssidDetails"),
             }
         )
@@ -408,10 +422,8 @@ def register(reg: ToolRegistrar) -> None:
                 "No wireless profile is assigned to those AP locations (catc_create_wireless_profile, "
                 "catc_assign_profile_to_sites); Catalyst Center refuses AP locations without one."
             )
-        cur = await app.get_response(f"{WLC}/{did}/primaryManagedApLocations")
-        cur_locs = cur.get("managedApLocations", []) if isinstance(cur, dict) else ensure_list(cur)
         current_ids = sorted(
-            str(x.get("siteId")) for x in cur_locs if isinstance(x, dict) and x.get("siteId")
+            str(x.get("siteId")) for x in await current_ap_locations(app, did) if x.get("siteId")
         )
         reassign = current_ids != loc_ids
         g = await resolve_site(app, "Global")
