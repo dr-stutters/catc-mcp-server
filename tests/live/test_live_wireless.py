@@ -6,6 +6,10 @@ assigned to CATC_LIVE_FLOOR -> WLC provisioned with that floor as its managed AP
 summary` on the WLC lists both WLANs -> profile and SSIDs removed again. The WLANs stay on the WLC
 (Catalyst Center doesn't remove them when the design objects go; fixed names keep re-runs from piling
 up). No APs needed.
+
+D70: test_wlc_feature_config_reads then reads the feature models of that WLC (read tier): summary in
+both states, WLAN profiles and policy tags in full, AP tag mappings empty, and the intended-vs-deployed
+diff, with no secret in any output.
 """
 
 from __future__ import annotations
@@ -80,3 +84,51 @@ async def test_wireless_design_and_wlc_provisioning(lab_rw: Client[Any]) -> None
         for ssid in (PSK, DOT1X):
             with contextlib.suppress(Exception):
                 await apply(lab_rw, "catc_delete_ssid", {"ssid": ssid})
+
+
+async def test_wlc_feature_config_reads(lab: Client[Any]) -> None:
+    """D70 on the WLC the flow above provisioned: summary, one feature in full, intended vs deployed."""
+    need("CATC_LIVE_WLC")
+    require_reachable(WLC, "CATC_LIVE_WLC")
+    try:
+        await call(lab, "catc_get_device", {"device": WLC})
+    except ToolError:
+        pytest.skip(f"the WLC is not in the inventory (catc_create_discovery for {WLC})")
+    summary = await call(lab, "catc_get_wlc_config", {"wlc": WLC})
+    deployed = await call(lab, "catc_get_wlc_config", {"wlc": WLC, "state": "deployed"})
+    for out in (summary, deployed):
+        assert "unavailable" not in out, out.get("unavailable")
+        assert "ap_tag_configs" in out["no_data"]  # no APs in CML
+    if "wlan_profiles" not in deployed.get("features", {}):
+        pytest.skip("no deployed WLAN profiles: run test_wireless_design_and_wlc_provisioning first")
+    print("intended:", {k: v["count"] for k, v in summary.get("features", {}).items()})
+    print("deployed:", {k: v["count"] for k, v in deployed["features"].items()})
+
+    wlans = await call(
+        lab, "catc_get_wlc_config", {"wlc": WLC, "feature": "wlan_profiles", "state": "deployed"}
+    )
+    assert wlans["count"] == deployed["features"]["wlan_profiles"]["count"]
+    psk = [r for r in wlans["records"] if r.get("ssid") == PSK]
+    if psk:  # D14's PSK WLAN stays on the WLC: its passphrase must come back masked
+        assert psk[0].get("passphrase", "********") == "********"
+    assert "mcp-test-psk-1234" not in str(wlans)
+    tags = await call(
+        lab,
+        "catc_get_wlc_config",
+        {"wlc": WLC, "feature": "policy_tags", "state": "deployed", "children": True},
+    )
+    print("policy tags:", tags.get("children") or tags.get("note"))
+    ap = await call(
+        lab, "catc_get_wlc_config", {"wlc": WLC, "feature": "ap_tag_configs", "state": "deployed"}
+    )
+    assert ap["count"] == 0 and "join" in ap["note"]
+
+    diff = await call(lab, "catc_get_wlc_config", {"wlc": WLC, "diff": True})
+    assert "unavailable" not in diff, diff.get("unavailable")
+    assert set(diff["diff"]) | set(diff["in_sync"]), diff
+    assert "mcp-test-psk-1234" not in str(diff) and "passphrase" not in str(diff)
+    print(
+        "diff:",
+        {k: {x: v.get(x) for x in ("only_intended", "only_deployed")} for k, v in diff["diff"].items()},
+    )
+    print("in sync:", diff["in_sync"])

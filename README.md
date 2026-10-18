@@ -245,6 +245,13 @@ Typical flows:
   reservations, templates, profiles, tags), creates what is missing, updates sites and site settings that
   differ, never deletes or overwrites the rest, and stops at the first failure
   ([docs](docs/config-export.md#import)). Provision afterwards.
+- **Wireless config audit:** `catc_get_wlc_config(wlc)` summarizes the feature models Catalyst Center keeps
+  for a 9800 WLC (WLAN, policy and RLAN profiles, policy and site tags, RF, AP join, flex, mDNS, mesh,
+  calendar, Dot11be) with counts and names; `feature=` returns one family in full (`children=true` adds the
+  sub-collections, e.g. a policy tag's WLAN-to-policy mappings); `state='deployed'` reads what the WLC
+  reported back, and `diff=true` lists per feature the profiles only on one side and the fields that differ.
+  PSKs, MPSK keys and AP passwords are masked and never compared. AP tag and location mappings stay empty
+  until APs join.
 - **Profiles:** `catc_attach_template_to_profile` / `catc_assign_profile_to_sites` record which Day-N
   templates belong to a site; the provisioning API doesn't push them (3.2.2), so deploy them with
   `catc_deploy_template`.
@@ -282,7 +289,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (79)
+### Read (80)
 
 | Tool | What it does |
 |---|---|
@@ -323,6 +330,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_template_deployment` | Status of one template deployment: overall status and, per device, whether the push succeeded, the CLI actually pushed (realizedClis: what a rollback has to undo) and Catalyst Center's detailed message (e.g. the CLI line the device rejected). |
 | `catc_get_vlan_topology` | Without `vlan`: the VLAN names Catalyst Center knows about. |
 | `catc_get_wireless_controller` | A Catalyst 9800 WLC as Catalyst Center sees it: provisioning status, primary managed AP locations and the SSIDs deployed on it (admin status, managed by Catalyst Center or not). |
+| `catc_get_wlc_config` | Wireless feature configuration Catalyst Center keeps for a Catalyst 9800 WLC (the /dna/campus feature models): WLAN, policy and RLAN profiles, policy and site tags, RF/radio profiles and RF tags, AP join, power, mesh and calendar profiles, flex, mDNS, Dot11be and AP tag mappings. |
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |

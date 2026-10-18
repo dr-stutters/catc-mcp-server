@@ -36,7 +36,7 @@ variable. With no `.env` at all, the whole live suite skips.
 | `CATC_LIVE_ISE_USERNAME`, `CATC_LIVE_ISE_PASSWORD` | | AAA | ISE admin credentials (integration and ERS NAD lookups) |
 | `CATC_LIVE_RADIUS_SECRET` | | AAA | RADIUS shared secret for the integration and site AAA |
 | `CATC_LIVE_ISE_CYCLE` | `1` | AAA | Optional. `1` removes an existing ISE integration and rebuilds it through the tools. Otherwise an existing integration is reused. |
-| `CATC_LIVE_WLC` | `192.0.2.40` | wireless | Management IP of a Catalyst 9800 WLC (a 9800-CL is enough) that is already discovered |
+| `CATC_LIVE_WLC` | `192.0.2.40` | wireless, WLC feature config | Management IP of a Catalyst 9800 WLC (a 9800-CL is enough) that is already discovered. The feature-config read test (D70) skips until the wireless flow has provisioned it. |
 | `CATC_LIVE_FABRIC_BUILDING` | `Global/Lab/Fabric1` | SD-Access | A building that is not a fabric site yet, with both fabric switches provisioned there |
 | `CATC_LIVE_FABRIC_BORDER` | `192.0.2.51` | SD-Access | Switch for the border + control plane roles |
 | `CATC_LIVE_FABRIC_EDGE` | `192.0.2.52` | SD-Access | Switch for the edge role |
