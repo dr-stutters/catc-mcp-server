@@ -9,7 +9,7 @@ WLAN's MPSK keys) at <feature>/{recordId}/<child>.
 
 Secrets (PSKs, MPSK keys, AP management and dot1x passwords, NTP trust keys, FTP passwords, URWB passphrases)
 are masked, and the intended-vs-deployed diff never compares them: the WLC stores them encrypted, so the
-values differ by design. Writes are D71 (feature templates and intended deploy).
+values differ by design. Writes: wireless_writes (D71).
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
@@ -32,13 +32,14 @@ CAMPUS = "/dna/campus/api/v1/wirelessControllers"
 # The feature models page 1-100 (3.2.2 refuses limit > 100 with NCWS70003, although the spec says 500).
 PAGE = 100
 # A WLC provisioned through site-based network profiles (catc_provision_wireless_controller, D14) has no
-# feature models: every read answers 404 NCWS70003 with this detail.
+# per-device feature models: every read answers 404 NCWS70003 with this detail.
 SITE_PROFILES = "Site-based Network profiles"
 SITE_PROFILES_NOTE = (
-    "Catalyst Center keeps the per-feature models (intended and deployed) only for WLCs it configures with "
-    "wireless feature templates (model config). This WLC is provisioned through site-based network profiles "
-    "(catc_provision_wireless_controller), so there are none to read. Its SSIDs, managed AP locations and "
-    "provisioning status: catc_get_wireless_controller; its live config: catc_run_show_commands."
+    "Catalyst Center keeps the per-feature models (intended and deployed) only for WLCs with Per-Device "
+    "Configuration enabled (device details in the GUI). This WLC is provisioned through site-based network "
+    "profiles (catc_provision_wireless_controller), so there are none to read. Its SSIDs, managed AP "
+    "locations and provisioning status: catc_get_wireless_controller; its live config: "
+    "catc_run_show_commands. See docs/wireless-per-device.md."
 )
 # Secret fields the core key pattern doesn't catch (spec format=password, or a key/token by name).
 WLC_SECRET_KEYS = frozenset({"key", "wepKey", "ntpServerTrustKey", "spacesConnCfgToken"})
@@ -350,6 +351,34 @@ def diff_feature(feat: Feature, intended: dict[str, Any], deployed: dict[str, An
     return result
 
 
+async def diff_features(
+    app: CatcApp, did: str, feats: dict[str, Feature], *, children: bool, name: str | None = None
+) -> tuple[dict[str, Any], list[str], dict[str, str]]:
+    """(diff per feature that differs, features in sync, unreadable 'feature/state' -> error) for the
+    intended vs deployed models. Features empty on both sides are in neither list."""
+    jobs: dict[str, Any] = {}
+    for key, f in feats.items():
+        if f.deployed_only:
+            continue
+        for st in ("intended", "deployed"):
+            jobs[f"{key}\x00{st}"] = read_feature(app, did, st, f, children=children, name=name)
+    sec, errors = await gather_sections(jobs)
+    result: dict[str, Any] = {}
+    in_sync: list[str] = []
+    for key, f in feats.items():
+        a, b = sec.get(f"{key}\x00intended"), sec.get(f"{key}\x00deployed")
+        if a is None or b is None:
+            continue
+        if not a["records"] and not b["records"]:
+            continue
+        d = diff_feature(f, a, b)
+        if any(d.get(k) for k in ("only_intended", "only_deployed", "changed", "note", "not_compared")):
+            result[key] = d
+        else:
+            in_sync.append(key)
+    return result, in_sync, {k.replace("\x00", "/"): v for k, v in errors.items()}
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="WLC feature config")
     async def catc_get_wlc_config(
@@ -397,7 +426,7 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest(f"{brief([dev])[0]} is a {dev.get('family')}, not a wireless controller.")
         did = safe_id(str(dev["id"]), "device id")
         out: dict[str, Any] = {"wlc": brief([dev])[0], "software": dev.get("softwareVersion")}
-        feats = {feature: FEATURES[feature]} if feature else FEATURES
+        feats: dict[str, Feature] = {feature: FEATURES[feature]} if feature else FEATURES
         # One probe of the first requested family tells a WLC without feature models apart. Deployed-only
         # families (AP trace/packet capture) are probed in their only state.
         probe = next((f for f in feats.values() if not f.deployed_only), None) or next(iter(feats.values()))
@@ -412,35 +441,14 @@ def register(reg: ToolRegistrar) -> None:
             return object_result(out)
 
         if diff:
-            jobs: dict[str, Any] = {}
-            for key, f in feats.items():
-                if f.deployed_only:
-                    continue
-                for st in ("intended", "deployed"):
-                    jobs[f"{key}\x00{st}"] = read_feature(app, did, st, f, children=children, name=name)
-            sec, errors = await gather_sections(jobs)
-            result: dict[str, Any] = {}
-            in_sync: list[str] = []
-            for key, f in feats.items():
-                a, b = sec.get(f"{key}\x00intended"), sec.get(f"{key}\x00deployed")
-                if a is None or b is None:
-                    continue
-                if not a["records"] and not b["records"]:
-                    continue
-                d = diff_feature(f, a, b)
-                if any(
-                    d.get(k) for k in ("only_intended", "only_deployed", "changed", "note", "not_compared")
-                ):
-                    result[key] = d
-                else:
-                    in_sync.append(key)
+            result, in_sync, errors = await diff_features(app, did, feats, children=children, name=name)
             out |= {"diff": result, "in_sync": in_sync}
             if feature and feats[feature].deployed_only:
                 out["note"] = f"{feature} has no intended model (deployed only); nothing to compare."
             elif not result and not in_sync:
                 out["note"] = "No intended or deployed records for " + (feature or "any feature") + "."
             if errors:
-                out["unavailable"] = {k.replace("\x00", "/"): v for k, v in errors.items()}
+                out["unavailable"] = errors
             return object_result(out)
 
         out["state"] = state
@@ -471,7 +479,7 @@ def register(reg: ToolRegistrar) -> None:
                 out["omitted"] = "false flags (all_fields=true shows them)"
             return object_result(out)
 
-        jobs = {
+        jobs: dict[str, Any] = {
             key: read_records(app, feature_path(did, state, f))
             for key, f in FEATURES.items()
             if not (f.deployed_only and state == "intended")

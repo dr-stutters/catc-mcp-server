@@ -251,9 +251,15 @@ Typical flows:
   sub-collections, e.g. a policy tag's WLAN-to-policy mappings); `state='deployed'` reads what the WLC
   reported back, and `diff=true` lists per feature the profiles only on one side and the fields that differ.
   PSKs, MPSK keys and AP passwords are masked and never compared. AP tag and location mappings stay empty
-  until APs join. The models exist only for WLCs Catalyst Center configures with wireless feature templates;
+  until APs join. The models exist only for WLCs with Per-Device Configuration enabled (D71);
   a WLC provisioned through site-based network profiles (`catc_provision_wireless_controller`) has none, and
   the tool says so.
+- **Wireless change (per-device):** on a 9800 with Per-Device Configuration enabled (not provisioned through
+  site-based profiles), `catc_set_wlan_security`, `catc_set_wlan_vlan` and `catc_set_rf_profile` stage a
+  change in the intended model; `catc_get_wlc_config(diff=true)` shows what is pending and
+  `catc_deploy_wlc_config` (dangerous) pushes it and reports each config group's status
+  (`catc_get_wlc_deployments`). Needs the provisioning settings without "require preview"
+  ([docs](docs/wireless-per-device.md)).
 - **Profiles:** `catc_attach_template_to_profile` / `catc_assign_profile_to_sites` record which Day-N
   templates belong to a site; the provisioning API doesn't push them (3.2.2), so deploy them with
   `catc_deploy_template`.
@@ -291,7 +297,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (80)
+### Read (81)
 
 | Tool | What it does |
 |---|---|
@@ -333,6 +339,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_vlan_topology` | Without `vlan`: the VLAN names Catalyst Center knows about. |
 | `catc_get_wireless_controller` | A Catalyst 9800 WLC as Catalyst Center sees it: provisioning status, primary managed AP locations and the SSIDs deployed on it (admin status, managed by Catalyst Center or not). |
 | `catc_get_wlc_config` | Wireless feature configuration Catalyst Center keeps for a Catalyst 9800 WLC (the /dna/campus feature models): WLAN, policy and RLAN profiles, policy and site tags, RF/radio profiles and RF tags, AP join, power, mesh and calendar profiles, flex, mDNS, Dot11be and AP tag mappings. |
+| `catc_get_wlc_deployments` | Configuration deployments Catalyst Center ran on a Catalyst 9800 WLC, newest first: per config group (WLAN, policy and RF groups, or the site settings of a site-based provision), its status, when it ran and Catalyst Center's error and remedy when it failed. |
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
@@ -376,7 +383,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_template_usage` | Where a template is used: the network profiles it is attached to, the sites those profiles are assigned to, and the devices it was deployed to with the version each one runs against the latest committed version (current / behind / failed). |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (43)
+### Write (46)
 
 | Tool | What it does |
 |---|---|
@@ -414,6 +421,9 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
+| `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
+| `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
+| `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
@@ -424,7 +434,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (22)
+### Dangerous (23)
 
 | Tool | What it does |
 |---|---|
@@ -444,6 +454,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_delete_sda_object` | Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a device's fabric role or a fabric site. |
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
+| `catc_deploy_wlc_config` | Deploy a Catalyst 9800 WLC's per-device intended configuration to the WLC (what catc_set_wlan_security, catc_set_wlan_vlan and catc_set_rf_profile staged, and any other intended change). |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
 | `catc_import_config` | Build Catalyst Center design intent from a catc_export_config document: a PoC's design on a production Catalyst Center, or a rebuilt lab. |
 | `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |

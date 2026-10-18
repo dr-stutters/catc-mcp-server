@@ -19,6 +19,7 @@ LONG = {
     "catc_distribute_image",
     "catc_activate_image",
     "catc_provision_wireless_controller",
+    "catc_deploy_wlc_config",
     "catc_claim_pnp_device",
     "catc_replace_device",
     "catc_add_fabric_device",
