@@ -2,7 +2,37 @@
 
 ## Unreleased
 
+### Added
+- **Wireless feature config reads (D70, #117).** `catc_get_wlc_config(wlc, feature=None, state="intended")`
+  (read tier) reads the `/dna/campus/api/v1/wirelessControllers/{id}/{intended|deployed}/...` feature models
+  for a Catalyst 9800 WLC, resolved by hostname, IP, serial or id. Without `feature`: a count and up to 20
+  names for each of 27 families (WLAN, policy and RLAN profiles, policy and site tags, RF and radio profiles,
+  RF tags, multi-BSSID, URWB, AP join, power, mesh and calendar profiles, flex, five mDNS models, Dot11be,
+  AP tag, priming and location mappings; AP trace and packet-capture profiles in `deployed` only), the empty
+  ones under `no_data`, and per-family errors under `unavailable` instead of failing the call. With
+  `feature`: that family's records, with `deviceVersion` hoisted, `configType` dropped and false flags
+  omitted unless `all_fields=true`; `name` picks one record and `children=true` adds each record's
+  sub-collections (a policy tag's WLAN-to-policy mappings, MPSK keys, RF DCA channels, flex VLANs...).
+  `diff=true` compares intended with deployed per feature, matched by name: profiles only on one side, the
+  fields the intent sets that differ on the WLC, and (with `children`) sub-collection rows only on one side.
+  PSKs, MPSK keys, AP management and dot1x passwords, NTP trust keys, FTP passwords and URWB passphrases are
+  masked and never compared (the WLC returns them encrypted). AP-dependent families say "no data" cleanly on
+  a WLC without APs. Live on Catalyst Center 3.2.2 the models exist only for WLCs it configures with wireless
+  feature templates (model config): a WLC provisioned through site-based network profiles (D14's
+  `catc_provision_wireless_controller`) answers every model read with 404 NCWS70003 "provisioned via
+  Site-based Network profiles". One probe detects that and the tool returns `provisioning: site-based network
+  profiles` with Catalyst Center's reason and where to look instead (`catc_get_wireless_controller`), not 27
+  errors. The models page at most 100 records (3.2.2 refuses `limit` > 100; the spec says 500).
+
+### Fixed
+- **`catc_provision_wireless_controller` on a WLC that was never provisioned.** Catalyst Center answers its
+  `primaryManagedApLocations` read with 400 NCWS51004 ("No locations were discovered") instead of an empty
+  list, so the preview failed on a freshly discovered 9800. That now counts as no current locations (in
+  `catc_get_wireless_controller` too). Found in the D70 live run.
+
 ### Changed
+- ROADMAP: the owner reopened the per-feature wireless models on 2026-10-18. D70 and D71 moved from Later to
+  Next; the "Not planned" entry now covers only the feature writes outside D71's curated subset.
 - Bundled stutters-mcp-core v0.14.0 -> v0.14.2: raw `catc_api_call` writes mask secret fields (`passphrase`,
   shared secrets, communities, keys), nested dicts and lists included, in the preview and the result. The request
   sent to Catalyst Center is unchanged. Before this, a POST to `.../intended/ssids/update` showed the PSK in the preview.

@@ -440,6 +440,10 @@
       "tier": "read",
       "title": "Wireless controller"
     },
+    "catc_get_wlc_config": {
+      "tier": "read",
+      "title": "WLC feature config"
+    },
     "catc_health_trend": {
       "tier": "read",
       "title": "Health trend"
@@ -681,5 +685,5 @@
       "title": "Update template"
     }
   },
-  "version": "0.9.0"
+  "version": "0.10.0"
 }
