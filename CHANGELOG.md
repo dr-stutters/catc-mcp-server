@@ -43,9 +43,25 @@
   the deploy then). Research in [docs/wireless-per-device.md](docs/wireless-per-device.md): SSID security,
   VLAN and RF profile exist only in the per-device models, not in `featureTemplates/wireless/*` (design
   templates that ride on site-based profiles), and per-device mode is enabled per WLC in the GUI only, with
-  no revert.
+  no revert. Live on a second 9800-CL (`mcp-catc-wlc2`, never provisioned, Per-Device Configuration enabled):
+  SSID `mcp-d71` moved from VLAN 1 to 20 through its policy tag (`vlan 20` on the WLC; intended, deployed and
+  the diff agree), a learned `default-policy-profile` moved to VLAN 30 with its other settings kept, and the
+  WLAN went from WPA2 to WPA2/WPA3 (`[WPA2 + WPA3][PSK][SAE][AES]`). What that run taught the tools: enabling
+  per-device configuration learns the WLC's config into the deployed model only, so the set tools also find
+  records there and stage them whole (secrets aside, so a learned PERSONAL WLAN needs its passphrase); the
+  9800's pre-configured RF profiles are refused (the WLC rolls back any change); WPA3 modes turn adaptive
+  802.11r off (17.18 refuses it with WPA3); the deploy preview lists records only on the WLC as kept (deploy
+  doesn't remove them) and says that a deleted intended record is deleted on the WLC; the deploy's activity
+  is its task id (`deployActivityId`), and a rolled-back group gives `outcome: failed` with the WLC's message.
+  Details in [docs/wireless-per-device.md](docs/wireless-per-device.md#live-results-2026-10-18-second-9800-cl).
 
 ### Fixed
+- **`catc_get_wlc_config` on per-device WLCs (D70, found in D71's live run).** A WLC before "Enable
+  Per-Device Configuration" answers 400 NCWS70003 "Per-device configuration is not enabled": reported as
+  `provisioning: per-device configuration not enabled` with what to do, like the site-based case. Once a WLC
+  has anything staged, Catalyst Center 3.2.2 answers an intended family without records with 500 NCND00050
+  instead of an empty list: that now reads as no records (deployed reads keep the error). URWB models answer
+  403 while URWB is beta: listed under `not_enabled`, not `unavailable`.
 - **`catc_provision_wireless_controller` on a WLC that was never provisioned.** Catalyst Center answers its
   `primaryManagedApLocations` read with 400 NCWS51004 ("No locations were discovered") instead of an empty
   list, so the preview failed on a freshly discovered 9800. That now counts as no current locations (in

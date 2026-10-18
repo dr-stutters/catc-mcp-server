@@ -217,7 +217,7 @@ def wlan(name: str, ssid: str, wlan_id: int, **kw: Any) -> dict[str, Any]:
         "wlanPskKeyType": "ASCII",
         "passphrase": PSK_VALUE,
         "wepKey": "",
-        "fastTransition": "ADAPTIVE",
+        "fastTransition": "DOT11R_ADAPTIVE_ENABLED",
         **kw,
     }
 
@@ -501,3 +501,39 @@ async def test_wlc_config_pages_by_100(api: respx.MockRouter) -> None:
     await wlc_call({"wlc": "wlc1", "feature": "policy_tags"})
     limits = {int(c.request.url.params["limit"]) for c in route.calls}
     assert limits and max(limits) <= 100
+
+
+async def test_wlc_config_per_device_not_enabled_says_so(api: respx.MockRouter) -> None:
+    """Live 3.2.2: an unprovisioned WLC before 'Enable Per-Device Configuration' answers 400 NCWS70003."""
+    mock_wlc(api)
+    body = {
+        "response": {
+            "errorCode": "NCWS70003",
+            "message": "Validation failed due to invalid request.",
+            "detail": "Per-device configuration is not enabled for this device. Please enable and retry the "
+            "operation",
+        },
+        "version": "1.0",
+    }
+    probe = api.get(url__regex=rf".*{CAMPUS}/(intended|deployed)/.*").respond(400, json=body)
+    out = await wlc_call({"wlc": "wlc1", "diff": True})
+    assert out["provisioning"] == "per-device configuration not enabled" and "unavailable" not in out
+    assert "Enable" in out["note"] and "not enabled" in out["catc_says"] and probe.call_count == 1
+
+
+async def test_wlc_config_intended_500_ncnd00050_is_empty(api: respx.MockRouter) -> None:
+    """Live 3.2.2: with an intended config profile, an intended family without records answers 500
+    NCND00050; that is no records, not an outage. The same error on a deployed read stays an error."""
+    mock_wlc(api)
+    boom = {"response": {"errorCode": "NCND00050", "message": "NCND00050: An internal error occurred"}}
+    mock_campus(
+        api, "intended", {"ssids/policyProfiles": [{"policyProfileName": "p1", "deviceVersion": "17.18"}]}
+    )
+    api.get(url__regex=rf".*{CAMPUS}/intended/.*").respond(500, json=boom)
+    api.get(url__regex=rf".*{CAMPUS}/deployed/radioFrequencies/rfProfiles").respond(500, json=boom)
+    api.get(url__regex=rf".*{CAMPUS}/deployed/.*").respond(json={"response": [], "version": "1.0"})
+    out = await wlc_call({"wlc": "wlc1"})
+    assert out["features"]["policy_profiles"]["names"] == ["p1"] and "unavailable" not in out
+    assert "rf_profiles" in out["no_data"]
+    dep = await wlc_call({"wlc": "wlc1", "state": "deployed"})
+    assert "rf_profiles" in dep["unavailable"]

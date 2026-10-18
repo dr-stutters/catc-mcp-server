@@ -34,6 +34,15 @@ PAGE = 100
 # A WLC provisioned through site-based network profiles (catc_provision_wireless_controller, D14) has no
 # per-device feature models: every read answers 404 NCWS70003 with this detail.
 SITE_PROFILES = "Site-based Network profiles"
+# A WLC not provisioned yet, before "Enable Per-Device Configuration": 400 NCWS70003 with this detail.
+PER_DEVICE_OFF = "Per-device configuration is not enabled"
+PER_DEVICE_OFF_NOTE = (
+    "Catalyst Center keeps the per-feature models only for WLCs with Per-Device Configuration enabled, and "
+    "this one doesn't have it yet: 'Enable Per-Device Configuration' in the WLC's device details (Catalyst "
+    "Center GUI; no API in 3.2.2), then resync the WLC. Enabling pushes nothing, it learns the running "
+    "config. A WLC provisioned through site-based network profiles only gets it read-only. See "
+    "docs/wireless-per-device.md."
+)
 SITE_PROFILES_NOTE = (
     "Catalyst Center keeps the per-feature models (intended and deployed) only for WLCs with Per-Device "
     "Configuration enabled (device details in the GUI). This WLC is provisioned through site-based network "
@@ -41,6 +50,10 @@ SITE_PROFILES_NOTE = (
     "locations and provisioning status: catc_get_wireless_controller; its live config: "
     "catc_run_show_commands. See docs/wireless-per-device.md."
 )
+BETA_FEATURES = ("urwb_profiles",)
+URWB_BETA = "beta in Catalyst Center 3.2.2 (403 until Cisco enables it: urwb@cisco.com)"
+# What 3.2.2 answers (HTTP 500) for an intended feature without records once the WLC has any intended config.
+EMPTY_INTENDED = "NCND00050"
 # Secret fields the core key pattern doesn't catch (spec format=password, or a key/token by name).
 WLC_SECRET_KEYS = frozenset({"key", "wepKey", "ntpServerTrustKey", "spacesConnCfgToken"})
 # Enum fields the core pattern would mask that only name a key or crypt type (ASCII/HEX, AES, TYPE_8...).
@@ -218,7 +231,14 @@ def feature_path(did: str, state: str, feat: Feature) -> str:
 
 
 async def read_records(app: CatcApp, path: str) -> tuple[list[dict[str, Any]], bool]:
-    page = await fetch_all(app.pager, app.api, path, cap=2000, max_page=PAGE)
+    try:
+        page = await fetch_all(app.pager, app.api, path, cap=2000, max_page=PAGE)
+    except UpstreamError as e:
+        # 3.2.2: once a WLC has an intended config profile (anything staged), an intended feature with no
+        # records answers 500 NCND00050 instead of an empty list (its /count too). Deployed reads don't.
+        if "/intended/" in path and EMPTY_INTENDED in str(e):
+            return [], True
+        raise
     return [r for r in page.items if isinstance(r, dict)], page.complete
 
 
@@ -267,19 +287,25 @@ async def read_feature(
     return out
 
 
-async def site_profiles_reason(app: CatcApp, path: str) -> str | None:
-    """Catalyst Center's reason when this WLC has no feature models at all (site-based provisioning), else
-    None. One 1-record read; the error body is kept (the client's 404 error drops its detail)."""
-    resp = await app.api.request(
-        "GET", path, params={"offset": 1, "limit": 1}, ok_status=(400, 404), expect="response"
-    )
+async def no_models_reason(app: CatcApp, path: str) -> str | None:
+    """Catalyst Center's reason when this WLC has no feature models at all (site-based provisioning, or
+    per-device configuration not enabled), else None. One 1-record read; the error body is kept (the
+    client's 400/404 errors drop its detail)."""
+    try:
+        resp = await app.api.request(
+            "GET", path, params={"offset": 1, "limit": 1}, ok_status=(400, 404), expect="response"
+        )
+    except UpstreamError as e:
+        if "/intended/" in path and EMPTY_INTENDED in str(e):
+            return None  # models exist; this feature has no intended records (see read_records)
+        raise
     if resp.status_code < 400:
         return None
     try:
         detail = catc_error_detail(resp.json()) or ""
     except ValueError:
         detail = resp.text[:300]
-    return detail if SITE_PROFILES in detail else None
+    return detail if SITE_PROFILES in detail or PER_DEVICE_OFF in detail else None
 
 
 def shown_record(rec: dict[str, Any], all_fields: bool) -> dict[str, Any]:
@@ -379,6 +405,13 @@ async def diff_features(
     return result, in_sync, {k.replace("\x00", "/"): v for k, v in errors.items()}
 
 
+def split_beta(errors: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+    """(real errors, features Catalyst Center keeps behind a beta flag). 3.2.2 answers URWB reads with 403
+    NCWS70003 "support for Ultra Reliable Wireless Backhaul (URWB) is currently in beta"."""
+    beta = {k: URWB_BETA for k in errors if k.split("/")[0] in BETA_FEATURES and "(403)" in errors[k]}
+    return {k: v for k, v in errors.items() if k not in beta}, {k.split("/")[0]: v for k, v in beta.items()}
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="WLC feature config")
     async def catc_get_wlc_config(
@@ -431,18 +464,24 @@ def register(reg: ToolRegistrar) -> None:
         # families (AP trace/packet capture) are probed in their only state.
         probe = next((f for f in feats.values() if not f.deployed_only), None) or next(iter(feats.values()))
         probe_state = "deployed" if probe.deployed_only or (state == "deployed" and not diff) else "intended"
-        reason = await site_profiles_reason(app, feature_path(did, probe_state, probe))
+        reason = await no_models_reason(app, feature_path(did, probe_state, probe))
         if reason:
+            site_based = SITE_PROFILES in reason
             out |= {
-                "provisioning": "site-based network profiles",
-                "note": SITE_PROFILES_NOTE,
+                "provisioning": (
+                    "site-based network profiles" if site_based else "per-device configuration not enabled"
+                ),
+                "note": SITE_PROFILES_NOTE if site_based else PER_DEVICE_OFF_NOTE,
                 "catc_says": reason,
             }
             return object_result(out)
 
         if diff:
             result, in_sync, errors = await diff_features(app, did, feats, children=children, name=name)
+            errors, beta = split_beta(errors)
             out |= {"diff": result, "in_sync": in_sync}
+            if beta:
+                out["not_enabled"] = beta
             if feature and feats[feature].deployed_only:
                 out["note"] = f"{feature} has no intended model (deployed only); nothing to compare."
             elif not result and not in_sync:
@@ -507,6 +546,9 @@ def register(reg: ToolRegistrar) -> None:
             )
         if any(FEATURES[k].ap for k in empty):
             out["ap_note"] = AP_NOTE
+        errors, beta = split_beta(errors)
+        if beta:
+            out["not_enabled"] = beta
         if errors:
             out["unavailable"] = errors
         return object_result(out)
