@@ -73,6 +73,10 @@
 - Bundled stutters-mcp-core v0.14.0 -> v0.14.2: raw `catc_api_call` writes mask secret fields (`passphrase`,
   shared secrets, communities, keys), nested dicts and lists included, in the preview and the result. The request
   sent to Catalyst Center is unchanged. Before this, a POST to `.../intended/ssids/update` showed the PSK in the preview.
+- Bundled stutters-mcp-core v0.14.2 -> v0.14.3: confirm tokens bind their arguments with an HMAC-keyed digest
+  (a low-entropy PSK can no longer be brute-forced from the stored hash), and the WLC-only secret names
+  (`key`, `wepKey`, `ntpServerTrustKey`, `spacesConnCfgToken`) are registered with the core's `EXTRA_SECRET_KEYS`,
+  so raw `catc_api_call` previews and the audit log mask them as well.
 
 ## 0.10.0 (2026-10-17)
 

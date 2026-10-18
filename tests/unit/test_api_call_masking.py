@@ -96,3 +96,22 @@ async def test_api_call_token_is_bound_to_the_real_body(api: respx.MockRouter) -
         with pytest.raises(ToolError, match="arguments differ"):
             await run(c, "catc_api_call", {**args, "body": other, "confirm": preview["confirm"]})
     assert not route.called
+
+
+async def test_api_call_masks_wlc_only_secret_keys(api: respx.MockRouter) -> None:
+    """Core 0.14.3: `WLC_SECRET_KEYS` (names the core's secret pattern misses) are registered in
+    `EXTRA_SECRET_KEYS` at import time, so a raw catc_api_call preview masks them too."""
+    body = {
+        "ntpServers": [{"address": "10.0.0.9", "ntpServerTrustKey": "Trust-Key-3v9"}],
+        "wep": {"keyIndex": 1, "wepKey": "Wep-Key-8p2"},
+        "spaces": {"spacesConnCfgToken": "Spaces-Tok-1z4"},
+    }
+    api.post(PATH).respond(json={"response": {"taskId": "t-2"}})
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        preview = await run(c, "catc_api_call", {"method": "POST", "path": PATH, "body": body})
+    shown = preview["preview"]["body"]
+    assert shown["ntpServers"][0]["ntpServerTrustKey"] == MASK
+    assert shown["wep"]["wepKey"] == MASK and shown["wep"]["keyIndex"] == 1
+    assert shown["spaces"]["spacesConnCfgToken"] == MASK
+    for secret in ("Trust-Key-3v9", "Wep-Key-8p2", "Spaces-Tok-1z4"):
+        assert secret not in json.dumps(preview)
