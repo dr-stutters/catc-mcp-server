@@ -22,7 +22,7 @@ from fastmcp import Context
 from pydantic import Field
 
 from catc_mcp._core import InvalidRequest, ToolRegistrar, UpstreamError, compact, get_client, object_result
-from catc_mcp._core.formatting import MASK, NOT_SECRET_KEYS, is_secret_key
+from catc_mcp._core.formatting import EXTRA_SECRET_KEYS, MASK, NOT_SECRET_KEYS, is_secret_key
 from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, catc_error_detail, safe_id
 from catc_mcp.common import gather_sections, resolve_device
@@ -56,6 +56,8 @@ URWB_BETA = "beta in Catalyst Center 3.2.2 (403 until Cisco enables it: urwb@cis
 EMPTY_INTENDED = "NCND00050"
 # Secret fields the core key pattern doesn't catch (spec format=password, or a key/token by name).
 WLC_SECRET_KEYS = frozenset({"key", "wepKey", "ntpServerTrustKey", "spacesConnCfgToken"})
+# Core 0.14.3: the raw catc_api_call preview and the audit log mask these WLC-only names too.
+EXTRA_SECRET_KEYS.update(WLC_SECRET_KEYS)
 # Enum fields the core pattern would mask that only name a key or crypt type (ASCII/HEX, AES, TYPE_8...).
 NOT_SECRET_KEYS.update(
     {
