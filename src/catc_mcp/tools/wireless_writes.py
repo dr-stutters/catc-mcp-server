@@ -55,8 +55,10 @@ from catc_mcp.tools.wireless_config import (
     comparable,
     diff_features,
     feature_path,
+    is_wlc_secret,
+    no_models_reason,
     read_records,
-    site_profiles_reason,
+    split_beta,
 )
 
 SETTINGS = "/dna/intent/api/v1/provisioningSettings"
@@ -75,6 +77,15 @@ STAGED = (
 )
 DEPLOY_POLL = 2.0  # seconds between deviceDeployments reads after the deploy task ends
 DONE = ("success", "fail", "error", "abort", "rollback", "complete")
+SOURCE = {
+    "intended": "intended model",
+    "deployed": "learned from the WLC (deployed only): the change adds it to the intended model",
+}
+# The 9800's pre-configured RF profiles: the WLC refuses any change to them.
+PRECONFIGURED_RF = frozenset(
+    f"{d}_Client_Density_rf_{b}" for d in ("High", "Low", "Typical") for b in ("24gh", "5gh")
+) | {"default-rf-profile-6ghz"}
+FT_ADAPTIVE = "DOT11R_ADAPTIVE_ENABLED"
 DEEP = ("policy_tags",)  # features whose sub-collections the deploy preview diffs
 
 Security = Literal[
@@ -149,7 +160,7 @@ def changes(rec: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for k, v in fields.items():
         cur = rec.get(k, UNSET)
-        if cur != v:
+        if cur != v and not (cur == UNSET and v is False):  # an unset flag is already off
             out[k] = {"from": cur, "to": v}
     return out
 
@@ -172,7 +183,7 @@ def deployment_row(d: dict[str, Any]) -> dict[str, Any]:
             "ended": millis(d.get("endTime")),
             "error": err.get("message"),
             "remedy": err.get("remedy"),
-            "activity_id": d.get("activityId"),
+            "activity_id": d.get("activityId") or d.get("deployActivityId"),
         }
     )
     return row
@@ -198,8 +209,9 @@ async def deployments(app: CatcApp, did: str, activity: str | None = None) -> li
 
 
 def activity_id(job: dict[str, Any]) -> str | None:
-    """The deploy activity from the deploy task (its data, or an activityId in its progress)."""
-    for v in (job.get("data"), job.get("progress")):
+    """The deploy activity: an activityId in the task's data or progress, else (3.2.2) the deploy task's id,
+    which deviceDeployments reports as deployActivityId."""
+    for v in (job.get("data"), job.get("progress"), job.get("task_id")):
         if isinstance(v, dict):
             v = v.get("activityId") or v.get("deployActivityId")
         if isinstance(v, str) and len(v) == 36 and v.count("-") == 4:
@@ -214,14 +226,23 @@ async def wlc_target(app: CatcApp, wlc: str) -> tuple[dict[str, Any], str]:
     return dev, safe_id(str(dev["id"]), "device id")
 
 
-async def intended_records(app: CatcApp, did: str, key: str) -> list[dict[str, Any]]:
-    """The intended records of one feature; refused (with why) on a WLC without per-device config."""
-    path = feature_path(did, "intended", FEATURES[key])
-    reason = await site_profiles_reason(app, path)
+async def current_records(app: CatcApp, did: str, key: str) -> list[dict[str, Any]]:
+    """One feature's records as the next deploy sees them: the intended ones, plus the deployed ones the
+    intended model lacks (a brownfield WLC: enabling per-device configuration learns the running config
+    into the deployed model only; a MERGE adds the record to the intended model). Each carries `_source`.
+    Refused, with Catalyst Center's reason, on a WLC without per-device configuration."""
+    feat = FEATURES[key]
+    path = feature_path(did, "intended", feat)
+    reason = await no_models_reason(app, path)
     if reason:
         raise InvalidRequest(PER_DEVICE_NOTE.format(reason=reason))
-    recs, _ = await read_records(app, path)
-    return recs
+    (want, _), (have, _) = await asyncio.gather(
+        read_records(app, path), read_records(app, feature_path(did, "deployed", feat))
+    )
+    names = {r.get(feat.name) for r in want}
+    return [{**r, "_source": "intended"} for r in want] + [
+        {**r, "_source": "deployed"} for r in have if r.get(feat.name) not in names
+    ]
 
 
 def pick(recs: list[dict[str, Any]], value: str, keys: tuple[str, ...], what: str) -> dict[str, Any]:
@@ -241,23 +262,35 @@ def pick(recs: list[dict[str, Any]], value: str, keys: tuple[str, ...], what: st
 def merge_body(
     feature: str, rec: dict[str, Any], keys: tuple[str, ...], fields: dict[str, Any]
 ) -> dict[str, Any]:
-    """One MERGE of `fields` into the record named by `keys` (the schema's required identifiers)."""
+    """One MERGE of `fields` into the record named by `keys` (the schema's required identifiers). A record
+    learned from the WLC (deployed only) goes in whole, secrets aside, so the intended record is the WLC's
+    record plus the change, never a sparse one a deploy could fill with schema defaults."""
     ident = {k: rec[k] for k in keys if rec.get(k) not in (None, "")}
-    return {feature: {"op": "MERGE", "deviceVersion": rec.get("deviceVersion"), **ident, **fields}}
+    base: dict[str, Any] = {}
+    if rec.get("_source") == "deployed":
+        base = {
+            k: v
+            for k, v in rec.items()
+            if k not in ("id", "_source")
+            and v not in (None, "")
+            and not (is_wlc_secret(k) and not isinstance(v, bool))
+        }
+    return {feature: {**base, "op": "MERGE", "deviceVersion": rec.get("deviceVersion"), **ident, **fields}}
 
 
 async def wlan_policy_map(app: CatcApp, did: str) -> list[dict[str, str]]:
-    """Every intended WLAN-to-policy mapping: [{policy_tag, wlan, policy}] from the policy tags."""
-    tags = await intended_records(app, did, "policy_tags")
-    base = feature_path(did, "intended", FEATURES["policy_tags"])
-    jobs = [
-        read_records(app, f"{base}/{safe_id(str(t['id']), 'policy tag id')}/policyTagWlanPolicies")
-        for t in tags
-        if t.get("id")
-    ]
+    """Every WLAN-to-policy mapping the next deploy keeps: [{policy_tag, wlan, policy}] from the policy tags
+    (intended, plus deployed tags the intended model lacks), each tag's mappings read in its own state."""
+    tags = [t for t in await current_records(app, did, "policy_tags") if t.get("id")]
+    feat = FEATURES["policy_tags"]
+
+    def rows(t: dict[str, Any]) -> Any:
+        base = feature_path(did, str(t["_source"]), feat)
+        return read_records(app, f"{base}/{safe_id(str(t['id']), 'policy tag id')}/policyTagWlanPolicies")
+
     out: list[dict[str, str]] = []
-    for t, (rows, _) in zip([t for t in tags if t.get("id")], await asyncio.gather(*jobs), strict=True):
-        for r in rows:
+    for t, (maps, _) in zip(tags, await asyncio.gather(*(rows(t) for t in tags)), strict=True):
+        for r in maps:
             out.append(
                 {
                     "policy_tag": str(t.get("policyTagName")),
@@ -293,11 +326,16 @@ def register(reg: ToolRegistrar) -> None:
         WLC until catc_deploy_wlc_config. Preview-first; the passphrase is masked and never stored."""
         app: CatcApp = get_client(ctx)
         dev, did = await wlc_target(app, wlc)
-        rec = pick(await intended_records(app, did, "wlan_profiles"), wlan, ("profileName", "ssid"), "WLAN")
+        rec = pick(await current_records(app, did, "wlan_profiles"), wlan, ("profileName", "ssid"), "WLAN")
         personal = security.endswith("PERSONAL")
         was = current_security(rec)
         blockers: list[str] = []
-        if personal and passphrase is None and not was.endswith("PERSONAL"):
+        if personal and passphrase is None and rec["_source"] == "deployed":
+            blockers.append(
+                f"{rec.get('profileName')} was learned from the WLC, which returns no usable PSK: give the "
+                "passphrase (it becomes part of the intended record)."
+            )
+        elif personal and passphrase is None and not was.endswith("PERSONAL"):
             blockers.append(
                 f"{security} needs a passphrase: {rec.get('profileName')} has no PSK now ({was})."
             )
@@ -310,6 +348,10 @@ def register(reg: ToolRegistrar) -> None:
         if security.endswith("ENTERPRISE") and not (auth_list or rec.get("wlanAuthenticationList")):
             blockers.append("802.1X needs an AAA authentication method list (auth_list).")
         fields = security_fields(security, auth_list)
+        if fields["wpa3Enabled"] and rec.get("fastTransition") in (None, "", FT_ADAPTIVE):
+            # 17.18 refuses adaptive 802.11r with WPA3 ("FT Adaptive is not allowed when both WPA2 and
+            # WPA3 are enabled"); unset means the schema default, adaptive.
+            fields["fastTransition"] = "DOT11R_DISABLED"
         diff = changes(rec, fields)
         if not diff and passphrase is None:
             blockers.append(f"{rec.get('profileName')} is already {security}; nothing to change.")
@@ -322,6 +364,7 @@ def register(reg: ToolRegistrar) -> None:
             f"of {brief([dev])[0]}",
             details={
                 "wlan": compact({k: rec.get(k) for k in ("profileName", "ssid", "wlanId")}),
+                "source": SOURCE[rec["_source"]],
                 "security": {"current": was, "new": security},
                 "changes": diff,
                 "passphrase": (
@@ -398,11 +441,11 @@ def register(reg: ToolRegistrar) -> None:
         if vlan.isdigit() and not 1 <= int(vlan) <= 4094:
             raise InvalidRequest("A VLAN id is 1-4094.")
         dev, did = await wlc_target(app, wlc)
-        profiles = await intended_records(app, did, "policy_profiles")
+        profiles = await current_records(app, did, "policy_profiles")
         mapping = await wlan_policy_map(app, did)
         target = policy_profile or ""
         if wlan is not None:
-            w = pick(await intended_records(app, did, "wlan_profiles"), wlan, ("profileName", "ssid"), "WLAN")
+            w = pick(await current_records(app, did, "wlan_profiles"), wlan, ("profileName", "ssid"), "WLAN")
             via = sorted({m["policy"] for m in mapping if m["wlan"] == w.get("profileName")})
             if not via:
                 raise NotFound(
@@ -425,6 +468,7 @@ def register(reg: ToolRegistrar) -> None:
             f"Stage VLAN {vlan} on policy profile {name} of {brief([dev])[0]}",
             details={
                 "policy_profile": name,
+                "source": SOURCE[rec["_source"]],
                 "changes": diff,
                 "wlans_using_it": users,
                 "request": f"POST {path} (policyProfiles, op MERGE)",
@@ -487,9 +531,14 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest("Nothing to change: give at least one setting.")
         dev, did = await wlc_target(app, wlc)
         rec = pick(
-            await intended_records(app, did, "rf_profiles"), rf_profile, ("rfProfileName",), "RF profile"
+            await current_records(app, did, "rf_profiles"), rf_profile, ("rfProfileName",), "RF profile"
         )
         name = str(rec.get("rfProfileName"))
+        if name in PRECONFIGURED_RF:
+            raise InvalidRequest(
+                f"{name} is one of the 9800's pre-configured RF profiles, which the WLC refuses to change "
+                "(live 17.18: 'PreConfigured rf profile can not be updated'). Use a custom RF profile."
+            )
         lo = fields.get("rfProfileTxPowerMin", rec.get("rfProfileTxPowerMin"))
         hi = fields.get("rfProfileTxPowerMax", rec.get("rfProfileTxPowerMax"))
         blockers = []
@@ -499,7 +548,7 @@ def register(reg: ToolRegistrar) -> None:
         if not diff:
             blockers.append(f"RF profile {name} already has these settings.")
         try:
-            tags = await intended_records(app, did, "rf_tags")
+            tags = await current_records(app, did, "rf_tags")
         except UpstreamError:
             tags = []
         used_by = sorted(
@@ -510,6 +559,7 @@ def register(reg: ToolRegistrar) -> None:
             f"Stage RF profile {name} settings on {brief([dev])[0]}",
             details={
                 "rf_profile": name,
+                "source": SOURCE[rec["_source"]],
                 "band": rec.get("rfProfileBand"),
                 "changes": diff,
                 "rf_tags_using_it": used_by,
@@ -559,10 +609,11 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         dev, did = await wlc_target(app, wlc)
         blockers = device_limit_blockers(app, 1)
-        reason = await site_profiles_reason(app, feature_path(did, "intended", FEATURES["wlan_profiles"]))
+        reason = await no_models_reason(app, feature_path(did, "intended", FEATURES["wlan_profiles"]))
         pending: dict[str, Any] = {}
         in_sync: list[str] = []
         unreadable: dict[str, str] = {}
+        kept: dict[str, list[str]] = {}
         if reason:
             blockers.append(PER_DEVICE_NOTE.format(reason=reason))
         else:
@@ -573,7 +624,18 @@ def register(reg: ToolRegistrar) -> None:
             (p1, s1, u1), (p2, s2, u2) = await asyncio.gather(
                 diff_features(app, did, flat, children=False), diff_features(app, did, deep, children=True)
             )
-            pending, in_sync, unreadable = {**p1, **p2}, sorted(s1 + s2), {**u1, **u2}
+            diffs, in_sync, unreadable = {**p1, **p2}, s1 + s2, {**u1, **u2}
+            unreadable, _ = split_beta(unreadable)
+            # Deploy is additive (live 3.2.2): records only on the WLC (learned at enable time, or made on
+            # the CLI) stay. Only what the intent adds or changes is pushed.
+            for key, d in diffs.items():
+                push = {k: d[k] for k in ("only_intended", "changed", "not_compared", "note") if d.get(k)}
+                if push:
+                    pending[key] = push
+                else:
+                    in_sync.append(key)  # only learned extras, which the deploy leaves
+                if d.get("only_deployed"):
+                    kept[key] = d["only_deployed"]
         prov = await app.get_response(SETTINGS)
         prov = prov if isinstance(prov, dict) else {}
         gates = [k for k in ("requirePreview", "requireItsmApproval") if prov.get(k)]
@@ -589,14 +651,24 @@ def register(reg: ToolRegistrar) -> None:
             "software": dev.get("softwareVersion"),
             "reachability": dev.get("reachabilityStatus"),
             "pending_changes": pending,
-            "features_in_sync": in_sync,
+            "features_in_sync": sorted(in_sync),
+            "kept_on_the_wlc": kept,
             "request": f"POST {CAMPUS}/{did}/intended/deploy",
             "status": "per config group, from intended/deviceDeployments (catc_get_wlc_deployments)",
+            "not_shown": (
+                "An intended record deleted since the last deploy (catc_api_call DELETE) is deleted on the "
+                "WLC too, and no diff can show it."
+            ),
         }
+        if kept:
+            details["kept_note"] = (
+                "Records only on the WLC (learned when per-device configuration was enabled, or made outside "
+                "Catalyst Center): the deploy is additive and leaves them."
+            )
         if unreadable:
             details["unreadable"] = unreadable
         if not reason and not pending:
-            details["note"] = "Intended matches deployed for every feature: the deploy pushes nothing new."
+            details["note"] = "The intent adds or changes nothing on the WLC: the deploy pushes nothing new."
         side = [
             f"Pushes the intended configuration to {brief([dev])[0]}"
             + (f" ({', '.join(changed)})." if changed else ".")
@@ -610,7 +682,7 @@ def register(reg: ToolRegistrar) -> None:
             + (f": {len(changed)} feature(s) differ" if changed else ""),
             details=details,
             side_effects=side,
-            fingerprint={"pending": pending, "in_sync": in_sync, "gates": gates, "device": did},
+            fingerprint={"pending": pending, "kept": kept, "gates": gates, "device": did},
             blockers=blockers,
             blast_radius=1,
         )
@@ -639,8 +711,24 @@ def register(reg: ToolRegistrar) -> None:
                 "status": status_counts(rows),
                 "groups": rows,
             }
-            if not settled(rows):
+            bad = [
+                r
+                for r in rows
+                if "success" not in str(r.get("status", "")).lower()
+                or "rollback" in str(r.get("status", "")).lower()
+            ]
+            if bad:
+                out["outcome"] = "failed"
+                out["note"] = (
+                    f"{len(bad)} config group(s) did not deploy (Catalyst Center rolls a refused push back): "
+                    "see `error`. The intended change stays staged and fails the next deploy too until it is "
+                    "fixed or removed."
+                )
+            elif not settled(rows):
+                out["outcome"] = "running"
                 out["note"] = "Some config groups were still running; check with catc_get_wlc_deployments."
+            else:
+                out["outcome"] = "success"
             return out
 
         return await preview_or_apply(
