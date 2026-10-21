@@ -844,10 +844,10 @@ first failure; never skip a check.
    devices.
 6. Fabric site: {tool_ref("catc_create_fabric_site")} site "{building}", authentication_profile
    "{authentication}". Read back with {tool_ref("catc_get_sda_fabric")}.
-7. Border and control plane first: {tool_ref("catc_add_fabric_device")} device "{border_ip}", roles
-   ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "{border_asn.strip()}". Then each edge:
-   {tool_ref("catc_add_fabric_device")} with roles ["EDGE_NODE"]. After each,
-   {tool_ref("catc_get_sda_fabric")} shows the device with its roles.
+7. Border and control plane first: {tool_ref("catc_add_fabric_device")} device "{border_ip}", fabric_site
+   "{building}", roles ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "{border_asn.strip()}". Then each
+   edge: {tool_ref("catc_add_fabric_device")} with fabric_site "{building}" and roles ["EDGE_NODE"]. After
+   each, {tool_ref("catc_get_sda_fabric")} shows the device with its roles.
 8. Virtual network: {tool_ref("catc_create_virtual_network")} name "{vn}", fabric_sites ["{building}"].
 9. Anycast gateway: {tool_ref("catc_add_anycast_gateway")} fabric_site "{building}", virtual_network "{vn}",
    ip_pool "<pool name from step 4>". The preview names every edge that gets the SVI.
