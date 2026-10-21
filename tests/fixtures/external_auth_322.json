@@ -1,0 +1,12 @@
+{
+  "_source": "Catalyst Center 3.2.2-75131 (198.18.128.11), recorded 2026-10-21 after the ISE integration went COMPLETE (D75): GET users/external-authentication, users/external-servers?invokeSource=external (sharedSecret as masked by catc_api_call), users/external-servers/aaa-attribute, user?authSource=external, roles.",
+  "flag_off": {"response": {"external-authentication-flag": [{"enabled": false}]}},
+  "servers": {"response": {"aaa-servers": [{"accountingPort": 1813, "retries": 3, "protocol": "RADIUS", "socketTimeout": 4, "serverIp": "198.18.134.35", "sharedSecret": "********", "serverId": "6ad83e8813f2e5004f400f5c", "authenticationPort": 1812, "role": "primary"}]}},
+  "attribute_default": {"response": {"aaa-attributes": [{"attributeName": ""}]}},
+  "external_users_none": {"response": {"users": null}},
+  "roles": {"response": {"roles": [
+    {"meta": {"created": "2026-04-27 16:08:16 +0000 UTC", "lastModified": "2026-10-17 01:52:45 +0000 UTC", "createdBy": "maglev@test.com"}, "name": "SUPER-ADMIN-ROLE", "description": "SUPER-ADMIN-ROLE", "roleId": "SUPER-ADMIN", "type": "System"},
+    {"meta": {"created": "2026-04-27 16:08:16 +0000 UTC", "lastModified": "2026-10-17 01:52:45 +0000 UTC", "createdBy": "maglev@test.com"}, "name": "OBSERVER-ROLE", "description": "OBSERVER-ROLE", "roleId": "OBSERVER", "type": "System"},
+    {"meta": {"created": "2026-04-27 16:08:16 +0000 UTC", "lastModified": "2026-10-17 01:52:45 +0000 UTC", "createdBy": "maglev@test.com"}, "name": "NETWORK-ADMIN-ROLE", "description": "NETWORK-ADMIN-ROLE", "roleId": "NW-ADMIN", "type": "System"}
+  ]}}
+}
