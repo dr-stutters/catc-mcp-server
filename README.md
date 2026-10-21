@@ -314,7 +314,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (85)
+### Read (86)
 
 | Tool | What it does |
 |---|---|
@@ -328,6 +328,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_diff_template_versions` | Unified diff between two versions of a template (or a version and the uncommitted draft), with lines added and removed. |
 | `catc_export_config` | Export Catalyst Center design intent as YAML, by name and in a stable order: the site hierarchy, network settings set at each site (not inherited), credentials (type, description and username only: secrets are never exported), template projects and templates (secrets in template bodies masked), network profiles with their templates and sites, global IP pools and site reservations, SSIDs (passphrases masked), wireless profiles, tags with their dynamic rules, and compliance policies with their rules and sites. |
 | `catc_export_templates` | Export a template project, or one template, as a JSON document: content, variables, device types and every committed version with its comment, author and time. |
+| `catc_fabric_health` | SD-Access health as Catalyst Center Assurance scores it. |
 | `catc_find_host` | Where is this host plugged in: from a MAC, IP, hostname or username, each matching client Assurance saw in the window, newest first, with its switch (name, management IP) and port or AP/WLC/SSID, VLAN, SGT, site, status, health, last seen and a one-line `where`, plus a live lookup on given switches. |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
