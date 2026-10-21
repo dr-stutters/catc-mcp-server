@@ -1,5 +1,5 @@
 {
-  "core_version": "0.14.0",
+  "core_version": "0.14.3",
   "manifest": 1,
   "prefix": "catc",
   "prompts": {
@@ -684,6 +684,10 @@
       "tier": "write",
       "title": "Resolve or ignore issues"
     },
+    "catc_update_policy_server": {
+      "tier": "dangerous",
+      "title": "Update an authentication and policy server"
+    },
     "catc_update_site": {
       "tier": "write",
       "title": "Update site"
@@ -705,5 +709,5 @@
       "title": "Update template"
     }
   },
-  "version": "0.10.0"
+  "version": "0.11.0"
 }

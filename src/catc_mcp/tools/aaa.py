@@ -4,9 +4,11 @@ settings. Appliance-to-appliance only: this server never subscribes to pxGrid (A
 secrets and passwords are write-only: never echoed, masked in previews."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import asyncio
 import hashlib
 import ipaddress
 import json
+import re
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -19,6 +21,7 @@ from catc_mcp._core import (
     Plan,
     ToolRegistrar,
     UpstreamError,
+    UpstreamTimeout,
     field_changes,
     get_client,
     poll_until,
@@ -27,6 +30,7 @@ from catc_mcp._core import (
 from catc_mcp._core.formatting import MASK
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, pick, resolve_site
+from catc_mcp.tools.sites import all_sites
 
 POLICY_PATH = "/dna/intent/api/v1/authentication-policy-servers"
 STATUS_PATH = "/dna/intent/api/v1/ise-integration-status"
@@ -99,12 +103,166 @@ def integration_summary(st: Any) -> dict[str, Any] | None:
     return out
 
 
-async def integration_status(app: CatcApp) -> dict[str, Any] | None:
+async def raw_integration_status(app: CatcApp) -> Any:
     try:
-        st = await app.api.get(STATUS_PATH)
+        return await app.api.get(STATUS_PATH)
     except NotFound:
         return None
-    return integration_summary(st)
+
+
+async def integration_status(app: CatcApp) -> dict[str, Any] | None:
+    return integration_summary(await raw_integration_status(app))
+
+
+def last_step_time(st: Any) -> int:
+    """The newest stepTime (epoch ms) of a raw integration status: it moves when the integration re-runs,
+    which tells a fresh result from the one left over from before an edit."""
+    if not isinstance(st, dict):
+        return 0
+    times = [s.get("stepTime") for s in ensure_list(st.get("steps")) if isinstance(s, dict)]
+    return max((t for t in times if isinstance(t, int) and not isinstance(t, bool)), default=0)
+
+
+# What Catalyst Center's failure message names, checked in this order (resolution before the FQDN check:
+# a name the appliance can't resolve is also "the FQDN").
+FAILURE_FIELDS: list[tuple[re.Pattern[str], str, str]] = [
+    (
+        re.compile(r"resolv|unknown ?host|name or service not known|no such host|nxdomain", re.I),
+        "fqdn",
+        "Catalyst Center can't resolve the ISE FQDN: correct the name, or give the appliance a DNS "
+        "server that resolves it (appliance setting, not an API).",
+    ),
+    (
+        re.compile(r"\bFQDN\b|common name|subject alternative|host ?name", re.I),
+        "fqdn",
+        "Set fqdn to the name in ISE's admin certificate (CN or SAN; ise_list_certificates or "
+        "ise_pxgrid_status show it).",
+    ),
+    (
+        re.compile(
+            r"password|credential|user ?name|unauthori[sz]ed|authenticat\w* fail|\b401\b|\bERS\b", re.I
+        ),
+        "ise_password",
+        "Re-enter the ISE super-admin user and password (ERS must be enabled on ISE).",
+    ),
+    (re.compile(r"\bport\b", re.I), "ports", "Check the ports CatC uses to reach ISE (443, 8910)."),
+]
+TERMINAL = ("COMPLETE", "FAILED")
+
+
+def failure_field(message: str | None) -> tuple[str | None, str | None]:
+    for rx, fld, hint in FAILURE_FIELDS:
+        if message and rx.search(message):
+            return fld, hint
+    return None, None
+
+
+def next_action(server: dict[str, Any], integ: dict[str, Any] | None) -> dict[str, Any]:
+    """What to do next for one policy server (a server_row), from its state and the ISE integration
+    status: update_entry (with the field Catalyst Center's message names), accept_certificate,
+    approve_pxgrid_on_ise, wait (still running) or none."""
+    if not server.get("isIseEnabled"):
+        if server.get("state") == "FAILED":
+            return {"action": "update_entry", "field": None, "tool": "catc_update_policy_server"}
+        return {"action": "none"}
+    st = integ if integ and integ.get("server_id") in (None, server.get("id")) else None
+    nodes = ensure_list(server.get("ise_nodes"))
+    reason = next((n.get("failureReason") for n in nodes if n.get("failureReason")), None)
+    status = (st or {}).get("status") or ("FAILED" if server.get("state") == "FAILED" else None)
+    steps = ensure_list((st or {}).get("steps"))
+    message = (st or {}).get("message") or reason
+    pxgrid_step = next((s for s in steps if "pxgrid" in str(s.get("stepName", "")).lower()), None)
+    subscriber = next((n.get("subscriberName") for n in nodes if n.get("subscriberName")), None)
+    approve = {
+        "action": "approve_pxgrid_on_ise",
+        "tool": "ise_list_pxgrid_clients",
+        "subscriber": subscriber,
+        "detail": f"On ISE: ise_list_pxgrid_clients(state='pending'), then ise_approve_pxgrid_client for "
+        f"{subscriber or 'the Catalyst Center client'}; if the integration FAILED, retry it afterwards "
+        "with catc_accept_ise_certificate(retry=true).",
+    }
+    if status == "WAITING_USER_INPUT":
+        if st and st.get("certificate_to_accept"):
+            return {
+                "action": "accept_certificate",
+                "tool": "catc_accept_ise_certificate",
+                "detail": "Compare the fingerprints with ISE's certificate (ise_pxgrid_status / "
+                "ise_list_certificates) before accepting.",
+            }
+        return {"action": "wait", "detail": "The integration waits for a certificate that isn't shown yet."}
+    if status == "FAILED":
+        failed = next((s for s in steps if s.get("stepStatus") == "FAILED"), None)
+        if failed is not None and pxgrid_step is not None and failed is pxgrid_step:
+            return approve | {"why": failed.get("errorMessage") or message}
+        fld, hint = failure_field(message)
+        out: dict[str, Any] = {"action": "update_entry", "field": fld, "tool": "catc_update_policy_server"}
+        if hint:
+            out["detail"] = hint
+        if message:
+            out["why"] = message
+        return out
+    if status == "COMPLETE":
+        if any(n.get("trustState") not in (None, "TRUSTED") for n in nodes):
+            untrusted = [n.get("ipAddress") for n in nodes if n.get("trustState") not in (None, "TRUSTED")]
+            return {"action": "none", "detail": f"Integration COMPLETE; nodes not TRUSTED: {untrusted}."}
+        return {"action": "none"}
+    if pxgrid_step and pxgrid_step.get("stepStatus") not in ("COMPLETE", "NOT_STARTED", "NOT_APPLICABLE"):
+        return approve | {"action": "approve_pxgrid_on_ise"}
+    if status is None:
+        return {"action": "none"} if server.get("state") == "ACTIVE" else {"action": "wait"}
+    return {"action": "wait", "detail": f"The integration is {status}; check again shortly."}
+
+
+def _server_ips(raw: dict[str, Any]) -> set[str]:
+    ips = {str(raw.get("ipAddress"))} if raw.get("ipAddress") else set()
+    return ips | {
+        str(d.get("ipAddress"))
+        for d in ensure_list(raw.get("ciscoIseDtos"))
+        if isinstance(d, dict) and d.get("ipAddress")
+    }
+
+
+async def sites_using(app: CatcApp, servers: list[dict[str, Any]]) -> dict[str, Any]:
+    """{server id: [{site, roles}]} for the sites whose own (not inherited) network or client AAA names
+    one of the server's addresses (primary, secondary or PAN). Child sites inherit unless they set it."""
+    sites, complete = await all_sites(app)
+    sites = [s for s in sites if s.get("id")]
+    sem = asyncio.Semaphore(8)
+
+    async def local_aaa(site: dict[str, Any]) -> Any:
+        async with sem:
+            path = AAA_PATH.format(id=safe_id(str(site["id"]), "site id"))
+            return await app.get_response(path, {"_inherited": "false"})
+
+    results = await asyncio.gather(*(local_aaa(s) for s in sites), return_exceptions=True)
+    used: dict[str, list[dict[str, Any]]] = {str(r.get("instanceUuid") or r.get("id")): [] for r in servers}
+    unreadable = 0
+    for s, got in zip(sites, results, strict=True):
+        if isinstance(got, BaseException):
+            if not isinstance(got, UpstreamError):
+                raise got
+            unreadable += 1
+            continue
+        if not isinstance(got, dict):
+            continue
+        for r in servers:
+            ips = _server_ips(r)
+            roles = [
+                role
+                for role, key in (("network", "aaaNetwork"), ("client", "aaaClient"))
+                if isinstance(got.get(key), dict)
+                and ips & {str(got[key].get(f)) for f in ("primaryServerIp", "secondaryServerIp", "pan")}
+            ]
+            if roles:
+                used[str(r.get("instanceUuid") or r.get("id"))].append(
+                    {"site": s.get("nameHierarchy") or s.get("name"), "roles": roles}
+                )
+    out: dict[str, Any] = {"by_server": used, "sites_checked": len(sites)}
+    if unreadable:
+        out["sites_unreadable"] = unreadable
+    if not complete:
+        out["note"] = "The site list was truncated; some sites were not checked."
+    return out
 
 
 def _ip(name: str, v: str | None) -> str | None:
@@ -162,18 +320,45 @@ class AaaServer(BaseModel):
 
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="List authentication and policy servers")
-    async def catc_get_policy_servers(ctx: Context) -> dict[str, Any]:
+    async def catc_get_policy_servers(
+        ctx: Context,
+        include_sites: Annotated[
+            bool,
+            Field(
+                description="Also list the sites whose own network or client AAA points at each server "
+                "(reads every site's AAA settings; slower on large hierarchies)"
+            ),
+        ] = False,
+    ) -> dict[str, Any]:
         """Authentication and policy servers known to Catalyst Center (System > Settings >
         Authentication and Policy Servers): plain RADIUS/TACACS servers and integrated Cisco ISE, with
         protocol, ports, state, pxGrid, and per ISE node its role (PRIMARY/SECONDARY/PXGRID), FQDN and
         certificate trust state; plus the ISE integration status (each step, and the certificate
-        waiting to be accepted, if any). Shared secrets and passwords are never returned. Site AAA
-        settings point at these servers (catc_update_site_aaa_settings)."""
+        waiting to be accepted, if any). Each server carries `next_action`: update_entry (with the
+        field Catalyst Center's failure message names; fix it with catc_update_policy_server),
+        accept_certificate (catc_accept_ise_certificate), approve_pxgrid_on_ise (the Catalyst Center
+        pxGrid client waits on ISE), wait, or none. With include_sites=true each server also lists the
+        sites that set it as their network or client AAA (child sites inherit). Shared secrets and
+        passwords are never returned. Site AAA settings point at these servers
+        (catc_update_site_aaa_settings)."""
         app: CatcApp = get_client(ctx)
-        servers = [server_row(r) for r in await policy_servers(app)]
+        raw = await policy_servers(app)
+        servers = [server_row(r) for r in raw]
         out: dict[str, Any] = {"servers": servers, "count": len(servers)}
+        integ = None
         if any(s.get("isIseEnabled") for s in servers):
-            out["ise_integration"] = await integration_status(app)
+            integ = await integration_status(app)
+            out["ise_integration"] = integ
+        for srv in servers:
+            srv["next_action"] = next_action(srv, integ)
+        if include_sites and raw:
+            used = await sites_using(app, raw)
+            for srv in servers:
+                srv["sites"] = used["by_server"].get(str(srv.get("id")), [])
+            out["sites_checked"] = used["sites_checked"]
+            for k in ("sites_unreadable", "note"):
+                if k in used:
+                    out[f"sites_{k}" if k == "note" else k] = used[k]
         return out
 
     @reg.dangerous(title="Add Cisco ISE to Catalyst Center")
@@ -355,6 +540,277 @@ def register(reg: ToolRegistrar) -> None:
             confirm=confirm,
             plan=plan,
             apply=apply,
+        )
+
+    @reg.dangerous(title="Update an authentication and policy server")
+    async def catc_update_policy_server(
+        ctx: Context,
+        server: Annotated[str, Field(description="Server IP address or id (catc_get_policy_servers)")],
+        fqdn: Annotated[
+            str | None,
+            Field(
+                min_length=3,
+                description="ISE FQDN; must match ISE's admin certificate and resolve from the appliance",
+            ),
+        ] = None,
+        ise_password: Annotated[
+            SecretStr | None,
+            Field(
+                description="The ISE user's password: required for every edit of an ISE entry (Catalyst "
+                "Center never returns it); never echoed"
+            ),
+        ] = None,
+        ise_username: Annotated[
+            str | None, Field(min_length=1, description="ISE super-admin user (default: the stored one)")
+        ] = None,
+        protocol: Annotated[
+            Literal["RADIUS", "TACACS", "RADIUS_TACACS"] | None,
+            Field(description="RADIUS or TACACS can only be widened to RADIUS_TACACS"),
+        ] = None,
+        authentication_port: Annotated[int | None, Field(ge=1, le=65535, description="RADIUS auth")] = None,
+        accounting_port: Annotated[int | None, Field(ge=1, le=65535, description="RADIUS accounting")] = None,
+        tacacs_port: Annotated[int | None, Field(ge=1, le=65535, description="TACACS port")] = None,
+        pxgrid: Annotated[bool | None, Field(description="Integrate pxGrid (ISE entries)")] = None,
+        use_catc_cert_for_pxgrid: Annotated[
+            bool | None,
+            Field(
+                description="Catalyst Center presents its own certificate to pxGrid (ISE must trust its CA)"
+            ),
+        ] = None,
+        retries: Annotated[int | None, Field(ge=1, le=3, description="Device AAA retries")] = None,
+        timeout_seconds: Annotated[int | None, Field(ge=2, le=20, description="Device AAA timeout")] = None,
+        wait: Annotated[
+            bool,
+            Field(description="Wait for the re-run ISE integration to finish or to ask for the certificate"),
+        ] = True,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Edit an authentication and policy server (System > Settings > Authentication and Policy
+        Servers > Edit): the ISE FQDN and login, ports, protocol, pxGrid, retries and timeout. This is
+        the fix Catalyst Center names when the ISE integration FAILED on a renamed node or a renewed
+        certificate ('update this Cisco ISE server entry'). The whole ISE entry is resent, so an ISE
+        edit always needs ise_password (masked, never returned); the RADIUS/TACACS shared secret and
+        the IP address can't be changed here (no API field: delete and re-add the server). Only what
+        you pass changes. For ISE the integration re-runs: the tool waits for it and, when it stops
+        for ISE's certificate, returns the chain and next_action accept_certificate
+        (catc_accept_ise_certificate after comparing fingerprints). Dangerous tier: it resets trust
+        and the pxGrid client. Preview-first."""
+        app: CatcApp = get_client(ctx)
+        ref = server.strip()
+        rows = await policy_servers(app)
+        match = [r for r in rows if ref in (r.get("ipAddress"), r.get("instanceUuid"), r.get("id"))]
+        if not match:
+            raise NotFound(f"No authentication and policy server {ref!r}; see catc_get_policy_servers.")
+        if len(match) > 1:
+            raise InvalidRequest(f"{ref!r} matches {len(match)} servers; give the id.")
+        cur = match[0]
+        row = server_row(cur)
+        sid = safe_id(str(row["id"]), "server id")
+        is_ise = bool(cur.get("isIseEnabled") or cur.get("iseEnabled"))
+        ise_only = {
+            "fqdn": fqdn,
+            "ise_password": ise_password,
+            "ise_username": ise_username,
+            "pxgrid": pxgrid,
+            "use_catc_cert_for_pxgrid": use_catc_cert_for_pxgrid,
+        }
+        if not is_ise and (given := [k for k, v in ise_only.items() if v is not None]):
+            raise InvalidRequest(f"{', '.join(given)} only apply to an integrated ISE entry.")
+
+        old_proto = str(cur.get("protocol") or "RADIUS")
+        proto = protocol or old_proto
+        blockers: list[str] = []
+        if proto != old_proto and proto != "RADIUS_TACACS":
+            blockers.append(
+                f"Catalyst Center only widens a {old_proto} server to RADIUS_TACACS; to use {proto} "
+                "alone, delete and re-add the server."
+            )
+
+        def num(v: Any, default: int) -> int:
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return default
+
+        body: dict[str, Any] = {
+            "protocol": proto,
+            "retries": str(retries if retries is not None else num(cur.get("retries"), 3)),
+            "timeoutSeconds": str(
+                timeout_seconds if timeout_seconds is not None else num(cur.get("timeoutSeconds"), 4)
+            ),
+        }
+        if "RADIUS" in proto:
+            body["authenticationPort"] = authentication_port or num(cur.get("authenticationPort"), 1812)
+            body["accountingPort"] = accounting_port or num(cur.get("accountingPort"), 1813)
+        if "TACACS" in proto:
+            body["port"] = tacacs_port or num(cur.get("port"), 49)
+        node: dict[str, Any] = {}
+        if is_ise:
+            nodes = [d for d in ensure_list(cur.get("ciscoIseDtos")) if isinstance(d, dict)]
+            node = next(
+                (d for d in nodes if str(d.get("role", "")).upper() == "PRIMARY"), nodes[0] if nodes else {}
+            )
+            body["pxgridEnabled"] = bool(cur.get("pxgridEnabled")) if pxgrid is None else pxgrid
+            body["useDnacCertForPxgrid"] = (
+                bool(cur.get("useDnacCertForPxgrid"))
+                if use_catc_cert_for_pxgrid is None
+                else use_catc_cert_for_pxgrid
+            )
+            user = ise_username or node.get("userName")
+            if not user:
+                blockers.append("The entry has no stored ISE user; give ise_username.")
+            body["ciscoIseDtos"] = [{"fqdn": (fqdn or str(node.get("fqdn") or "")).strip(), "userName": user}]
+            if ext := [d for d in ensure_list(cur.get("externalCiscoIseIpAddrDtos")) if d]:
+                body["externalCiscoIseIpAddrDtos"] = ext
+            if ise_password is None:
+                blockers.append(
+                    "An ISE entry is resent whole with its password: give ise_password (Catalyst Center "
+                    "never returns it)."
+                )
+
+        def view(src: dict[str, Any], dto: dict[str, Any]) -> dict[str, Any]:
+            v = {k: src.get(k) for k in ("protocol", "authenticationPort", "accountingPort", "port")}
+            v |= {"retries": num(src.get("retries"), 0), "timeoutSeconds": num(src.get("timeoutSeconds"), 0)}
+            if is_ise:
+                v |= {
+                    "pxgridEnabled": bool(src.get("pxgridEnabled")),
+                    "useDnacCertForPxgrid": bool(src.get("useDnacCertForPxgrid")),
+                    "fqdn": dto.get("fqdn"),
+                    "userName": dto.get("userName"),
+                }
+            return {k: x for k, x in v.items() if x is not None}
+
+        new_view = view(body, (body.get("ciscoIseDtos") or [{}])[0])
+        changes = field_changes(view(cur, node), new_view)
+        if not changes and ise_password is None:
+            blockers.append("Nothing to change: the server already has these settings.")
+
+        effects: list[str] = []
+        if is_ise:
+            integ = await integration_status(app)
+            if integ and integ.get("status") not in (*TERMINAL, "WAITING_USER_INPUT", None):
+                blockers.append(
+                    f"The ISE integration is running ({integ.get('status')}); wait until it finishes."
+                )
+            effects.append(
+                "Catalyst Center re-runs the ISE integration (connect, trust, discover nodes, pxGrid); "
+                "ISE-dependent provisioning waits until it is COMPLETE."
+            )
+            if "fqdn" in changes or row.get("state") == "FAILED":
+                effects.append(
+                    f"It connects to ISE as {body['ciscoIseDtos'][0]['fqdn']}: the name must resolve from "
+                    "the appliance and match ISE's admin certificate (CN or SAN). Trust in ISE's "
+                    "certificate is established again, so the integration stops for the certificate: "
+                    "compare its fingerprints (ise_pxgrid_status / ise_list_certificates), then "
+                    "catc_accept_ise_certificate."
+                )
+            if body["pxgridEnabled"]:
+                effects.append(
+                    f"pxGrid: Catalyst Center (re)registers its pxGrid client on ISE "
+                    f"({node.get('subscriberName') or 'catalyst-center...'}); if ISE doesn't auto-approve "
+                    "it, approve it with ise_approve_pxgrid_client."
+                )
+            elif "pxgridEnabled" in changes:
+                effects.append(
+                    "pxGrid off: Catalyst Center drops its pxGrid subscription; group-based policy and "
+                    "endpoint context from ISE stop updating."
+                )
+            if changes.get("useDnacCertForPxgrid", {}).get("to"):
+                effects.append(
+                    "Catalyst Center presents its own certificate to pxGrid: ISE must trust its issuing CA."
+                )
+            if not changes:
+                effects.append(
+                    "No field changes: this re-enters the ISE password and re-runs the integration."
+                )
+        if {"authenticationPort", "accountingPort", "port", "retries", "timeoutSeconds", "protocol"} & set(
+            changes
+        ):
+            effects.append("Devices get new ports, retries or timeout when they are re-provisioned.")
+        effects.append(
+            "The RADIUS/TACACS shared secret and the server IP stay as they are; AAA config already on "
+            "devices is not touched."
+        )
+
+        shown = json.loads(json.dumps(body))
+        if is_ise:
+            shown["ciscoIseDtos"][0]["password"] = MASK
+        plan = Plan(
+            f"Update {'ISE' if is_ise else 'AAA'} server {row.get('ipAddress')}"
+            + (f" ({', '.join(changes)})" if changes else ""),
+            details={
+                "method": "PUT",
+                "path": f"{POLICY_PATH}/{sid}",
+                "body": shown,
+                "changes": changes,
+                "current": row,
+                "effects": effects,
+            },
+            fingerprint={"server": row},
+            blockers=blockers,
+        )
+        secret = {"password": ise_password.get_secret_value()} if ise_password is not None else {}
+        args = {
+            "server": ref,
+            "fqdn": fqdn,
+            "ise_username": ise_username,
+            "protocol": protocol,
+            "ports": [authentication_port, accounting_port, tacacs_port],
+            "pxgrid": pxgrid,
+            "use_catc_cert_for_pxgrid": use_catc_cert_for_pxgrid,
+            "retries": retries,
+            "timeout_seconds": timeout_seconds,
+            "wait": wait,
+            "secrets": _digest(secret),
+        }
+
+        async def apply() -> Any:
+            before = last_step_time(await raw_integration_status(app)) if is_ise else 0
+            sent = json.loads(json.dumps(body))
+            if is_ise:
+                sent["ciscoIseDtos"][0]["password"] = secret["password"]
+            job = await app.run_job("PUT", f"{POLICY_PATH}/{sid}", sent, ctx=ctx, what="update policy server")
+            out: dict[str, Any] = {
+                "server": row.get("ipAddress"),
+                "task": job.get("status"),
+                "changed": changes,
+            }
+            st: dict[str, Any] | None = None
+            if is_ise and wait:
+                seen: dict[str, Any] = {}
+
+                async def fresh() -> dict[str, Any] | None:
+                    raw = await raw_integration_status(app)
+                    seen["new"] = last_step_time(raw) > before
+                    summary = integration_summary(raw)
+                    seen["st"] = summary
+                    return summary
+
+                try:
+                    st = await poll_until(
+                        fresh,
+                        done=lambda s: bool(seen.get("new")) and _settled_or_waiting(s),
+                        describe=lambda s: str((s or {}).get("status")),
+                        timeout=app.settings.mcp_task_timeout,
+                        ctx=ctx,
+                        what="ISE integration",
+                        interval=3.0,
+                    )
+                except UpstreamTimeout:
+                    st = seen.get("st")
+                    out["note"] = "The integration is still running; check catc_get_policy_servers."
+                out["integration"] = st
+            elif is_ise:
+                st = await integration_status(app)
+            after = [server_row(r) for r in await policy_servers(app)]
+            now = next((r for r in after if r.get("id") == row["id"]), None)
+            if now is not None:
+                out["now"] = now
+                out["next_action"] = next_action(now, st)
+            return out
+
+        return await preview_or_apply(
+            ctx, tool="catc_update_policy_server", args=args, confirm=confirm, plan=plan, apply=apply
         )
 
     @reg.dangerous(title="Remove an authentication and policy server")

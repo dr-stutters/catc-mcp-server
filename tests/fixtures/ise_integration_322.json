@@ -1,0 +1,267 @@
+{
+  "_source": "Catalyst Center 3.2.2-75131 (198.18.128.11), recorded 2026-10-21 around the D75 live repair: GET authentication-policy-servers and GET ise-integration-status before (FAILED on the FQDN/CN mismatch) and after (COMPLETE) the FQDN edit and certificate accept, unchanged (the appliance returns secrets as empty strings). status_waiting is the status right after the PUT as the tool returned it, rebuilt in the raw shape.",
+  "servers_failed": {
+    "response": [
+      {
+        "ipAddress": "198.18.134.35",
+        "additionalIpAddresses": [],
+        "sharedSecret": "",
+        "protocol": "RADIUS_TACACS",
+        "role": "primary",
+        "port": 49,
+        "authenticationPort": 1812,
+        "accountingPort": 1813,
+        "retries": 3,
+        "timeoutSeconds": 4,
+        "isIseEnabled": true,
+        "instanceUuid": "b35d4a18-cf83-4a88-89c2-f6a95a00dc48",
+        "state": "FAILED",
+        "ciscoIseDtos": [
+          {
+            "subscriberName": "catalyst-center1792201681",
+            "description": "mcp-test-catc ISE integration",
+            "password": "",
+            "userName": "admin",
+            "fqdn": "ise.demo.dcloud.cisco.com",
+            "ipAddress": "198.18.134.35",
+            "trustState": "UNTRUSTED",
+            "instanceUuid": "66cc65bb-7f50-409e-80c9-7881759866d3",
+            "sshkey": null,
+            "type": "ISE",
+            "failureReason": "FQDN ise.demo.dcloud.cisco.com doesn't match the common name contained in the system certificate. You must update this Cisco ISE server entry in order to clear the invalid FQDN data, then re-enter the correct information.",
+            "role": "PRIMARY"
+          }
+        ],
+        "externalCiscoIseIpAddrDtos": [],
+        "encryptionScheme": "",
+        "messageKey": "",
+        "encryptionKey": "",
+        "useDnacCertForPxgrid": false,
+        "iseEnabled": true,
+        "pxgridEnabled": true,
+        "multiDnacEnabled": false
+      }
+    ],
+    "version": "1.0"
+  },
+  "status_failed": {
+    "aaaServerSettingId": "b35d4a18-cf83-4a88-89c2-f6a95a00dc48",
+    "overallStatus": "FAILED",
+    "overallErrorMessage": "FQDN ise.demo.dcloud.cisco.com doesn't match the common name contained in the system certificate. You must update this Cisco ISE server entry in order to clear the invalid FQDN data, then re-enter the correct information.",
+    "steps": [
+      {
+        "stepId": "1",
+        "stepOrder": 1,
+        "stepName": "Initiating connection...",
+        "stepDescription": "Connecting to Cisco ISE and validating credentials",
+        "stepStatus": "FAILED",
+        "errorMessage": "FQDN ise.demo.dcloud.cisco.com doesn't match the common name contained in the system certificate. You must update this Cisco ISE server entry in order to clear the invalid FQDN data, then re-enter the correct information.",
+        "certAcceptedByUser": false,
+        "stepTime": 1792201683224
+      },
+      {
+        "stepId": "3",
+        "stepOrder": 3,
+        "stepName": "Discovering nodes...",
+        "stepDescription": "Discovering Cisco ISE primary and secondary admin nodes and pxGrid nodes",
+        "stepStatus": "NOT_STARTED",
+        "certAcceptedByUser": false,
+        "stepTime": 1792201682233
+      },
+      {
+        "stepId": "4",
+        "stepOrder": 4,
+        "stepName": "Connecting to pxGrid...",
+        "stepDescription": "Loading and validating pxGrid certificates, subscribing to pxGrid topics",
+        "stepStatus": "NOT_STARTED",
+        "certAcceptedByUser": false,
+        "stepTime": 1792201682233
+      },
+      {
+        "stepId": "2",
+        "stepOrder": 2,
+        "stepName": "Establishing trust...",
+        "stepDescription": "Reading, validating, and storing trusted certificates",
+        "stepStatus": "NOT_STARTED",
+        "certAcceptedByUser": false,
+        "stepTime": 1792201682233
+      },
+      {
+        "stepId": "5",
+        "stepOrder": 5,
+        "stepName": "Establishing Multiple Cisco Catalyst Center environment...",
+        "stepDescription": "Joining Multiple Cisco Catalyst Center Environment",
+        "stepStatus": "NOT_APPLICABLE",
+        "certAcceptedByUser": false,
+        "stepTime": 1792201682233
+      }
+    ]
+  },
+  "servers_complete": {
+    "response": [
+      {
+        "ipAddress": "198.18.134.35",
+        "additionalIpAddresses": [],
+        "sharedSecret": "",
+        "protocol": "RADIUS_TACACS",
+        "role": "primary",
+        "port": 49,
+        "authenticationPort": 1812,
+        "accountingPort": 1813,
+        "retries": 3,
+        "timeoutSeconds": 4,
+        "isIseEnabled": true,
+        "instanceUuid": "b35d4a18-cf83-4a88-89c2-f6a95a00dc48",
+        "rbacUuid": "6ad83e8813f2e5004f400f5d",
+        "state": "ACTIVE",
+        "ciscoIseDtos": [
+          {
+            "subscriberName": "pxgrid_client_1792556221",
+            "description": "",
+            "password": "",
+            "userName": "admin",
+            "fqdn": "ise.mitchcloud.lab",
+            "ipAddress": "198.18.134.35",
+            "trustState": "TRUSTED",
+            "instanceUuid": "058addab-6b14-fd67-b0ae-e81d09ece459",
+            "sshkey": null,
+            "type": "ISE",
+            "failureReason": "",
+            "role": "PXGRID"
+          },
+          {
+            "subscriberName": "pxgrid_client_1792556221",
+            "description": "mcp-test-catc ISE integration",
+            "password": "",
+            "userName": "admin",
+            "fqdn": "ise.mitchcloud.lab",
+            "ipAddress": "198.18.134.35",
+            "trustState": "TRUSTED",
+            "instanceUuid": "66cc65bb-7f50-409e-80c9-7881759866d3",
+            "sshkey": null,
+            "type": "ISE",
+            "failureReason": "",
+            "role": "PRIMARY"
+          }
+        ],
+        "externalCiscoIseIpAddrDtos": [],
+        "encryptionScheme": "",
+        "messageKey": "",
+        "encryptionKey": "",
+        "useDnacCertForPxgrid": false,
+        "iseEnabled": true,
+        "pxgridEnabled": true,
+        "multiDnacEnabled": false
+      }
+    ],
+    "version": "1.0"
+  },
+  "status_complete": {
+    "aaaServerSettingId": "b35d4a18-cf83-4a88-89c2-f6a95a00dc48",
+    "overallStatus": "COMPLETE",
+    "overallErrorMessage": "",
+    "steps": [
+      {
+        "stepId": "5",
+        "stepOrder": 5,
+        "stepName": "Establishing Multiple Cisco Catalyst Center environment...",
+        "stepDescription": "Joining Multiple Cisco Catalyst Center Environment",
+        "stepStatus": "NOT_APPLICABLE",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556221315
+      },
+      {
+        "stepId": "4",
+        "stepOrder": 4,
+        "stepName": "Connecting to pxGrid...",
+        "stepDescription": "Loading and validating pxGrid certificates, subscribing to pxGrid topics",
+        "stepStatus": "COMPLETE",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556677633
+      },
+      {
+        "stepId": "3",
+        "stepOrder": 3,
+        "stepName": "Discovering nodes...",
+        "stepDescription": "Discovering Cisco ISE primary and secondary admin nodes and pxGrid nodes",
+        "stepStatus": "COMPLETE",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556663418
+      },
+      {
+        "stepId": "2",
+        "stepOrder": 2,
+        "stepName": "Establishing trust...",
+        "stepDescription": "Reading, validating, and storing trusted certificates",
+        "stepStatus": "COMPLETE",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556662707
+      },
+      {
+        "stepId": "1",
+        "stepOrder": 1,
+        "stepName": "Initiating connection...",
+        "stepDescription": "Connecting to Cisco ISE and validating credentials",
+        "stepStatus": "COMPLETE",
+        "certAcceptedByUser": true,
+        "stepTime": 1792556660042,
+        "errorMessage": "",
+        "certificate": "{\"certificateChain\":[{\"subjectDn\":\"CN=ise.mitchcloud.lab\",\"issuerDn\":\"CN=ise.mitchcloud.lab\",\"serialNumber\":\"39E8B70DADEF8ED915A0FE2E\",\"issueDate\":\"Sat Oct 17 00:47:59 GMT 2026\",\"expiryDate\":\"Mon Oct 16 00:47:59 GMT 2028\",\"fingerPrints\":{\"SHA-1\":\"01B37DD8104BF6FB14DB08008FD538D6C3A28ACC\",\"SHA-256\":\"2BD733C96AEB24939DD568C6453AEA44933C438F6B9263F1E5D9B521F4B87BF3\"},\"signatureAlgorithmName\":\"SHA384withRSA\"}]}"
+      }
+    ]
+  },
+  "status_waiting": {
+    "aaaServerSettingId": "b35d4a18-cf83-4a88-89c2-f6a95a00dc48",
+    "overallStatus": "WAITING_USER_INPUT",
+    "overallErrorMessage": "This is the first time Cisco Catalyst Center has seen this certificate from Cisco ISE, and it is not yet trusted. Do you want to accept this certificate and establish trust?",
+    "steps": [
+      {
+        "stepId": "1",
+        "stepOrder": 1,
+        "stepName": "Initiating connection...",
+        "stepDescription": "Connecting to Cisco ISE and validating credentials",
+        "stepStatus": "WAITING_USER_INPUT",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556230000,
+        "errorMessage": "This is the first time Cisco Catalyst Center has seen this certificate from Cisco ISE, and it is not yet trusted. Do you want to accept this certificate and establish trust?",
+        "certificate": "{\"certificateChain\":[{\"subjectDn\":\"CN=ise.mitchcloud.lab\",\"issuerDn\":\"CN=ise.mitchcloud.lab\",\"serialNumber\":\"39E8B70DADEF8ED915A0FE2E\",\"issueDate\":\"Sat Oct 17 00:47:59 GMT 2026\",\"expiryDate\":\"Mon Oct 16 00:47:59 GMT 2028\",\"fingerPrints\":{\"SHA-1\":\"01B37DD8104BF6FB14DB08008FD538D6C3A28ACC\",\"SHA-256\":\"2BD733C96AEB24939DD568C6453AEA44933C438F6B9263F1E5D9B521F4B87BF3\"},\"signatureAlgorithmName\":\"SHA384withRSA\"}]}"
+      },
+      {
+        "stepId": "2",
+        "stepOrder": 2,
+        "stepName": "Establishing trust...",
+        "stepDescription": "Reading, validating, and storing trusted certificates",
+        "stepStatus": "NOT_STARTED",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556221315
+      },
+      {
+        "stepId": "3",
+        "stepOrder": 3,
+        "stepName": "Discovering nodes...",
+        "stepDescription": "Discovering Cisco ISE primary and secondary admin nodes and pxGrid nodes",
+        "stepStatus": "NOT_STARTED",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556221315
+      },
+      {
+        "stepId": "4",
+        "stepOrder": 4,
+        "stepName": "Connecting to pxGrid...",
+        "stepDescription": "Loading and validating pxGrid certificates, subscribing to pxGrid topics",
+        "stepStatus": "NOT_STARTED",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556221315
+      },
+      {
+        "stepId": "5",
+        "stepOrder": 5,
+        "stepName": "Establishing Multiple Cisco Catalyst Center environment...",
+        "stepDescription": "Joining Multiple Cisco Catalyst Center Environment",
+        "stepStatus": "NOT_APPLICABLE",
+        "certAcceptedByUser": false,
+        "stepTime": 1792556221315
+      }
+    ]
+  }
+}

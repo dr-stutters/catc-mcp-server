@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Added
+- **Edit an authentication and policy server (D75, #130).** `catc_update_policy_server(server, fqdn?,
+  ise_password?, ise_username?, protocol?, authentication_port?, accounting_port?, tacacs_port?, pxgrid?,
+  use_catc_cert_for_pxgrid?, retries?, timeout_seconds?, wait=true)` (dangerous tier: it resets trust and the
+  pxGrid client) over `PUT authentication-policy-servers/{id}`. Only what you pass changes; the ISE entry is
+  resent whole, so an ISE edit needs the ISE password (masked in previews and results, bound to the confirm
+  token by a digest); the RADIUS/TACACS shared secret and the server IP have no API field and stay as they
+  are. A protocol can only be widened to RADIUS_TACACS (as the API documents). The preview lists the field
+  changes and the consequences (re-run integration, certificate to accept again on an FQDN change, pxGrid
+  client to approve or pxGrid off). After the PUT the tool waits for the integration to re-run (a status left
+  over from before the edit is ignored by its step times) and returns the certificate chain when Catalyst
+  Center asks for it, with `next_action: accept_certificate`.
+  Live on 3.2.2: the lab's FAILED entry repaired (FQDN `ise.demo.dcloud.cisco.com` → `ise.mitchcloud.lab`, ISE's
+  admin certificate accepted after comparing fingerprints, pxGrid client auto-approved on ISE): COMPLETE,
+  both nodes TRUSTED. The four ISE integration writes need SUPER-ADMIN-ROLE: 3.2.2 refuses them (403) to
+  custom roles even with every System permission at Write (docs/least-privilege.md).
+- `catc_get_policy_servers` gives every server a `next_action`: `update_entry` with the field Catalyst
+  Center's failure message names (`fqdn` for a CN mismatch or a name the appliance can't resolve,
+  `ise_password` for a login/ERS failure), `accept_certificate`, `approve_pxgrid_on_ise` (the pxGrid step
+  waits or failed: names the Catalyst Center subscriber to approve on ISE), `wait` or `none`.
+  `include_sites=true` adds the sites whose own network or client AAA points at each server (reads every
+  site's AAA settings; off by default).
+
+### Changed
+- The `catc_onboard_switch_with_nac` prompt's first step follows `next_action` (an entry that FAILED is
+  fixed with `catc_update_policy_server` instead of stopping), and `check`'s ISE warning names the update
+  tool.
+- The prompt also carries the lab window's provisioning findings (3.2.2): Catalyst Center refuses a switch that already
+  has AAA config (it names the lines; remove them with approval, resync, provision, restore what must stay), an
+  existing ISE NAD with the switch's IP is reused, and a discovery that finds nothing may be a stale ARP entry on
+  the appliance or a TACACS+ VTY login that rejects the CLI user.
+
 ## 0.11.0 (2026-10-18)
 
 Wireless feature models on a Catalyst 9800 (Wave 6 D70 and D71, proven live on two 9800-CLs in CML against Catalyst Center 3.2.2): `catc_get_wlc_config` reads the intended and deployed per-device models and diffs them; `catc_set_wlan_security`, `catc_set_wlan_vlan`, `catc_set_rf_profile` stage changes and `catc_deploy_wlc_config` pushes them with a preview. Also the core v0.14.3 bundle (secret masking in raw `catc_api_call` previews, HMAC-keyed confirm tokens) and a WLC provisioning fix. Wave 5's D46/D42/D41 and Wave 6's other items are not in this release.
