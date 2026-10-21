@@ -26,6 +26,7 @@ from catc_mcp.tools import (
     external_auth,
     inventory,
     ipam,
+    network_services,
     ops_writes,
     platform,
     pnp,
@@ -88,6 +89,8 @@ Workflows:
 - Clients: catc_list_clients (by switch/WLC/AP, site, SSID, VLAN), then catc_client_360 for one.
 - Health: catc_get_network_health -> catc_list_device_health (health='POOR'); software per device:
   catc_list_devices or catc_list_device_images.
+- "Is it the network or ISE/DHCP/DNS?": catc_network_services_health(service='aaa'|'dhcp'|'dns'|'all', site)
+  (per-server success %, latency, EAP/MAB split, the failing NADs, a verdict line; Assurance lags by minutes).
 - Over time ("is this site getting worse?", "what keeps breaking?"): catc_site_health_report, or
   catc_health_trend (dips), catc_top_problems, catc_issue_recurrence, catc_ai_insights.
 Asynchronous operations return a task id; check it with catc_get_task.
@@ -111,6 +114,7 @@ REGISTER = [
     inventory.register,
     assurance.register,
     assurance_analytics.register,
+    network_services.register,
     smart.register,
     topology.register,
     compliance.register,

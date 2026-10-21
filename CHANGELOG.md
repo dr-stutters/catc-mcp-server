@@ -45,6 +45,14 @@
   and external authentication was switched off again. Findings in the tools' text: logins go to ISE first (a local
   account only works while ISE accepts it with a role), and a custom role in the reply is refused with 400
   'Invalid user profile' (built-in roles only); `catc_test_login` now returns Catalyst Center's own failure text.
+- **Network services health (D68, #115).** `catc_network_services_health(service='aaa'|'dhcp'|'dns'|'all', site?,
+  hours=24, server?, device?, trend=true)` (read) over the data API's `aaaServices` / `dhcpServices` /
+  `dnsServices`: per server the transactions, successful/failed, success %, average latency weighted by
+  transactions (AAA: EAP vs MAB; DHCP: discover-offer and request-ack), the devices (NADs) behind it, the top
+  failing devices, the trend (`trendAnalytics`, empty buckets dropped) and one verdict line per server ("ISE
+  198.18.134.35 answered 97.2% of 212 AAA requests, average latency 117 ms; 6 MAB failures on sw1"), named ISE/AAA
+  from the policy servers. An empty window says why (telemetry from managed devices, minutes of lag); a service
+  or trend that fails is reported in its section instead of failing the call.
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt's first step follows `next_action` (an entry that FAILED is
