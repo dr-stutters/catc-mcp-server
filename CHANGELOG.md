@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+- The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
+  `ise_audit_nads(expected=<catc_list_devices(site) rows>, check_stale=false)` (ise I67) and its
+  `coverage.verdict`. Devices match NADs by IP, so a NAD Catalyst Center reused under another name
+  (`nad_name_differs`) is fine; missing_nad, wrong_ndg, ip_mismatch and aaa_elsewhere are red, each with its
+  fix offered as a preview only.
+
 ## 0.12.0 (2026-10-21)
 
 Catalyst Center ↔ ISE (Wave 6 part D, proven live on Catalyst Center 3.2.2 with ISE 3.5 and the CML `ise-access` lab): `catc_update_policy_server` repairs a FAILED ISE integration in place and `catc_get_policy_servers` names the next step (`next_action`); Catalyst Center admin logins through ISE (`catc_get_external_authentication`, `catc_set_external_authentication`, `catc_test_login`, prompt `catc_admin_access_via_ise`); `catc_network_services_health` (AAA/DHCP/DNS as Assurance measures them); `catc_find_host` and `catc_list_clients(user=)`; prompt `catc_client_troubleshoot`; the NAC onboarding prompt follows `next_action` and handles brownfield AAA. The ISE integration writes and external authentication need a SUPER-ADMIN account (docs/least-privilege.md). Wave 6's other items and part E (SD-Access) are not in this release.

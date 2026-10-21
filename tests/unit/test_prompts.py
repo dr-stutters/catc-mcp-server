@@ -179,8 +179,17 @@ async def test_nac_prompt_renders_with_ise_tools() -> None:
         "ise_why_auth_failed",
         "ise_endpoint_360",
         "catc_client_360",
+        "catc_list_devices",
+        "ise_audit_nads",
+        "ise_update_nad",
     ):
         assert f"`{tool}`" in text, tool
+    # D9 coverage check: the site's inventory as `expected`, stale NADs off, red findings named.
+    coverage = text[text.index("NAD coverage for the site") : text.index("10. Summary")]
+    assert 'site "Global/mcp-test-lab/mcp-test-nac"' in coverage and "check_stale=false" in coverage
+    for word in ("coverage.verdict", "nad_name_differs", "missing_nad", "wrong_ndg", "ip_mismatch"):
+        assert word in coverage, word
+    assert "aaa_elsewhere" in coverage and "aaa_server" in coverage
     assert "52:54:00:12:34:56" in text and "access-session closed" not in text
     assert "access-session closed" in closed and "service-policy type control subscriber" in closed
 
