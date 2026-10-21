@@ -243,3 +243,166 @@ async def test_status_survives_unreadable_release(api: respx.MockRouter) -> None
     api.get("/dna/system/api/v1/installedRelease").respond(403, json={"message": "no"})
     out = await call_tool(server(), "catc_status")
     assert out["catc"]["sda"]["available"] == "unknown" and out["catc"]["devices"] == 0
+
+
+# D13: catc_delete_fabric_site (cascade teardown) and catc_delete_fabric_device
+
+PORT = {
+    "id": "a0000000-0000-0000-0000-00000000000a",
+    "fabricId": FID,
+    "networkDeviceId": "d2",
+    "interfaceName": "GigabitEthernet1/0/3",
+    "dataVlanName": "CORP_VLAN",
+}
+GW = {
+    "id": "a0000000-0000-0000-0000-00000000000b",
+    "fabricId": FID,
+    "ipPoolName": "corp-pool",
+    "virtualNetworkName": "CORP",
+    "vlanName": "CORP_VLAN",
+}
+CP = {
+    "id": "a0000000-0000-0000-0000-00000000000c",
+    "networkDeviceId": "d1",
+    "fabricId": FID,
+    "deviceRoles": ["CONTROL_PLANE_NODE", "BORDER_NODE"],
+}
+EDGE = {
+    "id": "a0000000-0000-0000-0000-00000000000d",
+    "networkDeviceId": "d2",
+    "fabricId": FID,
+    "deviceRoles": ["EDGE_NODE"],
+}
+OTHER_FID = "eeeeeeee-1111-2222-3333-444444444444"
+VNS = [
+    {"id": "vn-corp", "virtualNetworkName": "CORP", "fabricIds": [FID, OTHER_FID]},
+    {"id": "vn-infra", "virtualNetworkName": "INFRA_VN", "fabricIds": [FID]},
+    {"id": "vn-else", "virtualNetworkName": "ELSE", "fabricIds": [OTHER_FID]},
+]
+
+
+def mock_contents(
+    api: respx.MockRouter,
+    *,
+    ports: list[dict[str, Any]],
+    gws: list[dict[str, Any]],
+    devices: list[dict[str, Any]],
+    vns: list[dict[str, Any]],
+    ipt: list[dict[str, Any]] | None = None,
+) -> None:
+    mock_sites(api, [GLOBAL, AREA, BLDG])
+    api.get(f"/dna/intent/api/v1/sites/{BLDG['id']}").respond(json={"response": BLDG})
+    api.get(f"{SDA}/fabricSites").respond(json={"response": [FABRIC]})
+    api.get(f"{SDA}/fabricZones").respond(json={"response": []})
+    api.get(f"{SDA}/portAssignments").respond(json={"response": ports})
+    api.get(f"{SDA}/portChannels").respond(json={"response": []})
+    api.get(f"{SDA}/multicast/virtualNetworks").respond(json={"response": []})
+    api.get(f"{SDA}/anycastGateways").respond(json={"response": gws})
+    api.get(f"{SDA}/layer2VirtualNetworks").respond(json={"response": []})
+
+    def fabric_devices(request: httpx.Request) -> httpx.Response:
+        nd = request.url.params.get("networkDeviceId")
+        return httpx.Response(
+            200, json={"response": [d for d in devices if nd in (None, d["networkDeviceId"])]}
+        )
+
+    api.get(f"{SDA}/fabricDevices").mock(side_effect=fabric_devices)
+
+    def ip_transits(request: httpx.Request) -> httpx.Response:
+        nd = request.url.params.get("networkDeviceId")
+        return httpx.Response(200, json={"response": [x for x in ipt or [] if x["networkDeviceId"] == nd]})
+
+    api.get(f"{SDA}/fabricDevices/layer3Handoffs/ipTransits").mock(side_effect=ip_transits)
+    api.get(f"{SDA}/fabricDevices/layer3Handoffs/sdaTransits").respond(json={"response": []})
+    api.get(f"{SDA}/fabricDevices/layer2Handoffs").respond(json={"response": []})
+    api.get(f"{SDA}/layer3VirtualNetworks").respond(json={"response": vns})
+
+
+async def test_delete_fabric_site_without_cascade_lists_contents(api: respx.MockRouter) -> None:
+    mock_contents(api, ports=[PORT], gws=[GW], devices=[CP, EDGE], vns=VNS)
+    out, _ = await flow("catc_delete_fabric_site", {"fabric_site": "Global/AU/SYD-1"})
+    assert out["status"] == "blocked"
+    text = " ".join(out["blockers"])
+    assert "1 port_assignments" in text and "2 fabric_devices" in text and "cascade=true" in text
+    # INFRA_VN goes with the fabric site; only CORP is listed
+    assert out["preview"]["contents"]["virtual_networks_left_by_this_site"] == ["CORP"]
+
+
+async def test_delete_fabric_site_cascade_runs_in_reverse_order(api: respx.MockRouter) -> None:
+    ipt = [{"id": "h1", "networkDeviceId": "d1"}]
+    mock_contents(api, ports=[PORT], gws=[GW], devices=[CP, EDGE], vns=VNS, ipt=ipt)
+    calls: list[str] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url.path.removeprefix(SDA)} {dict(request.url.params)}")
+        if request.method == "PUT":
+            calls.append(request.content.decode())
+        return httpx.Response(202, json={"response": {"taskId": "tk"}})
+
+    api.route(method="DELETE", path__startswith=SDA).mock(side_effect=record)
+    api.put(f"{SDA}/layer3VirtualNetworks").mock(side_effect=record)
+    task_ok(api, "tk")
+    preview, done = await flow("catc_delete_fabric_site", {"fabric_site": FID, "cascade": True})
+    assert preview["status"] == "preview" and preview["blast_radius"] == 2
+    order = preview["preview"]["order"]
+    assert order[0].startswith("delete port assignment") and order[-1].startswith("delete fabric site")
+    assert done and done["status"] == "applied" and done["result"]["steps"] == len(order) == 7
+    paths = [c for c in calls if not c.startswith("[")]
+    assert paths == [
+        f"DELETE /portAssignments/{PORT['id']} {{}}",
+        f"DELETE /anycastGateways/{GW['id']} {{}}",
+        f"DELETE /fabricDevices/layer3Handoffs/ipTransits {{'fabricId': '{FID}', 'networkDeviceId': 'd1'}}",
+        "PUT /layer3VirtualNetworks {}",
+        f"DELETE /fabricDevices/{EDGE['id']} {{}}",  # edges before the control plane
+        f"DELETE /fabricDevices/{CP['id']} {{}}",
+        f"DELETE /fabricSites/{FID} {{}}",
+    ]
+    put = [c for c in calls if c.startswith("[")][0]
+    assert f'"fabricIds":["{OTHER_FID}"]' in put.replace(" ", "") and "INFRA_VN" not in put
+
+
+async def test_delete_fabric_site_stops_and_reports(api: respx.MockRouter) -> None:
+    import pytest
+    from fastmcp.exceptions import ToolError
+
+    mock_contents(api, ports=[PORT], gws=[GW], devices=[], vns=[])
+    api.delete(f"{SDA}/portAssignments/{PORT['id']}").respond(202, json={"response": {"taskId": "ok"}})
+    api.delete(f"{SDA}/anycastGateways/{GW['id']}").respond(202, json={"response": {"taskId": "bad"}})
+    task_ok(api, "ok")
+    api.get("/dna/intent/api/v1/task/bad").respond(
+        json={"response": {"isError": True, "endTime": 1, "failureReason": "NCSP10000: gateway in use"}}
+    )
+    with pytest.raises(ToolError, match=r"Stopped at 'delete anycast gateway corp-pool' \(1 of 3"):
+        await flow("catc_delete_fabric_site", {"fabric_site": FID, "cascade": True})
+
+
+async def test_delete_empty_fabric_site(api: respx.MockRouter) -> None:
+    mock_contents(api, ports=[], gws=[], devices=[], vns=[VNS[1]])
+    delete = api.delete(f"{SDA}/fabricSites/{FID}").respond(202, json={"response": {"taskId": "tk"}})
+    task_ok(api, "tk")
+    preview, done = await flow("catc_delete_fabric_site", {"fabric_site": "Global/AU/SYD-1"})
+    assert preview["status"] == "preview" and preview.get("blast_radius") is None
+    assert "no device configuration changes" in preview["side_effects"][0]
+    assert done and done["status"] == "applied" and delete.call_count == 1
+
+
+async def test_delete_fabric_device_by_name(api: respx.MockRouter) -> None:
+    import pytest
+    from fastmcp.exceptions import ToolError
+
+    mock_inventory(api)
+    edge = {**EDGE, "networkDeviceId": DEV_ID}
+    port = {**PORT, "networkDeviceId": DEV_ID}
+    mock_contents(api, ports=[port], gws=[], devices=[CP, edge], vns=[])
+    out, _ = await flow("catc_delete_fabric_device", {"device": "edge-sw1"})
+    assert out["status"] == "blocked" and "1 port_assignments" in out["blockers"][0]
+    dp = api.delete(f"{SDA}/portAssignments/{PORT['id']}").respond(202, json={"response": {"taskId": "tk"}})
+    dd = api.delete(f"{SDA}/fabricDevices/{EDGE['id']}").respond(202, json={"response": {"taskId": "tk"}})
+    task_ok(api, "tk")
+    preview, done = await flow("catc_delete_fabric_device", {"device": "edge-sw1", "cascade": True})
+    assert preview["status"] == "preview", preview
+    assert preview["blast_radius"] == 1 and len(preview["preview"]["order"]) == 2
+    assert done and done["status"] == "applied" and dp.call_count == dd.call_count == 1
+    api.get(f"{SDA}/fabricDevices").respond(json={"response": []})
+    with pytest.raises(ToolError, match="not a fabric device"):
+        await flow("catc_delete_fabric_device", {"device": "edge-sw1"})

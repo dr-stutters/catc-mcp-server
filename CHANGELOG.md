@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+- **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
+  (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
+  `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
+  assignments, port channels, multicast VNs, anycast gateways, layer 2 VNs, border handoffs (IP transit, SD-Access
+  transit, layer 2), the site from each layer 3 VN (the VN stays; `INFRA_VN` goes with the site), fabric zones,
+  fabric devices (edges before the control plane and border), then the fabric site. A failed step stops the run
+  and names what was removed; running it again continues from what is left. `catc_delete_fabric_device(device,
+  cascade=false)` (dangerous) takes a device out of its fabric by hostname, IP or serial, optionally removing
+  its port assignments, port channels and handoffs first, and refuses the last control plane node while edges
+  remain. `catc_delete_sda_object` stays for single objects by id.
+
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
   `ise_audit_nads(expected=<catc_list_devices(site) rows>, check_stale=false)` (ise I67) and its
