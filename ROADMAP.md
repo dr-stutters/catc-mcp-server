@@ -405,10 +405,13 @@ objects created by Catalyst Center may coexist with the ISE lab's TrustSec objec
 Part E findings (2026-10-21): the `aca` + `sda` install ran over `POST /dna/system/api/v1/installOptionalPackages`
 (package ids from `installedRelease`; progress at `softwareManagementExecutions/{taskId}`; the GUI and API answer
 502 on some services while it runs, and the ISE integration stayed COMPLETE). Installing `aca` adds **no public
-intent API** for security groups, access contracts or group-based policy (the guessed intent paths stay 404, the
-internal `customer-facing-service` scalable group / contract / policy paths answered 502 before and after), so D91
-takes the verifier route: ISE owns the matrix, Catalyst Center proves what the edge enforces. Catalyst Center's
-policy migration (it takes the matrix over and makes ISE's TrustSec objects read-only) stays an owner decision.
+intent API** for security groups, access contracts or group-based policy (the guessed intent paths stay 404). The
+internal UI API `/api/v2/data/customer-facing-service/{scalablegroup,contract,policy}/access` answers once the
+install job ends (502 before): 19 seeded scalable groups (ISE's default names and tags), 7 contracts and only the
+seeded `ANY-ANY` policy, not ISE's matrix (the I51 cell Contractors → Production_Servers is absent): without the
+policy migration Catalyst Center's copy is a stand-in. So D91 takes the verifier route: ISE owns the matrix,
+Catalyst Center proves what the edge enforces. Authoring through the undocumented internal API needs the policy
+migration (Catalyst Center takes the matrix over and ISE's TrustSec objects go read-only): an owner decision.
 
 ### F. SD-Access depth (planned 2026-10-21, overnight)
 Filed by the part E session on the owner's instruction (relayed by the coordinating session: "With SD Access, keep
