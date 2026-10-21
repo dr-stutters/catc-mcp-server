@@ -1,4 +1,6 @@
-"""D103: SD-Access fabric device changes (respx); payloads follow the 3.2.2 spec's PUT sda/fabricDevices."""
+"""D103: a fabric border's updatable settings (respx). Payloads follow the 3.2.2 spec's PUT
+sda/fabricDevices: roles, local AS, default exit and route import are not updatable (re-sent as read),
+priority 1-9, prepend 1-10."""
 
 import json
 from typing import Any
@@ -14,45 +16,22 @@ from .test_sda import FID, flow
 from .test_write_tools import task_ok
 
 SDA = "/dna/intent/api/v1/sda"
+L3 = {"localAutonomousSystemNumber": "65001", "isDefaultExit": True, "importExternalRoutes": True}
 BORDER = {
     "id": "fd-b",
     "networkDeviceId": DEV_ID,
     "fabricId": FID,
     "deviceRoles": ["BORDER_NODE", "CONTROL_PLANE_NODE"],
-    "borderDeviceSettings": {
-        "borderTypes": ["LAYER_3"],
-        "layer3Settings": {
-            "localAutonomousSystemNumber": "65001",
-            "isDefaultExit": True,
-            "importExternalRoutes": True,
-        },
-    },
+    "borderDeviceSettings": {"borderTypes": ["LAYER_3"], "layer3Settings": dict(L3)},
 }
-EDGE = {"id": "fd-e", "networkDeviceId": DEV_ID, "fabricId": FID, "deviceRoles": ["EDGE_NODE"]}
-OTHER_EDGE = {"id": "fd-x", "networkDeviceId": "d-x", "fabricId": FID, "deviceRoles": ["EDGE_NODE"]}
 
 
 class Lab:
-    def __init__(
-        self, api: respx.MockRouter, me: dict[str, Any], peers: list[dict[str, Any]], ports: int = 0
-    ) -> None:
-        self.me, self.puts = me, []
-        devices = [me, *peers]
+    def __init__(self, api: respx.MockRouter, me: dict[str, Any]) -> None:
+        self.puts: list[Any] = []
         mock_inventory(api)
         api.get(f"{SDA}/fabricSites").respond(json={"response": [{"id": FID}]})
-        api.get(f"{SDA}/fabricDevices").mock(
-            side_effect=lambda r: httpx.Response(
-                200,
-                json={
-                    "response": [
-                        d
-                        for d in devices
-                        if r.url.params.get("networkDeviceId") in (None, d["networkDeviceId"])
-                    ]
-                },
-            )
-        )
-        api.get(f"{SDA}/portAssignments").respond(json={"response": [{"id": f"p{i}"} for i in range(ports)]})
+        api.get(f"{SDA}/fabricDevices").respond(json={"response": [me]})
         api.put(f"{SDA}/fabricDevices").mock(side_effect=self.put)
         task_ok(api, "tu")
 
@@ -61,71 +40,57 @@ class Lab:
         return httpx.Response(202, json={"response": {"taskId": "tu"}})
 
 
-async def test_border_priority_and_l2(api: respx.MockRouter) -> None:
-    lab = Lab(api, BORDER, [OTHER_EDGE])
-    preview, done = await flow(
-        "catc_update_fabric_device",
-        {"device": "edge-sw1", "border_priority": 2, "default_exit": False, "layer2_border": True},
-    )
-    change = preview["preview"]["changes"]["borderDeviceSettings"]["to"]
-    assert change["borderTypes"] == ["LAYER_2", "LAYER_3"]
-    assert change["layer3Settings"] == {
-        "localAutonomousSystemNumber": "65001",
-        "isDefaultExit": False,
-        "importExternalRoutes": True,
-        "borderPriority": 2,
+async def test_priority_prepend_and_l2(api: respx.MockRouter) -> None:
+    lab = Lab(api, BORDER)
+    args = {"device": "edge-sw1", "border_priority": 2, "prepend_as_count": 3, "layer2_border": True}
+    preview, done = await flow("catc_update_fabric_device", args)
+    assert set(preview["preview"]["changes"]) == {
+        "borderPriority",
+        "prependAutonomousSystemCount",
+        "borderTypes",
     }
-    assert (
-        done
-        and lab.puts[0][0]["id"] == "fd-b"
-        and lab.puts[0][0]["deviceRoles"] == ["BORDER_NODE", "CONTROL_PLANE_NODE"]
-    )
-
-
-async def test_edge_becomes_border(api: respx.MockRouter) -> None:
-    lab = Lab(api, EDGE, [{**BORDER, "id": "fd-other", "networkDeviceId": "d-b"}])
-    out, _ = await flow(
-        "catc_update_fabric_device", {"device": "edge-sw1", "roles": ["EDGE_NODE", "BORDER_NODE"]}
-    )
-    assert out["status"] == "blocked" and "needs border_asn" in out["blockers"][0]
-    _, done = await flow(
-        "catc_update_fabric_device",
-        {"device": "edge-sw1", "roles": ["EDGE_NODE", "BORDER_NODE"], "border_asn": "65003"},
-    )
+    assert done
     body = lab.puts[0][0]
-    assert done and body["deviceRoles"] == ["BORDER_NODE", "EDGE_NODE"]
+    # The fixed fields go back exactly as read
+    assert body["deviceRoles"] == BORDER["deviceRoles"] and body["id"] == "fd-b" and body["fabricId"] == FID
     assert body["borderDeviceSettings"] == {
-        "borderTypes": ["LAYER_3"],
-        "layer3Settings": {
-            "isDefaultExit": True,
-            "importExternalRoutes": True,
-            "localAutonomousSystemNumber": "65003",
+        "borderTypes": ["LAYER_2", "LAYER_3"],
+        "layer3Settings": {**L3, "borderPriority": 2, "prependAutonomousSystemCount": 3},
+    }
+
+
+async def test_read_back_defaults_outside_the_put_ranges_are_left_out(api: respx.MockRouter) -> None:
+    me = {
+        **BORDER,
+        "borderDeviceSettings": {
+            "borderTypes": ["LAYER_3", "LAYER_2"],
+            "layer3Settings": {**L3, "borderPriority": 10, "prependAutonomousSystemCount": 0},
         },
     }
+    lab = Lab(api, me)
+    _, done = await flow("catc_update_fabric_device", {"device": "edge-sw1", "layer2_border": False})
+    l3 = lab.puts[0][0]["borderDeviceSettings"]["layer3Settings"]
+    assert done and "borderPriority" not in l3 and "prependAutonomousSystemCount" not in l3 and l3 == L3
+    assert lab.puts[0][0]["borderDeviceSettings"]["borderTypes"] == ["LAYER_3"]
 
 
 @pytest.mark.parametrize(
-    ("me", "peers", "ports", "args", "needle"),
+    ("args", "needle"),
     [
-        (BORDER, [OTHER_EDGE], 0, {"roles": ["BORDER_NODE"]}, "last control plane node"),
-        (BORDER, [OTHER_EDGE], 0, {"border_asn": "65009"}, "can't change"),
-        (EDGE, [], 0, {"border_priority": 3}, "only to a device with the BORDER_NODE role"),
-        (EDGE, [], 2, {"roles": ["CONTROL_PLANE_NODE"]}, "2 port assignment(s)"),
-        (BORDER, [], 0, {"default_exit": True}, "Nothing to change"),
-        (BORDER, [], 0, {"bgp_router_id": "not-an-ip"}, "not an IPv4 address"),
+        ({"border_priority": None}, "Nothing to change"),
+        ({"bgp_router_id": "not-an-ip"}, "not an IPv4 address"),
     ],
 )
-async def test_blockers(
-    api: respx.MockRouter,
-    me: dict[str, Any],
-    peers: list[dict[str, Any]],
-    ports: int,
-    args: dict[str, Any],
-    needle: str,
-) -> None:
-    lab = Lab(api, me, peers, ports)
+async def test_blockers(api: respx.MockRouter, args: dict[str, Any], needle: str) -> None:
+    lab = Lab(api, BORDER)
     out, _ = await flow("catc_update_fabric_device", {"device": "edge-sw1", **args})
     assert out["status"] == "blocked" and needle in " ".join(out["blockers"]) and not lab.puts
+
+
+async def test_not_a_border(api: respx.MockRouter) -> None:
+    Lab(api, {**BORDER, "deviceRoles": ["EDGE_NODE"], "borderDeviceSettings": None})
+    with pytest.raises(ToolError, match="is not a border: on 3.2.2 only"):
+        await flow("catc_update_fabric_device", {"device": "edge-sw1", "border_priority": 2})
 
 
 async def test_not_a_fabric_device(api: respx.MockRouter) -> None:
@@ -134,3 +99,14 @@ async def test_not_a_fabric_device(api: respx.MockRouter) -> None:
     api.get(f"{SDA}/fabricDevices").respond(json={"response": []})
     with pytest.raises(ToolError, match="is not a fabric device"):
         await flow("catc_update_fabric_device", {"device": "edge-sw1", "border_priority": 2})
+
+
+def test_removed_parameters() -> None:
+    """Roles, AS, default exit and route import are not updatable on 3.2.2: the tool doesn't offer them."""
+    import inspect
+
+    from catc_mcp.tools import sda_device_update
+
+    src = inspect.getsource(sda_device_update)
+    for name in ("roles:", "border_asn:", "default_exit:", "import_external_routes:"):
+        assert name not in src

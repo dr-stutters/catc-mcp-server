@@ -35,6 +35,12 @@
   layer 2 border type), instead of removing the device from the fabric and adding it back. A new border needs
   its AS; an existing border's AS can't change; refuses dropping the last control plane while edges remain and
   dropping EDGE_NODE while ports are assigned.
+- **SD-Access fabric border changes (D103, #188, Wave 6 part G).** `catc_update_fabric_device(device,
+  border_priority?, prepend_as_count?, layer2_border?, bgp_router_id?)` (dangerous): a border's priority (1-9),
+  AS-path prepends (1-10), custom BGP router id and layer 2 border type in place over `PUT sda/fabricDevices`.
+  The 3.2.2 spec marks roles, the local AS, default exit and route import not updatable, so they are re-sent as
+  read and not offered (remove and re-add the device for those); read-back values outside the PUT ranges (the
+  unset priority 10, prepend 0) are left out of the request.
 - **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
   subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services
