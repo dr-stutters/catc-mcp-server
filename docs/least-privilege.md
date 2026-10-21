@@ -57,7 +57,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Policy.Group-Based Policy | Read | a dependency of Network Provision.SD-Access (exists once the `aca` package is deployed) |
 | Network Operations.LAN Automation | Read | LAN automation sessions and status (exists once `sda` is deployed; 403 without it) |
 | Security.Audit Log | Read | `catc_list_audit_logs`, `catc_recent_activity` |
-| Security.SSI | Read | `catc_get_ssi_readiness` (Security Service Insertion readiness) |
+| Security.SSI | Read | `catc_get_ssi_readiness` (Security Service Insertion readiness). On 3.2.2 custom roles get 403 on the SSI API even with this (Read is its maximum); only a SUPER-ADMIN-ROLE account read it in the live test |
 | System.System Settings | Read | `catc_get_policy_servers` (ISE integration) |
 | System.System Administration | Read | `catc_get_system_health`, the account check in `catc_status` |
 | Utilities.Command Runner | Read | `catc_run_show_commands` (Read is enough for show commands) |

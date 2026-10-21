@@ -162,6 +162,10 @@ def register(reg: ToolRegistrar) -> None:
         globals_ = await _all(app, GLOBAL)
         reserved = await _all(app, RESERVED)
         details: dict[str, Any] = {"name": name, "subnet": str(net), "gateway": gw, "type": pool_type}
+        if dhcp:
+            details["dhcp_servers"] = dhcp
+        if dns:
+            details["dns_servers"] = dns
         if site:
             if not global_pool:
                 raise InvalidRequest(
