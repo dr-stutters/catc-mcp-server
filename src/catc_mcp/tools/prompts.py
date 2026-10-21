@@ -515,11 +515,15 @@ preview to the user and confirm only after they approve. Stop if a step fails an
         profile = f"mcp-catc-{slug}"
         pset = "mcp-catc-admin-login"
         mirror = (
-            f"""5. Break-glass mirror (mirror_local_accounts=true). Some releases ask ISE first and use the
-   local user list only when ISE is unreachable, so a local account may stop working once ISE answers.
-   List the local accounts with {tool_ref("catc_api_call")} GET /dna/system/api/v1/user
+            f"""5. Break-glass mirror (mirror_local_accounts=true). Catalyst Center 3.2.2 asks ISE first
+   (tested): once external authentication is on, a local account only logs in if ISE accepts it with a
+   role. List the local accounts with {tool_ref("catc_api_call")} GET /dna/system/api/v1/user
    (authSource=internal): their usernames and roleList. Ask the user which are in use (their own
-   admin and this server's account at least). For each role among them create, preview-first:
+   admin and this server's account at least). The reply must name a BUILT-IN role (SUPER-ADMIN-ROLE,
+   NETWORK-ADMIN-ROLE, OBSERVER-ROLE): 3.2.2 refuses a custom role with "Invalid user profile", so map
+   an account with a custom role to the nearest built-in one and tell the user what it gains or
+   loses (or leave it out: it then can't log in while external authentication is on). For each
+   built-in role among them create, preview-first:
    an ISE identity group mcp-catc-mirror-<role> ({tool_ref("ise_create_group")}), an authorization
    profile mcp-catc-mirror-<role> ({tool_ref("ise_create_authz_profile")} with
    av_pairs=["Cisco:cisco-av-pair=Role=<role>"]), and per account an ISE internal user with the SAME
@@ -533,7 +537,7 @@ preview to the user and confirm only after they approve. Stop if a step fails an
         mirror_rules = (
             """   For each mirror group: rule mcp-catc-mirror-<role> with condition
    "IdentityGroup:Name equals User Identity Groups:mcp-catc-mirror-<role>" -> profile
-   mcp-catc-mirror-<role>, ranked above the AD rule."""
+   mcp-catc-mirror-<role>, ranked above the AD rule (create the AD rule first, then the mirror rules)."""
             if mirror_local_accounts == "true"
             else ""
         )
@@ -573,12 +577,14 @@ using Catalyst Center while external authentication is on.
    av_pairs=["Cisco:cisco-av-pair=Role={role}"] (the attribute must match step 1's AAA attribute).
 {mirror}
 6. Policy: create policy set "{pset}" with {tool_ref("ise_create_policy_set")}, condition
-   "Radius:NAS-IP-Address equals {ip}", rank 0, allowed protocols that permit PAP (Default Network
-   Access). Authentication: an identity source sequence mcp_catc_admins with stores
+   "Network Access:Device IP Address equals {ip}" (the packet's source: the NAS-IP-Address Catalyst
+   Center sends is not its own address, tested on 3.2.2), rank 0, allowed protocols that permit
+   PAP (Default Network Access). Authentication: an identity source sequence mcp_catc_admins with stores
    {"Internal Users, then the AD join point" if mirror_local_accounts == "true" else "the AD join point"}
    ({tool_ref("ise_set_identity_sequence")}), used by an authentication rule in the set
-   ({tool_ref("ise_create_authn_rule")}, condition "Radius:NAS-IP-Address equals {ip}"). Authorization
-   ({tool_ref("ise_create_authz_rule")}): rule mcp-catc-ad with condition
+   ({tool_ref("ise_create_authn_rule")}, condition "Network Access:Device IP Address equals {ip}").
+   Authorization ({tool_ref("ise_create_authz_rule")}; insert each rule at rank 0, the last one created
+   ends up first: ISE refuses a rank that doesn't exist yet): rule mcp-catc-ad with condition
    "<join point>:ExternalGroups equals <domain>/<path>/{group}" (the exact value from step 2) ->
    {profile}.
 {mirror_rules}
@@ -590,10 +596,12 @@ using Catalyst Center while external authentication is on.
 8. Right after enabling: {tool_ref("catc_test_login")} with the local admin again. If it fails, at
    once {tool_ref("catc_set_external_authentication")} enable=false (preview, approval) and stop.
 9. The AD login: {tool_ref("catc_test_login")} with {user}: it must pass with roles [{role}]
-   (authSource external). Then {tool_ref("ise_get_auth_list")} user "{user}" (and nad "{ip}"): the
-   RADIUS session from Catalyst Center, matched by {pset} / mcp-catc-ad. Also look up the local admin
-   there and in {tool_ref("ise_recent_auth_failures")}: a pass or a reject from {ip} means Catalyst
-   Center asked ISE first for a local account (record which), nothing means it used its local list.
+   (authSource external). Catalyst Center's logins are bare RADIUS Access-Requests (no accounting,
+   no MAC), so ISE's session lists ({tool_ref("ise_get_auth_list")}) stay empty: read the hit
+   counters instead with {tool_ref("ise_get_policy_set")} "{pset}": the set, the authentication rule
+   and mcp-catc-ad must have counted the login; a hit on the set's Default rule means a group or
+   condition didn't match (check {tool_ref("ise_test_ad_user")}). A local account that now logs in
+   with authSource external went through its mirror rule.
 10. Summary: what was created where (AD, ISE NAD, profile(s), sequence, policy set, mirror users),
     the login results with the roles granted, the fallback finding from step 9, and the undo list.
 {end}"""

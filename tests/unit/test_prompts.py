@@ -248,12 +248,12 @@ async def test_admin_access_prompt_renders() -> None:
         "ise_create_policy_set",
         "ise_create_authz_rule",
         "ise_create_internal_user",
-        "ise_get_auth_list",
+        "ise_get_policy_set",
         "win_create_ad_group",
     ):
         assert f"`{tool}`" in text, tool
     assert "Cisco:cisco-av-pair=Role=OBSERVER-ROLE" in text and "mcp-catc-observer" in text
-    assert "Radius:NAS-IP-Address equals 198.18.128.11" in text and "enable=false" in text
+    assert "Network Access:Device IP Address equals 198.18.128.11" in text and "enable=false" in text
     assert "Break-glass mirror: skipped" in keep and "Leave it on" in keep
 
 
