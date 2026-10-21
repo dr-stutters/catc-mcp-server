@@ -314,7 +314,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (88)
+### Read (89)
 
 | Tool | What it does |
 |---|---|
@@ -394,6 +394,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_list_template_projects` | Template projects (folders of templates) with description, id and template count. |
 | `catc_list_template_versions` | Version history of a template: every committed version with its number, commit time, author, comment, size and lines added/removed against the version before, and whether the template has uncommitted changes. |
 | `catc_list_templates` | Configuration templates (Template Editor) with project, language (Jinja/Velocity), software type, device families, committed version count and id. |
+| `catc_list_transit_networks` | SD-Access transit networks, with ids. |
 | `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
@@ -407,7 +408,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (47)
+### Write (48)
 
 | Tool | What it does |
 |---|---|
@@ -431,6 +432,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_create_tag` | Create a (static) tag for grouping devices or interfaces. |
 | `catc_create_template` | Create a (not yet committed) configuration template in a project. |
 | `catc_create_template_project` | Create a template project (a folder for configuration templates). |
+| `catc_create_transit_network` | Define an SD-Access transit network. |
 | `catc_create_virtual_network` | Create a layer 3 virtual network (VRF) or add an existing one to more fabric sites. |
 | `catc_create_wireless_profile` | Create a wireless network profile that carries SSIDs. |
 | `catc_delete_global_credential` | Delete a global device credential. |
@@ -459,7 +461,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (33)
+### Dangerous (36)
 
 | Tool | What it does |
 |---|---|
@@ -468,6 +470,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_add_anycast_gateway` | Add an anycast gateway (the client subnet's default gateway, the same IP on every edge) for an IP pool in a virtual network at a fabric site. |
 | `catc_add_fabric_device` | Give a provisioned device a fabric role (control plane, border, edge) at a fabric site. |
 | `catc_add_ise_server` | Integrate Cisco ISE with Catalyst Center as the AAA and policy server: CatC connects to ISE (ERS over 443, pxGrid 8910), discovers its nodes and, after you accept ISE's certificate, trusts it. |
+| `catc_add_l3_handoff` | Hand a border off onto a transit network. |
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
 | `catc_apply_pending_fabric_events` | Apply a fabric site's pending fabric events. |
 | `catc_assign_fabric_port` | Assign an edge port to a fabric VLAN (host onboarding): Catalyst Center configures the access port (VLAN, authentication template) on the edge. |
@@ -477,10 +480,12 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |
 | `catc_delete_fabric_device` | Take a device out of its SD-Access fabric site (all its fabric roles). |
 | `catc_delete_fabric_site` | Remove an SD-Access fabric site; the site itself stays in the hierarchy. |
+| `catc_delete_l3_handoff` | Remove a border's layer 3 handoff onto a transit. |
 | `catc_delete_pnp_device` | Remove a device from the Plug and Play list (not from the inventory). |
 | `catc_delete_policy_server` | Remove an authentication and policy server (plain AAA or the integrated ISE) from Catalyst Center. |
 | `catc_delete_sda_object` | Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a device's fabric role, a fabric zone or a fabric site. |
 | `catc_delete_site` | Delete a site from the hierarchy. |
+| `catc_delete_transit_network` | Delete a transit network. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
 | `catc_deploy_wlc_config` | Deploy a Catalyst 9800 WLC's per-device intended configuration to the WLC (what catc_set_wlan_security, catc_set_wlan_vlan and catc_set_rf_profile staged, and any other intended change). |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
