@@ -106,7 +106,10 @@ async def test_add_border_cp(api: respx.MockRouter) -> None:
     preview, done = await flow("catc_add_fabric_device", args)
     body = preview["preview"]["body"][0]
     assert body["deviceRoles"] == ["BORDER_NODE", "CONTROL_PLANE_NODE"] and preview["blast_radius"] == 1
-    assert body["borderDeviceSettings"]["layer3Settings"]["localAutonomousSystemNumber"] == "65001"
+    l3 = body["borderDeviceSettings"]["layer3Settings"]
+    assert l3["localAutonomousSystemNumber"] == "65001"
+    # 3.2.2 allows priority 1-9 and prepend 1-10: unset ones are left out (Catalyst Center defaults them)
+    assert "borderPriority" not in l3 and "prependAutonomousSystemCount" not in l3
     assert done and done["status"] == "applied" and post.call_count == 1
 
 
@@ -406,3 +409,22 @@ async def test_delete_fabric_device_by_name(api: respx.MockRouter) -> None:
     api.get(f"{SDA}/fabricDevices").respond(json={"response": []})
     with pytest.raises(ToolError, match="not a fabric device"):
         await flow("catc_delete_fabric_device", {"device": "edge-sw1"})
+
+
+async def test_add_border_with_priority_and_prepend(api: respx.MockRouter) -> None:
+    mock_inventory(api)
+    mock_fabric(api, [])
+    api.get(f"{SDA}/provisionDevices").respond(json={"response": [{"id": "p", "networkDeviceId": DEV_ID}]})
+    args = {
+        "device": "edge-sw1",
+        "fabric_site": FID,
+        "roles": ["CONTROL_PLANE_NODE", "BORDER_NODE"],
+        "border_asn": "65001",
+        "border_priority": 2,
+        "prepend_as_count": 3,
+    }
+    api.post(f"{SDA}/fabricDevices").respond(202, json={"response": {"taskId": "td"}})
+    task_ok(api, "td")
+    out, _ = await flow("catc_add_fabric_device", {**args})
+    l3 = out["preview"]["body"][0]["borderDeviceSettings"]["layer3Settings"]
+    assert l3["borderPriority"] == 2 and l3["prependAutonomousSystemCount"] == 3
