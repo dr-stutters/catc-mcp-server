@@ -25,8 +25,17 @@ TRANSIT = {"id": "t1", "name": "mcp-sda-transit", "type": "SDA_LISP_PUB_SUB_TRAN
 
 
 class Lab:
-    def __init__(self, api: respx.MockRouter, vn: dict[str, Any], transits: list[dict[str, Any]]) -> None:
-        self.vn, self.puts = vn, []
+    """`apply` says what the appliance does with a PUT: replace the record, merge it (fields left out stay),
+    or apply the site assignment only (the anchor fails)."""
+
+    def __init__(
+        self,
+        api: respx.MockRouter,
+        vn: dict[str, Any],
+        transits: list[dict[str, Any]],
+        apply: str = "replace",
+    ) -> None:
+        self.vn, self.puts, self.mode = vn, [], apply
         mock_sites(api, [GLOBAL, AREA, BLDG, BLDG2])
         for b in (BLDG, BLDG2):
             api.get(f"/dna/intent/api/v1/sites/{b['id']}").respond(json={"response": b})
@@ -46,7 +55,12 @@ class Lab:
     def put(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         self.puts.append(body)
-        self.vn = body[0]
+        if self.mode == "replace":
+            self.vn = body[0]
+        elif self.mode == "merge":
+            self.vn = {**self.vn, **body[0]}
+        else:  # sites only
+            self.vn = {**self.vn, "fabricIds": body[0]["fabricIds"]}
         return httpx.Response(202, json={"response": {"taskId": "ta"}})
 
 
@@ -75,18 +89,47 @@ async def test_anchor_and_extend(api: respx.MockRouter) -> None:
     assert done["result"]["virtual_network"]["anchoredSiteId"] == FID
 
 
-async def test_remove_anchor(api: respx.MockRouter) -> None:
-    lab = Lab(
-        api,
-        {"id": "vn1", "virtualNetworkName": "MCP_GUEST", "fabricIds": [FID, FID2], "anchoredSiteId": FID},
-        [],
-    )
+ANCHORED = {"id": "vn1", "virtualNetworkName": "MCP_GUEST", "fabricIds": [FID, FID2], "anchoredSiteId": FID}
+
+
+async def test_remove_anchor_read_back(api: respx.MockRouter) -> None:
+    lab = Lab(api, dict(ANCHORED), [], apply="replace")
     _, done = await flow(
         "catc_anchor_virtual_network", {"virtual_network": "MCP_GUEST", "remove_anchor": True}
     )
     assert (
         done and "anchoredSiteId" not in lab.puts[0][0] and lab.puts[0][0]["fabricIds"] == sorted([FID, FID2])
     )
+    assert done["result"]["anchor_verified"] is True and done["result"]["anchored_at"] is None
+
+
+async def test_remove_anchor_not_cleared_is_reported(api: respx.MockRouter) -> None:
+    Lab(api, dict(ANCHORED), [], apply="merge")  # an appliance that keeps fields left out of the PUT
+    _, done = await flow(
+        "catc_anchor_virtual_network", {"virtual_network": "MCP_GUEST", "remove_anchor": True}
+    )
+    assert done and done["result"]["anchor_verified"] is False and done["result"]["anchored_at"] == FID
+    assert "did not clear the anchor" in done["result"]["warning"]
+
+
+async def test_anchor_that_did_not_apply_is_reported(api: respx.MockRouter) -> None:
+    Lab(api, {"id": "vn1", "virtualNetworkName": "MCP_GUEST", "fabricIds": [FID]}, [TRANSIT], apply="sites")
+    args = {"virtual_network": "MCP_GUEST", "anchor_site": FID, "fabric_sites": [FID2]}
+    _, done = await flow("catc_anchor_virtual_network", args)
+    assert (
+        done
+        and done["result"]["anchor_verified"] is False
+        and "anchoring did not" in done["result"]["warning"]
+    )
+
+
+async def test_extending_an_anchored_vn_keeps_the_anchor(api: respx.MockRouter) -> None:
+    """catc_create_virtual_network adds a site with a PUT: it must carry anchoredSiteId."""
+    Lab(api, {**ANCHORED, "fabricIds": [FID]}, [TRANSIT])
+    out, _ = await flow(
+        "catc_create_virtual_network", {"name": "MCP_GUEST", "fabric_sites": ["Global/AU/SYD-2"]}
+    )
+    assert out["preview"]["body"][0]["anchoredSiteId"] == FID
 
 
 @pytest.mark.parametrize(

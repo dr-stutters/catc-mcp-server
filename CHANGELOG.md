@@ -23,7 +23,11 @@
   virtual_network, anchor_site?, fabric_sites?, remove_anchor=false)` (dangerous): anchor a layer 3 VN at one
   fabric site and extend it to others over an SD-Access transit (`PUT sda/layer3VirtualNetworks` with
   `anchoredSiteId`), or stop anchoring it; refuses without an SD-Access transit, with fewer than two sites or a
-  no-op. Unit-tested only: the live proof needs a second fabric site.
+  no-op. The result reads the VN back (`anchored_at`, `anchor_verified`) and warns when the anchor did not
+  change: the PUT reports success even when only the site assignment applied, and whether leaving
+  `anchoredSiteId` out clears an anchor is unproven. `catc_create_virtual_network` now carries a VN's anchor
+  when it adds sites (a PUT without it could unanchor the VN). Unit-tested only: the live proof needs a second
+  fabric site.
 - **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
   subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services

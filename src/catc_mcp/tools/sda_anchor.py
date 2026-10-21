@@ -125,7 +125,23 @@ def register(reg: ToolRegistrar) -> None:
                 for v in await sda_list(app, "layer3VirtualNetworks", {"virtualNetworkName": virtual_network})
                 if v.get("virtualNetworkName") == virtual_network
             ]
-            return {**job, "virtual_network": now[0] if now else None}
+            after = now[0] if now else {}
+            anchored_at = after.get("anchoredSiteId") or None
+            out: dict[str, Any] = {**job, "virtual_network": after or None, "anchored_at": anchored_at}
+            # Read back: the PUT reports success even when only the site assignment applied.
+            want = None if remove_anchor else anchor_id
+            out["anchor_verified"] = anchored_at == want
+            if not out["anchor_verified"]:
+                why = (
+                    "leaving anchoredSiteId out did not clear the anchor here (clear it in the GUI)"
+                    if remove_anchor
+                    else "the site assignment applied but the anchoring did not (check the transit)"
+                )
+                out["warning"] = (
+                    f"Catalyst Center reports {virtual_network} anchored at {anchored_at or 'nothing'}, "
+                    f"not {want or 'unanchored'}: {why}."
+                )
+            return out
 
         return await preview_or_apply(
             ctx,
