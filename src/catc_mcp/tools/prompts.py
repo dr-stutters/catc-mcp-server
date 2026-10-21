@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from catc_mcp._core import Tier, ToolRegistrar, tool_ref
+from catc_mcp._core import InvalidRequest, Tier, ToolRegistrar, tool_ref
 from catc_mcp.common import norm_mac
 
 # Devices per change (roadmap D19's CATC_MAX_DEVICES_PER_CHANGE default).
@@ -605,3 +605,118 @@ using Catalyst Center while external authentication is on.
 10. Summary: what was created where (AD, ISE NAD, profile(s), sequence, policy set, mirror users),
     the login results with the roles granted, the fallback finding from step 9, and the undo list.
 {end}"""
+
+    @reg.prompt(title="Troubleshoot a client", uses=["catc", "ise"], tier=Tier.READ)
+    def catc_client_troubleshoot(
+        client: Annotated[
+            str, Field(description="The client: MAC (best), IPv4 address or the username it logged in with")
+        ],
+        destination_ip: Annotated[
+            str, Field(description="Optional: an IP the client can't reach, for a path trace")
+        ] = "",
+        expected_vlan: Annotated[
+            str, Field(description="Optional: the VLAN the client should be in (number)")
+        ] = "",
+        hours: Annotated[str, Field(description="Look-back window in hours")] = "24",
+    ) -> str:
+        """Troubleshoot one wired or wireless client across Catalyst Center, its switch or WLC, and ISE:
+        client 360 and its issues, the port or SSID, live CLI, path trace, ISE authentication history
+        and failure reason, Catalyst Center's AAA health for the switch, then a diagnosis (auth
+        failure, ISE unreachable or wrong shared secret, wrong VLAN, port or DHCP problem) and a fix
+        that is only previewed. Read tier: nothing changes unless the user approves a previewed fix
+        with another server's write tools."""
+        texts = (client, destination_ip, expected_vlan, hours)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        who = client.strip()
+        if not who:
+            raise ValueError("Give the client's MAC, IP or username.")
+        try:
+            window = float(hours)
+        except ValueError as exc:
+            raise ValueError(f"hours must be a number, not {hours!r}.") from exc
+        if not 0 < window <= 168:
+            raise ValueError("hours must be between 0 and 168.")
+        dest = destination_ip.strip()
+        if dest:
+            try:
+                dest = str(ipaddress.ip_address(dest))
+            except ValueError as exc:
+                raise ValueError(f"destination_ip must be an IP address: {exc}") from exc
+        vlan = expected_vlan.strip()
+        if vlan and not (vlan.isdigit() and 1 <= int(vlan) <= 4094):
+            raise ValueError(f"expected_vlan must be a VLAN number, not {vlan!r}.")
+        try:
+            mac = norm_mac(who)
+            find = f'MAC {mac}: {tool_ref("catc_client_360")} with mac "{mac}".'
+        except InvalidRequest:  # not a MAC: an IP or a username
+            mac = ""
+            try:
+                ip = str(ipaddress.ip_address(who))
+                find = (
+                    f'IP {ip}: {tool_ref("catc_list_clients")} with ip "{ip}" (hours {window:g}) gives the '
+                    f"MAC; then {tool_ref('catc_client_360')} with it."
+                )
+            except ValueError:
+                find = (
+                    f'username "{who}": {tool_ref("catc_list_clients")} (hours {window:g}; filter by site '
+                    "or switch if the user says where) and pick the rows whose user column is that "
+                    f"username; more than one: ask which. Then {tool_ref('catc_client_360')} with its MAC. "
+                    f'If none matches, {tool_ref("ise_find_session")} with username "{who}" gives the MAC.'
+                )
+        mac_ref = f'"{mac}"' if mac else "the client's MAC (step 1)"
+        path = (
+            f"""4. Path: {tool_ref("catc_path_trace")} from the client's IP to {dest} (wait for the
+   result); note where it stops or which ACL/interface drops it."""
+            if dest
+            else "4. Path: skipped (no destination_ip). If the user names something the client can't reach, "
+            f"run {tool_ref('catc_path_trace')} from the client's IP to it."
+        )
+        vlan_check = (
+            f"the access VLAN (or the VLAN ISE assigned) must be {vlan}"
+            if vlan
+            else "compare the access VLAN with the VLAN ISE's authorization profile assigns (step 5) and "
+            "with the other clients on that switch (catc_list_clients by device)"
+        )
+        return f"""Troubleshoot client {who} (window {window:g} h). Read only: no tool here changes anything,
+and any fix at the end is shown as a preview and applied only if the user approves it. If the ise tools are
+missing, skip steps 5 and say ISE could not be checked.
+
+1. Find it. {find} Note IP, user, host type, health, connection status, the switch and port (or WLC, AP,
+   SSID), VLAN, site, onboarding and DHCP root causes, and last seen. A client Catalyst Center doesn't
+   know at all: check the MAC with {tool_ref("ise_get_auth_history")} (it may never get past
+   authentication, so Assurance never saw it).
+2. Issues: {tool_ref("catc_list_issues")} for the client's switch/WLC and site in the window, and
+   {tool_ref("catc_get_issue")} for the relevant ones (suggested commands, root cause). Issues stay active
+   for hours after they clear: compare last_seen with now.
+3. The device, live: {tool_ref("catc_run_show_commands")} on the switch with
+   "show access-session mac <MAC> details" (status, method, policy, dACL, SGT, VLAN),
+   "show interfaces <port> status", "show running-config interface <port>",
+   "show device-tracking database mac <MAC>" and "show aaa servers | include RADIUS|State|Authen"
+   (RADIUS UP? timeouts?); for a wireless client the WLC's "show wireless client mac-address <MAC> detail".
+   VLAN: {vlan_check}.
+{path}
+5. ISE: {tool_ref("ise_get_auth_history")} for {mac_ref} (every attempt: pass/fail, rule, profile, SGT,
+   NAD) and on a failure {tool_ref("ise_why_auth_failed")} (decoded reason, steps, fix);
+   {tool_ref("ise_endpoint_360")} for its profile and group. No ISE record at all while the switch sends
+   RADIUS (step 3) points at the shared secret or the NAD: {tool_ref("ise_get_nad")} with the switch's IP
+   (exists, secret set). A wrong shared secret is silent in ISE, and a MAB lookup can still pass with it
+   while 802.1X fails, so compare the methods.
+6. AAA health from Catalyst Center: {tool_ref("catc_network_services_health")} with service "aaa", the
+   switch as device and hours {window:g}: quote its verdict line (success %, latency, EAP vs MAB failures
+   on that switch). It lags the logins by minutes; an empty result right after a failure is not a pass.
+7. Diagnosis: one of these, with the evidence for it:
+   - authentication failure (ISE has the attempt and a reason: certificate, unknown endpoint, wrong group);
+   - ISE not reached or wrong shared secret (no ISE record, RADIUS timeouts or dead on the switch, AAA
+     health failures);
+   - wrong VLAN or authorization (authenticated, but the VLAN/dACL/SGT differs from what is expected);
+   - port or link (down, err-disabled, no MAC learned) or DHCP (authenticated, no IP; DHCP root cause);
+   - path (step 4 stops), or the client looks healthy (say so: nothing to fix on the network).
+8. Fix, previewed only: name the change and show its preview without confirming it, e.g. register an unknown
+   MAB endpoint ({tool_ref("ise_set_endpoint")}), re-trust the client's CA
+   ({tool_ref("ise_list_certificates")} kind trusted), correct the access VLAN with a template
+   ({tool_ref("catc_create_template")} then {tool_ref("catc_preview_template")}), or re-authenticate after an
+   ISE change ({tool_ref("ise_coa_reauth")}). Apply only if the user approves, then repeat steps 3 and 5 to
+   prove it.
+9. Summary: the client, the diagnosis in one line, the evidence (one line per step), and the fix (proposed,
+   or applied and verified)."""
