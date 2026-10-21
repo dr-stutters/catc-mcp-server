@@ -13,6 +13,14 @@
   cascade=false)` (dangerous) takes a device out of its fabric by hostname, IP or serial, optionally removing
   its port assignments, port channels and handoffs first, and refuses the last control plane node while edges
   remain. `catc_delete_sda_object` stays for single objects by id.
+- **SD-Access health (D92, #163, Wave 6 part F).** `catc_fabric_health(fabric_site?, include?, hours?,
+  trend_interval?)` (read) over the Data API's `fabricSummary`, `fabricSiteHealthSummaries`,
+  `virtualNetworkHealthSummaries` and `transitNetworkHealthSummaries`: the fabric summary (sites, L3/L2 VNs,
+  transits, fabric devices, P1-P3 issues), each fabric site's good-health percentage and device counts, the
+  dimensions with fair or poor devices (control plane, LISP sessions, border to control plane, pub/sub, BGP,
+  AAA, CTS environment data, port channels, VN exit, ...; grouped generically from the
+  `<dim>{Good,Fair,Poor,No,Total}Health...` keys), the same per VN and transit, an optional per-site trend
+  and a one-line verdict. Live-read on the 3.2.2 lab appliance (no fabric yet: the empty verdict).
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
