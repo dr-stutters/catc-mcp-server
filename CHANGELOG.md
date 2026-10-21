@@ -8,6 +8,11 @@
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services
   through LISP route leaking inside the fabric; refuses unknown VNs, a provider that is also a subscriber,
   and a no-op; blast radius = the fabric devices of the sites concerned.
+- **SD-Access fabric zones (D97, #168, Wave 6 part F).** `catc_create_fabric_zone(site,
+  authentication_profile?)` (write: no device change) makes a building or floor inside a fabric site a zone
+  (`POST sda/fabricZones`; the template defaults to the fabric site's), so anycast gateways can be limited to
+  it. `catc_delete_sda_object` gains kind `fabric_zone` (refused while the zone still has gateways or ports);
+  the `catc_delete_fabric_site` cascade already removes zones.
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
