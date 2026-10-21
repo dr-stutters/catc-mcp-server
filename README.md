@@ -314,7 +314,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (89)
+### Read (91)
 
 | Tool | What it does |
 |---|---|
@@ -341,8 +341,10 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_device_hardware` | Hardware and licensing of one device in one call: stack members (role, state, priority, serial, platform, software) and StackWise Virtual links, PoE budget (allocated / consumed / remaining watts) and the PoE ports drawing power, module count, and smart-licensing state with the licences in use. |
 | `catc_get_external_authentication` | How Catalyst Center admins log in: whether external authentication (System > Users & Roles > External Authentication) is on, the AAA attribute it reads the role from (empty = the default, Cisco-AVPair for RADIUS / cisco-av-pair for TACACS+), the AAA servers it asks (from the authentication and policy servers, e.g. the integrated ISE), the roles an external user can be given (the value the AAA server must return: 'Role=<name>'), and the external users that have logged in so far. |
 | `catc_get_fabric_multicast` | Multicast at an SD-Access fabric site. |
+| `catc_get_fabric_wireless` | SD-Access fabric wireless: the VLAN-to-SSID mappings of each fabric site (fabric-enabled WLANs and the SGT they carry), and for one fabric site the switch-side wireless settings (which fabric devices carry wireless roles, rolling AP upgrade) and wireless multicast. |
 | `catc_get_issue` | One assurance issue in full: description, affected device/client/site, timeline, additional attributes and Catalyst Center's suggested actions with the show commands it proposes (run them with catc_run_show_commands). |
 | `catc_get_l3_topology` | Layer 3 topology for one routing protocol: routers and the adjacencies between them with interface names and addresses. |
+| `catc_get_lan_automation` | LAN automation (underlay automation) on Catalyst Center: active sessions and their limit, each session's status (seed devices, discovered devices and their site, IP pools, discovery level, multicast, hostname prefix) and optionally the latest log entries. |
 | `catc_get_network_health` | Overall network health score and the healthy/unhealthy device counts per category (access, distribution, core, router, wireless), plus a per-site health summary. |
 | `catc_get_network_profile` | One network profile: its type, the Day-N CLI templates attached to it and the sites it is assigned to (by name, including inherited child sites). |
 | `catc_get_physical_topology` | Physical (CDP/LLDP-derived) topology: devices and the links between them with port names, link status and addresses. |

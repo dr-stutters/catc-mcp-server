@@ -44,6 +44,14 @@
   `sda/layer2VirtualNetworks`; delete is refused while edge ports or a layer 2 handoff use it.
   `catc_set_l2_handoff(border, interface, vlan, external_vlan?, delete=false)` (dangerous): extend a layer 2
   VN's or a gateway's VLAN out of a border port into an external VLAN (`sda/fabricDevices/layer2Handoffs`).
+- **SD-Access LAN automation and fabric wireless, read-only (D102, #173, Wave 6 part F).**
+  `catc_get_lan_automation(include_log?)`: active sessions and their limit, each session's status (seed
+  devices, discovered devices, IP pools, discovery level, multicast) and optionally the log; 3.2.2 pages
+  `lan-automation/status` and `/log` 10 at a time (limit > 10 answers 400), and a 403 names the missing
+  Network Operations.LAN Automation permission. `catc_get_fabric_wireless(fabric_site?)`: VLAN-to-SSID
+  mappings, the switch-side wireless settings and wireless multicast. Both live-read on the 3.2.2 lab
+  appliance (nothing configured); writes wait for a lab that can host PnP switches behind a seed or a fabric
+  WLC with APs.
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
