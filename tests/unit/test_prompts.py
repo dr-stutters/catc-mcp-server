@@ -300,6 +300,9 @@ async def test_client_troubleshoot_renders_for_mac_ip_and_username() -> None:
     assert 'mac "52:54:00:62:c6:b2"' in text and "198.18.133.1" in text and "must be 10" in text
     assert 'ip "10.10.10.50"' in by_ip and "skipped (no destination_ip)" in by_ip
     assert 'username "mcp-eaptls-client"' in by_user and "`ise_find_session`" in by_user
+    # D47: an IP or a username resolves through catc_find_host.
+    assert "`catc_find_host`" in by_ip and "search_devices" in by_ip
+    assert 'user "mcp-eaptls-client"' in by_user and "`catc_find_host`" in by_user
 
 
 async def test_client_troubleshoot_validates() -> None:

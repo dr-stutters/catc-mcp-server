@@ -3,6 +3,20 @@
 ## Unreleased
 
 ### Added
+- **Find a host (D47, #93).** `catc_find_host(mac|ip|hostname|user, search_devices?, hours=24)` (read): each
+  matching client Assurance saw in the window, newest first, with its switch (name, management IP) and port or
+  AP/WLC/SSID, VLAN, SGT, the AAA server, site, status, health, last seen and a one-line `where`; a switch no
+  longer in the inventory is marked. `search_devices` (up to 10 switches) also looks the host up live through
+  the command runner (`show mac address-table address`, `show device-tracking database mac|address`,
+  `show ip arp`; an IP that only ARP knows is followed to the MAC table for its port). A hostname that is a
+  network device, not a client, returns the device. Live on 3.2.2: `user='mcp-eaptls-client'` resolves to
+  `52:54:00:62:C6:B2` on sw1 Gi1/0/3, VLAN 10, SGT 7, `Global/mcp-test-lab/mcp-test-nac`; `ip='10.10.10.50'`
+  had no Assurance record (the switch's device-tracking table had lost the IPv4 binding) and the live lookup
+  found it through ARP and the MAC table.
+- `catc_list_clients(user=)`: clients by the username they logged in with (part of the name, case-insensitive,
+  `*` wildcards) through `POST clients/query` with a `username` filter; the other filters apply to the matched
+  rows, and a release that rejects the filter key is scanned and matched client-side (`user_match` says
+  which). 3.2.2 accepts the key: `like` is case-insensitive with `*` as the wildcard, `eq` is case-sensitive.
 - **Edit an authentication and policy server (D75, #130).** `catc_update_policy_server(server, fqdn?,
   ise_password?, ise_username?, protocol?, authentication_port?, accounting_port?, tacacs_port?, pxgrid?,
   use_catc_cert_for_pxgrid?, retries?, timeout_seconds?, wait=true)` (dangerous tier: it resets trust and the
@@ -62,6 +76,7 @@
   or trend that fails is reported in its section instead of failing the call.
 
 ### Changed
+- The `catc_client_troubleshoot` prompt finds a client given by IP or username with `catc_find_host` (D47).
 - The `catc_onboard_switch_with_nac` prompt's first step follows `next_action` (an entry that FAILED is
   fixed with `catc_update_policy_server` instead of stopping), and `check`'s ISE warning names the update
   tool.
