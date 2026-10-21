@@ -25,11 +25,12 @@ async def test_vn_and_devices(api: respx.MockRouter) -> None:
     mock_sites(api, [GLOBAL, AREA, BLDG])
     api.get(f"/dna/intent/api/v1/sites/{BLDG['id']}").respond(json={"response": BLDG})
     api.get("/dna/intent/api/v1/sda/fabricSites").respond(json={"response": [FABRIC]})
-    api.get(f"{BASE}/{BLDG['id']}").respond(
+    api.get(f"{BASE}/{FABRIC['id']}").respond(
         json={
             "response": [
                 {
-                    "layer3VirtualNetworkId": "vn-1",
+                    "id": "vn-uuid-1",
+                    "layer3VirtualNetworkId": 4099,  # an integer: not the id the device path takes
                     "virtualNetworkName": "MCP_VN",
                     "readiness": "Ready",
                     "readyDeviceCount": 2,
@@ -38,7 +39,7 @@ async def test_vn_and_devices(api: respx.MockRouter) -> None:
             ]
         }
     )
-    dev = api.get(f"{BASE}/{BLDG['id']}/virtualNetworks/vn-1").respond(
+    dev = api.get(f"{BASE}/{FABRIC['id']}/virtualNetworks/vn-uuid-1").respond(
         json={
             "response": [
                 {"hostName": "mcp-catc-fab-bcp", "fabricRoles": ["BORDER_NODE"], "readiness": "Ready"}

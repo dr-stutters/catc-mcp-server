@@ -50,7 +50,7 @@ def register(reg: ToolRegistrar) -> None:
                     **({"note": "No fabric sites rated (no SD-Access fabric yet)."} if not sites else {}),
                 }
             fabric, site = await resolve_fabric(app, fabric_site)
-            sid = str(site["id"])
+            sid = str(fabric["id"])  # both paths take the SDA fabric site id, not the site id
             vns = ensure_list(await app.get_response(f"{BASE}/{seg(sid)}"))
             out: dict[str, Any] = {"fabric_site": site.get("nameHierarchy"), "virtual_networks": vns}
             if virtual_network:
@@ -64,7 +64,7 @@ def register(reg: ToolRegistrar) -> None:
                 )
                 if vn is None:
                     raise NotFound(f"{virtual_network} is not rated at {site.get('nameHierarchy')}.")
-                vid = str(vn.get("layer3VirtualNetworkId") or vn.get("id"))
+                vid = str(vn.get("id"))  # the row's id (layer3VirtualNetworkId is a different, integer id)
                 out["devices"] = ensure_list(
                     await app.get_response(f"{BASE}/{seg(sid)}/virtualNetworks/{seg(vid)}")
                 )
