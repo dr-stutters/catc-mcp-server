@@ -6,10 +6,12 @@ an anycast gateway or a port assignment pushes LISP/VRF/SVI/port configuration t
 (dangerous tier), as does removing anything (catc_delete_sda_object). Order: provision the devices at the
 fabric site's building -> catc_create_fabric_site -> catc_add_fabric_device (border + control plane first,
 then edges) -> catc_create_virtual_network -> reserve an IP pool at the site (catc_create_ip_pool) ->
-catc_add_anycast_gateway -> catc_assign_fabric_port. Read it all back with catc_get_sda_fabric.
+catc_add_anycast_gateway -> catc_assign_fabric_port. Read it all back with catc_get_sda_fabric. Tear down with
+catc_delete_fabric_device or catc_delete_fabric_site (cascade=true: everything in reverse order).
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import contextlib
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -107,6 +109,77 @@ async def sda_job(app: CatcApp, method: str, path: str, body: Any, ctx: Context,
         if "NCSP11008" in str(e) or ("NCSP11000" in str(e) and "provision" in str(e)):
             raise UpstreamError(SDA_MISSING.format(err=str(e)[:300])) from e
         raise
+
+
+# Per-device handoffs; the API lists and deletes them per (fabricId, networkDeviceId).
+HANDOFFS = (
+    ("layer 3 handoff (IP transit)", "fabricDevices/layer3Handoffs/ipTransits"),
+    ("layer 3 handoff (SD-Access transit)", "fabricDevices/layer3Handoffs/sdaTransits"),
+    ("layer 2 handoff", "fabricDevices/layer2Handoffs"),
+)
+# Catalyst Center keeps INFRA_VN at every fabric site; it goes with the fabric site itself.
+SYSTEM_VNS = {"INFRA_VN"}
+
+
+async def fabric_contents(app: CatcApp, fabric: dict[str, Any], site: dict[str, Any]) -> dict[str, Any]:
+    """Everything that lives in a fabric site (and its fabric zones), grouped in removal order."""
+    fid = str(fabric["id"])
+    zones = []
+    for z in await sda_list(app, "fabricZones"):
+        if str(z.get("siteId")) == str(site["id"]):
+            continue
+        with contextlib.suppress(NotFound):
+            zsite = await resolve_site(app, str(z.get("siteId")))
+            if _under(zsite.get("nameHierarchy"), site):
+                zones.append({**z, "nameHierarchy": zsite.get("nameHierarchy")})
+    fids = [fid] + [str(z["id"]) for z in zones]
+    out: dict[str, Any] = {"fabric_ids": fids, "zones": zones}
+    for key, what in (
+        ("port_assignments", "portAssignments"),
+        ("port_channels", "portChannels"),
+        ("multicast_vns", "multicast/virtualNetworks"),
+        ("anycast_gateways", "anycastGateways"),
+        ("layer2_vns", "layer2VirtualNetworks"),
+    ):
+        out[key] = [x for f in fids for x in await sda_list(app, what, {"fabricId": f})]
+    devices = await sda_list(app, "fabricDevices", {"fabricId": fid})
+    out["handoffs"] = [
+        {"kind": label, "path": what, "networkDeviceId": d.get("networkDeviceId"), "count": len(found)}
+        for d in devices
+        for label, what in HANDOFFS
+        if (
+            found := await sda_list(app, what, {"fabricId": fid, "networkDeviceId": d.get("networkDeviceId")})
+        )
+    ]
+    out["virtual_networks"] = [
+        v
+        for v in await sda_list(app, "layer3VirtualNetworks")
+        if set(map(str, ensure_list(v.get("fabricIds")))) & set(fids)
+        and v.get("virtualNetworkName") not in SYSTEM_VNS
+    ]
+    # Edges first: the control plane and border go last.
+    out["fabric_devices"] = sorted(devices, key=lambda d: "EDGE_NODE" not in (d.get("deviceRoles") or []))
+    return out
+
+
+def _contents_summary(c: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "port_assignments": [
+            f"{p.get('interfaceName')} ({p.get('dataVlanName')})" for p in c["port_assignments"]
+        ],
+        "port_channels": [str(p.get("portChannelName")) for p in c["port_channels"]],
+        "multicast_vns": [str(m.get("virtualNetworkName")) for m in c["multicast_vns"]],
+        "anycast_gateways": [
+            f"{g.get('ipPoolName')} in {g.get('virtualNetworkName')}" for g in c["anycast_gateways"]
+        ],
+        "layer2_vns": [str(v.get("vlanName")) for v in c["layer2_vns"]],
+        "handoffs": [f"{h['kind']} on {h['networkDeviceId']}" for h in c["handoffs"]],
+        "virtual_networks_left_by_this_site": [
+            str(v.get("virtualNetworkName")) for v in c["virtual_networks"]
+        ],
+        "fabric_zones": [str(z.get("nameHierarchy")) for z in c["zones"]],
+        "fabric_devices": [f"{d.get('networkDeviceId')} {d.get('deviceRoles')}" for d in c["fabric_devices"]],
+    }
 
 
 def _under(site_path: str | None, fabric_site: dict[str, Any]) -> bool:
@@ -685,6 +758,282 @@ def register(reg: ToolRegistrar) -> None:
             ctx,
             tool="catc_delete_sda_object",
             args={"kind": kind, "id": id, "name": name},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
+    async def _run_steps(
+        ctx: Context, app: CatcApp, steps: list[tuple[str, str, str, Any, dict[str, Any] | None]]
+    ) -> dict[str, Any]:
+        """Run (label, method, path, body, params) jobs in order; on a failure report what was removed."""
+        done: list[str] = []
+        for label, method, path, body, params in steps:
+            try:
+                await sda_job(app, method, path, body, ctx, label, params=params)
+            except UpstreamError as e:
+                raise UpstreamError(
+                    f"Stopped at '{label}' ({len(done)} of {len(steps)} steps done): {e}. Removed so far: "
+                    f"{done or 'nothing'}. Fix the cause and run the tool again (it starts from what is "
+                    "left)."
+                ) from e
+            done.append(label)
+        return {"removed": done, "steps": len(done)}
+
+    def _handoff_steps(
+        fid: str, handoffs: list[dict[str, Any]]
+    ) -> list[tuple[str, str, str, Any, dict[str, Any]]]:
+        return [
+            (
+                f"delete {h['kind']} on {h['networkDeviceId']}",
+                "DELETE",
+                f"{SDA}/{h['path']}",
+                None,
+                {"fabricId": fid, "networkDeviceId": h["networkDeviceId"]},
+            )
+            for h in handoffs
+        ]
+
+    @reg.dangerous(title="Delete fabric site", task=True)
+    async def catc_delete_fabric_site(
+        ctx: Context,
+        fabric_site: FabricRef,
+        cascade: Annotated[
+            bool,
+            Field(
+                description="Also remove everything in it first (ports, port channels, multicast, gateways, "
+                "layer 2 VNs, handoffs, VN memberships, fabric zones, fabric devices); default: refuse while "
+                "anything is left"
+            ),
+        ] = False,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Remove an SD-Access fabric site; the site itself stays in the hierarchy. Without cascade the
+        preview refuses while the fabric still holds anything and lists it. With cascade=true the preview
+        lists everything that goes, and the apply removes it in reverse order (edge ports -> port channels ->
+        multicast VNs -> anycast gateways -> layer 2 VNs -> border handoffs -> the site from each layer 3 VN
+        (the VN itself stays) -> fabric zones -> fabric devices, edges first -> the fabric site). Catalyst
+        Center removes the fabric configuration from every fabric device. A failure stops the run and says
+        what was removed; running it again continues from what is left."""
+        app: CatcApp = get_client(ctx)
+        fabric, fsite = await resolve_fabric(app, fabric_site)
+        fid = str(fabric["id"])
+        c = await fabric_contents(app, fabric, fsite)
+        summary = _contents_summary(c)
+        left = {k: v for k, v in summary.items() if v}
+        blockers = []
+        if left and not cascade:
+            blockers.append(
+                f"{fsite.get('nameHierarchy')} still holds "
+                f"{', '.join(f'{len(v)} {k}' for k, v in left.items())}; remove them first or pass "
+                "cascade=true."
+            )
+        devices = c["fabric_devices"]
+        blockers += device_limit_blockers(app, len(devices), "fabric devices")
+        steps: list[tuple[str, str, str, Any, dict[str, Any] | None]] = []
+        if cascade:
+            for key, what, name in (
+                ("port_assignments", "portAssignments", "interfaceName"),
+                ("port_channels", "portChannels", "portChannelName"),
+                ("multicast_vns", "multicast/virtualNetworks", "virtualNetworkName"),
+                ("anycast_gateways", "anycastGateways", "ipPoolName"),
+                ("layer2_vns", "layer2VirtualNetworks", "vlanName"),
+            ):
+                for x in c[key]:
+                    oid = safe_id(str(x.get("id")), key)
+                    steps.append(
+                        (
+                            f"delete {key[:-1].replace('_', ' ')} {x.get(name)}",
+                            "DELETE",
+                            f"{SDA}/{what}/{oid}",
+                            None,
+                            None,
+                        )
+                    )
+            steps += _handoff_steps(fid, c["handoffs"])
+            fids = set(c["fabric_ids"])
+            for v in c["virtual_networks"]:
+                keep = [f for f in map(str, ensure_list(v.get("fabricIds"))) if f not in fids]
+                body = {
+                    "id": v.get("id"),
+                    "virtualNetworkName": v.get("virtualNetworkName"),
+                    "fabricIds": keep,
+                }
+                if v.get("anchoredSiteId"):
+                    body["anchoredSiteId"] = v["anchoredSiteId"]
+                steps.append(
+                    (
+                        f"remove the site from VN {v.get('virtualNetworkName')}",
+                        "PUT",
+                        f"{SDA}/layer3VirtualNetworks",
+                        [body],
+                        None,
+                    )
+                )
+            for z in c["zones"]:
+                steps.append(
+                    (
+                        f"delete fabric zone {z.get('nameHierarchy')}",
+                        "DELETE",
+                        f"{SDA}/fabricZones/{safe_id(str(z['id']), 'zone id')}",
+                        None,
+                        None,
+                    )
+                )
+            for d in devices:
+                steps.append(
+                    (
+                        f"delete fabric device {d.get('networkDeviceId')} {d.get('deviceRoles')}",
+                        "DELETE",
+                        f"{SDA}/fabricDevices/{safe_id(str(d['id']), 'fabric device id')}",
+                        None,
+                        None,
+                    )
+                )
+        steps.append(
+            (
+                f"delete fabric site {fsite.get('nameHierarchy')}",
+                "DELETE",
+                f"{SDA}/fabricSites/{safe_id(fid, 'fabric id')}",
+                None,
+                None,
+            )
+        )
+        plan = Plan(
+            f"Delete fabric site {fsite.get('nameHierarchy')}"
+            + (f" and everything in it ({len(steps) - 1} objects)" if cascade and len(steps) > 1 else ""),
+            details={"fabric_id": fid, "contents": left, "order": [s[0] for s in steps]},
+            side_effects=[
+                f"Catalyst Center removes the fabric configuration from {len(devices)} fabric device(s).",
+                "Edge ports lose their fabric VLAN and authentication; clients on them go offline.",
+            ]
+            if devices
+            else ["The site is no longer a fabric site (no device configuration changes)."],
+            fingerprint={"contents": c},
+            blockers=blockers,
+            blast_radius=len(devices) or None,
+        )
+
+        async def apply() -> Any:
+            return await _run_steps(ctx, app, steps)
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_delete_fabric_site",
+            args={"fabric_site": fabric_site, "cascade": cascade},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
+    @reg.dangerous(title="Delete fabric device", task=True)
+    async def catc_delete_fabric_device(
+        ctx: Context,
+        device: Annotated[str, Field(description="Fabric device hostname, management IP, serial or id")],
+        cascade: Annotated[
+            bool,
+            Field(
+                description="Also remove its edge port assignments, port channels and border handoffs first"
+            ),
+        ] = False,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Take a device out of its SD-Access fabric site (all its fabric roles). Catalyst Center removes the
+        fabric configuration (LISP, VRFs, fabric VLANs and SVIs) from it; the device stays in the inventory
+        and provisioned. Without cascade the preview refuses while the device still has port assignments, port
+        channels or handoffs; with cascade=true they go first. Refuses the last control plane node while edges
+        remain."""
+        app: CatcApp = get_client(ctx)
+        dev = await resolve_device(app, device)
+        did = str(dev["id"])
+        fdevs = await fabric_devices(app, did)
+        if not fdevs:
+            raise NotFound(f"{brief([dev])[0]} is not a fabric device.")
+        fdev = fdevs[0]
+        fid = str(fdev["fabricId"])
+        ports = await sda_list(app, "portAssignments", {"fabricId": fid, "networkDeviceId": did})
+        channels = await sda_list(app, "portChannels", {"fabricId": fid, "networkDeviceId": did})
+        handoffs = [
+            {"kind": label, "path": what, "networkDeviceId": did, "count": len(found)}
+            for label, what in HANDOFFS
+            if (found := await sda_list(app, what, {"fabricId": fid, "networkDeviceId": did}))
+        ]
+        peers = [
+            d
+            for d in await sda_list(app, "fabricDevices", {"fabricId": fid})
+            if d.get("id") != fdev.get("id")
+        ]
+        blockers = device_limit_blockers(app, 1)
+        held: dict[str, list[str]] = {
+            "port_assignments": [str(p.get("interfaceName")) for p in ports],
+            "port_channels": [str(p.get("portChannelName")) for p in channels],
+            "handoffs": [str(h["kind"]) for h in handoffs],
+        }
+        held = {k: v for k, v in held.items() if v}
+        if held and not cascade:
+            blockers.append(
+                f"{brief([dev])[0]} still has {', '.join(f'{len(v)} {k}' for k, v in held.items())}; "
+                "remove them first or pass cascade=true."
+            )
+        last_cp = "CONTROL_PLANE_NODE" in (fdev.get("deviceRoles") or []) and not any(
+            "CONTROL_PLANE_NODE" in (d.get("deviceRoles") or []) for d in peers
+        )
+        if last_cp and any("EDGE_NODE" in (d.get("deviceRoles") or []) for d in peers):
+            blockers.append("This is the last control plane node and edges remain; remove the edges first.")
+        steps: list[tuple[str, str, str, Any, dict[str, Any] | None]] = []
+        if cascade:
+            for p in ports:
+                steps.append(
+                    (
+                        f"delete port assignment {p.get('interfaceName')}",
+                        "DELETE",
+                        f"{SDA}/portAssignments/{safe_id(str(p['id']), 'port assignment id')}",
+                        None,
+                        None,
+                    )
+                )
+            for p in channels:
+                steps.append(
+                    (
+                        f"delete port channel {p.get('portChannelName')}",
+                        "DELETE",
+                        f"{SDA}/portChannels/{safe_id(str(p['id']), 'port channel id')}",
+                        None,
+                        None,
+                    )
+                )
+            steps += _handoff_steps(fid, handoffs)
+        steps.append(
+            (
+                f"remove {brief([dev])[0]} from the fabric",
+                "DELETE",
+                f"{SDA}/fabricDevices/{safe_id(str(fdev['id']), 'fabric device id')}",
+                None,
+                None,
+            )
+        )
+        plan = Plan(
+            f"Remove {brief([dev])[0]} ({', '.join(fdev.get('deviceRoles') or [])}) from its fabric site",
+            details={"fabric_device": fdev, "holds": held, "order": [s[0] for s in steps]},
+            side_effects=["Catalyst Center removes the LISP/VRF/fabric VLAN configuration from the device."],
+            fingerprint={
+                "fdev": fdev,
+                "ports": ports,
+                "channels": channels,
+                "handoffs": handoffs,
+                "peers": peers,
+            },
+            blockers=blockers,
+            blast_radius=1,
+        )
+
+        async def apply() -> Any:
+            return await _run_steps(ctx, app, steps)
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_delete_fabric_device",
+            args={"device": device, "cascade": cascade},
             confirm=confirm,
             plan=plan,
             apply=apply,
