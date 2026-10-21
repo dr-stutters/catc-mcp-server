@@ -746,3 +746,126 @@ missing, skip steps 5 and say ISE could not be checked.
    prove it.
 9. Summary: the client, the diagnosis in one line, the evidence (one line per step), and the fix (proposed,
    or applied and verified)."""
+
+    @reg.prompt(title="Build an SD-Access fabric site", uses=["catc"], tier=Tier.DANGEROUS)
+    def catc_build_fabric_site(
+        building: Annotated[
+            str, Field(description="Building to make a fabric site, e.g. 'Global/Area/Building'")
+        ],
+        border: Annotated[str, Field(description="Management IP of the border + control plane switch")],
+        edges: Annotated[str, Field(description="Comma-separated management IPs of the edge switches")],
+        client_pool: Annotated[str, Field(description="Client subnet (CIDR), reserved at the building")],
+        dhcp_server: Annotated[str, Field(description="DHCP server for the client subnet")],
+        client_ports: Annotated[
+            str, Field(description="Edge ports for clients: 'edge-ip:Interface', comma-separated")
+        ] = "",
+        virtual_network: Annotated[str, Field(description="Layer 3 VN for the clients")] = "MCP_VN",
+        border_asn: Annotated[str, Field(description="The border's BGP AS number")] = "65001",
+        authentication: Annotated[
+            Literal["No Authentication", "Open Authentication", "Closed Authentication", "Low Impact"],
+            Field(description="The fabric site's default authentication template"),
+        ] = "No Authentication",
+    ) -> str:
+        """Build an SD-Access fabric site from switches to a client in the fabric: SD-Access availability,
+        the devices onboarded and provisioned at the building, the client IP pool, the fabric site, border
+        and control plane before the edges, the virtual network, the anycast gateway, the edge ports, and
+        the checks between the steps (fabric read-back, CLI on the edges, pending fabric events, fabric
+        health). Ends with the teardown as a preview (catc_delete_fabric_site with cascade). Every write is
+        preview-first."""
+        texts = (building, border, edges, client_pool, dhcp_server, client_ports, virtual_network, border_asn)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        try:
+            border_ip = str(ipaddress.ip_address(border.strip()))
+            edge_ips = [str(ipaddress.ip_address(e.strip())) for e in edges.split(",") if e.strip()]
+            net = ipaddress.ip_network(client_pool.strip(), strict=True)
+            dhcp = str(ipaddress.ip_address(dhcp_server.strip()))
+        except ValueError as exc:
+            raise ValueError(f"Invalid address: {exc}") from exc
+        if not edge_ips:
+            raise ValueError("Give at least one edge switch.")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,16}", virtual_network.strip()):
+            raise ValueError("virtual_network: letters, digits, '_' and '-', up to 16 characters.")
+        if not re.fullmatch(r"\d{1,10}", border_asn.strip()):
+            raise ValueError("border_asn must be a number.")
+        ports: list[tuple[str, str]] = []
+        for item in client_ports.split(","):
+            if not item.strip():
+                continue
+            ip, _, port = item.strip().partition(":")
+            if ip.strip() not in edge_ips or not PORT_RE.fullmatch(port.strip()):
+                raise ValueError(
+                    f"client_ports entry {item.strip()!r}: use 'edge-ip:Interface' with an edge's IP."
+                )
+            ports.append((ip.strip(), port.strip()))
+        gateway = str(next(net.hosts()))
+        vn = virtual_network.strip()
+        all_ips = [border_ip, *edge_ips]
+        port_lines = (
+            "\n".join(
+                f'   - {tool_ref("catc_assign_fabric_port")} device "{ip}", interface "{p}", '
+                'data_vlan "<pool name>"'
+                for ip, p in ports
+            )
+            or "   - (no client_ports given: ask which edge ports to assign, or skip)"
+        )
+        aaa = (
+            ""
+            if authentication == "No Authentication"
+            else f"""
+   {authentication} needs ISE for the clients: {tool_ref("catc_get_policy_servers")} must show the ISE
+   integration COMPLETE, and the building's client AAA must point at ISE
+   ({tool_ref("catc_update_site_aaa_settings")} client server_type ISE). Leave network (device admin) AAA
+   alone."""
+        )
+        return f"""Build the SD-Access fabric site {building}: border + control plane {border_ip}, edges
+{", ".join(edge_ips)}, clients in {vn} on {net} (gateway {gateway}, DHCP {dhcp}),
+authentication "{authentication}". Every write is preview-first: show the preview, wait for
+the user's approval, then repeat the call with the confirm token. Stop and report at the
+first failure; never skip a check.
+
+1. SD-Access available: {tool_ref("catc_status")}: catc.sda.available must be true (the Access Control
+   Application and SD Access packages DEPLOYED; otherwise fabric creation fails with NCSP11008) and the
+   account's role_tier "dangerous" or above. A custom role seeded before the packages were installed lacks
+   Policy.Group-Based Policy Read and may get 403 on SD-Access writes: re-run the seed step
+   (docs/least-privilege.md).
+2. Devices: {tool_ref("catc_get_device")} for each of {", ".join(all_ips)}. Missing ones: onboard them as in
+   the catc_onboard_device prompt ({tool_ref("catc_list_global_credentials")},
+   {tool_ref("catc_create_discovery")} with wait=true), until each is Reachable and Managed. Each switch needs
+   a unique serial number (cloned virtual switches that share one get merged into a single inventory record).
+3. Site and settings: {tool_ref("catc_get_site_hierarchy")}; create {building} with
+   {tool_ref("catc_create_site")} if missing. {tool_ref("catc_update_site_settings")} at the building: DHCP
+   server {dhcp} and the DNS the clients use.{aaa}
+4. Client pool: {tool_ref("catc_list_ip_pools")}. A global pool covering {net} must exist; then reserve {net}
+   at {building} with {tool_ref("catc_create_ip_pool")} (gateway {gateway}, DHCP server {dhcp}). Note the
+   reserved pool's name: the anycast gateway and the ports use it.
+5. Assign and provision: {tool_ref("catc_assign_devices_to_site")} for all of {", ".join(all_ips)} at
+   {building} (or a floor under it), then {tool_ref("catc_provision_devices")}. Fabric roles need provisioned
+   devices.
+6. Fabric site: {tool_ref("catc_create_fabric_site")} site "{building}", authentication_profile
+   "{authentication}". Read back with {tool_ref("catc_get_sda_fabric")}.
+7. Border and control plane first: {tool_ref("catc_add_fabric_device")} device "{border_ip}", roles
+   ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "{border_asn.strip()}". Then each edge:
+   {tool_ref("catc_add_fabric_device")} with roles ["EDGE_NODE"]. After each,
+   {tool_ref("catc_get_sda_fabric")} shows the device with its roles.
+8. Virtual network: {tool_ref("catc_create_virtual_network")} name "{vn}", fabric_sites ["{building}"].
+9. Anycast gateway: {tool_ref("catc_add_anycast_gateway")} fabric_site "{building}", virtual_network "{vn}",
+   ip_pool "<pool name from step 4>". The preview names every edge that gets the SVI.
+10. Edge ports:
+{port_lines}
+11. Checks:
+   - {tool_ref("catc_get_sda_fabric")} for {building}: devices and roles, {vn}, the gateway and the ports.
+   - {tool_ref("catc_run_show_commands")} on the edges: "show vlan brief", "show ip interface brief | include
+     Vlan", "show running-config interface <port>" (the access VLAN and template), "show lisp session" (the
+     session to the control plane is Up); on the border "show lisp session" and "show ip route vrf {vn}".
+   - {tool_ref("catc_list_pending_fabric_events")} for {building}: none pending.
+   - Clients: {tool_ref("catc_list_clients")} by edge device (Assurance lags minutes) or the client itself: an
+     address in {net} and a ping to {gateway}. DHCP from {dhcp} works only when the VN can reach it: a server
+     outside the fabric needs a border layer 3 handoff for {vn} (an IP transit to a fusion router); until then
+     prove the gateway with a static address.
+   - {tool_ref("catc_fabric_health")} for {building} (scores lag provisioning by minutes; empty right after is
+     not a failure).
+12. Summary: what was created (site, pool, fabric site, roles, {vn}, gateway, ports), each check's result, and
+   the undo as a preview only (do not confirm unless the user asks): {tool_ref("catc_delete_fabric_site")}
+   fabric_site "{building}", cascade true (ports, gateways, the site's VN membership, fabric devices, then the
+   fabric site; the devices stay provisioned, the pool and the site stay)."""
