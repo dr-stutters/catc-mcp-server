@@ -19,6 +19,12 @@
   Center names it), changes its members, description or trunk VLANs, or deletes it (`sda/portChannels`);
   refuses member ports that have a port assignment or sit in another port channel, PAgP-less extended nodes
   and more than 8 ports for PAgP/ON. The `catc_delete_fabric_*` cascades already remove port channels.
+- **SD-Access multicast (D96, #167, Wave 6 part F).** `catc_get_fabric_multicast(fabric_site)` (read): the
+  replication mode and per-VN multicast (pool, fabric or external RPs with ASM ranges, SSM ranges).
+  `catc_set_fabric_multicast(fabric_site, replication?, virtual_network?, ip_pool?, rp?, rp_devices?,
+  external_rp_ip?, asm_ranges?, ssm_ranges?, remove_vn=false)` (dangerous): native or head-end replication
+  (`PUT sda/multicast`) and/or a VN's multicast (`POST`/`PUT`/`DELETE sda/multicast/virtualNetworks`, one
+  request at a time; unset settings keep their value), with current -> new in the preview.
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
