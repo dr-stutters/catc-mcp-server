@@ -52,6 +52,13 @@
   mappings, the switch-side wireless settings and wireless multicast. Both live-read on the 3.2.2 lab
   appliance (nothing configured); writes wait for a lab that can host PnP switches behind a seed or a fabric
   WLC with APs.
+- **Prompt `catc_build_fabric_site` (D101, #172, Wave 6 part F).** Builds an SD-Access fabric site from
+  switches to a client in the fabric with a check after each step: SD-Access availability and the account's
+  tier (a role seeded before the packages may lack Group-Based Policy Read), onboarding, site settings and
+  client AAA for an authenticated template, the client pool, assign + provision, fabric site, border and
+  control plane before the edges, VN, anycast gateway, edge ports, then the fabric read-back, edge CLI,
+  pending fabric events and `catc_fabric_health`; the teardown (`catc_delete_fabric_site`, cascade) stays a
+  preview. Written from the D13 flow before its live run; the live findings refine it.
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port

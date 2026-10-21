@@ -50,6 +50,17 @@ SAMPLES = {
         "expected_vlan": "10",
         "hours": "4",
     },
+    "catc_build_fabric_site": {
+        "building": "Global/mcp-test-lab/mcp-test-fabric",
+        "border": "198.18.128.176",
+        "edges": "198.18.128.175",
+        "client_pool": "10.10.40.0/24",
+        "dhcp_server": "10.255.40.14",
+        "client_ports": "198.18.128.175:GigabitEthernet1/0/3, 198.18.128.175:GigabitEthernet1/0/4",
+        "virtual_network": "MCP_VN",
+        "border_asn": "65001",
+        "authentication": "Closed Authentication",
+    },
     "catc_onboard_switch_with_nac": {
         "switch_ip": "198.18.128.170",
         "site_path": "Global/mcp-test-lab/mcp-test-nac",
