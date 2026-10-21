@@ -292,6 +292,12 @@ SD-Access availability and the account's tier, devices onboarded and provisioned
 the fabric site, border and control plane before the edges, the VN, the anycast gateway, the edge ports, then the
 checks (fabric read-back, CLI on the edges, pending fabric events, `catc_fabric_health`), and the teardown
 (`catc_delete_fabric_site` with cascade) as a preview.
+
+`catc_group_policy_rollout` (write tier, uses **ise**) changes one cell of ISE's TrustSec matrix and proves a
+Catalyst Center-managed edge enforces it: the groups and the cell in ISE and on the edge, the previewed
+`ise_set_egress_policy` and `ise_push_trustsec_matrix`, the clients' SGTs (`ise_find_session`), the edge's
+downloaded cell and bindings (`catc_get_group_policy_enforcement`), a test flow and the counters, and an undo
+preview. ISE stays the policy owner; the prompt never starts Catalyst Center's group-based policy migration.
 `catc_decommission_device` (dangerous tier, uses **ise**) keeps a copy of the config, shows what
 un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
 removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
@@ -351,6 +357,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_fabric_authentication_profile` | The host onboarding (authentication template) posture of an SD-Access fabric site. |
 | `catc_get_fabric_multicast` | Multicast at an SD-Access fabric site. |
 | `catc_get_fabric_wireless` | SD-Access fabric wireless: the VLAN-to-SSID mappings of each fabric site (fabric-enabled WLANs and the SGT they carry), and for one fabric site the switch-side wireless settings (which fabric devices carry wireless roles, rolling AP upgrade) and wireless multicast. |
+| `catc_get_group_policy_enforcement` | What a switch actually enforces for group-based access control (TrustSec / SD-Access), read live through the command runner: the environment data it downloaded from ISE (state, servers, the security group name table), every source -> destination cell with its SGACLs and the default policy, the enforcement counters (SW/HW denied and permitted per cell) and the IP-to-SGT bindings. |
 | `catc_get_issue` | One assurance issue in full: description, affected device/client/site, timeline, additional attributes and Catalyst Center's suggested actions with the show commands it proposes (run them with catc_run_show_commands). |
 | `catc_get_l3_topology` | Layer 3 topology for one routing protocol: routers and the adjacencies between them with interface names and addresses. |
 | `catc_get_lan_automation` | LAN automation (underlay automation) on Catalyst Center: active sessions and their limit, each session's status (seed devices, discovered devices and their site, IP pools, discovery level, multicast, hostname prefix) and optionally the latest log entries. |
