@@ -369,6 +369,10 @@
       "tier": "read",
       "title": "Export templates"
     },
+    "catc_find_host": {
+      "tier": "read",
+      "title": "Find a host"
+    },
     "catc_get_client": {
       "tier": "read",
       "title": "Get client"
