@@ -314,7 +314,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (87)
+### Read (88)
 
 | Tool | What it does |
 |---|---|
@@ -340,6 +340,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_device_config` | The device's running configuration as last collected by Catalyst Center (not live: run catc_run_show_commands for that). |
 | `catc_get_device_hardware` | Hardware and licensing of one device in one call: stack members (role, state, priority, serial, platform, software) and StackWise Virtual links, PoE budget (allocated / consumed / remaining watts) and the PoE ports drawing power, module count, and smart-licensing state with the licences in use. |
 | `catc_get_external_authentication` | How Catalyst Center admins log in: whether external authentication (System > Users & Roles > External Authentication) is on, the AAA attribute it reads the role from (empty = the default, Cisco-AVPair for RADIUS / cisco-av-pair for TACACS+), the AAA servers it asks (from the authentication and policy servers, e.g. the integrated ISE), the roles an external user can be given (the value the AAA server must return: 'Role=<name>'), and the external users that have logged in so far. |
+| `catc_get_fabric_multicast` | Multicast at an SD-Access fabric site. |
 | `catc_get_issue` | One assurance issue in full: description, affected device/client/site, timeline, additional attributes and Catalyst Center's suggested actions with the show commands it proposes (run them with catc_run_show_commands). |
 | `catc_get_l3_topology` | Layer 3 topology for one routing protocol: routers and the adjacencies between them with interface names and addresses. |
 | `catc_get_network_health` | Overall network health score and the healthy/unhealthy device counts per category (access, distribution, core, router, wireless), plus a per-site health summary. |
@@ -458,7 +459,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (32)
+### Dangerous (33)
 
 | Tool | What it does |
 |---|---|
@@ -490,6 +491,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
 | `catc_set_external_authentication` | Turn Catalyst Center's external authentication on or off (System > Users & Roles > External Authentication), optionally setting the AAA attribute first. |
 | `catc_set_extranet_policy` | Create, update or delete an SD-Access extranet policy. |
+| `catc_set_fabric_multicast` | Set multicast at an SD-Access fabric site. |
 | `catc_set_fabric_port_channel` | Create, change or delete a port channel on an SD-Access fabric device. |
 | `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
 | `catc_update_policy_server` | Edit an authentication and policy server (System > Settings > Authentication and Policy Servers > Edit): the ISE FQDN and login, ports, protocol, pxGrid, retries and timeout. |
