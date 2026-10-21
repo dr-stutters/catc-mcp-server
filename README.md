@@ -455,7 +455,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (25)
+### Dangerous (27)
 
 | Tool | What it does |
 |---|---|
@@ -470,6 +470,8 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_delete_compliance_policy` | Delete a user compliance policy with its rules, conditions and site assignments; its violations disappear from the compliance results. |
 | `catc_delete_device` | Remove a device from Catalyst Center. |
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |
+| `catc_delete_fabric_device` | Take a device out of its SD-Access fabric site (all its fabric roles). |
+| `catc_delete_fabric_site` | Remove an SD-Access fabric site; the site itself stays in the hierarchy. |
 | `catc_delete_pnp_device` | Remove a device from the Plug and Play list (not from the inventory). |
 | `catc_delete_policy_server` | Remove an authentication and policy server (plain AAA or the integrated ISE) from Catalyst Center. |
 | `catc_delete_sda_object` | Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a device's fabric role or a fabric site. |
