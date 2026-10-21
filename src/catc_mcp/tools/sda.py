@@ -429,11 +429,20 @@ def register(reg: ToolRegistrar) -> None:
         traffic_type: Annotated[Literal["DATA", "VOICE"], Field(description="Traffic type")] = "DATA",
         critical_pool: Annotated[bool, Field(description="Critical VLAN pool (ISE unreachable)")] = False,
         layer2_flooding: Annotated[bool, Field(description="Layer 2 flooding")] = False,
+        pool_type: Annotated[
+            Literal["EXTENDED_NODE", "FABRIC_AP"] | None,
+            Field(description="INFRA_VN only (required there): extended-node or fabric AP pool"),
+        ] = None,
+        supplicant_based_onboarding: Annotated[
+            bool | None,
+            Field(description="INFRA_VN extended-node pool: supplicant-based extended node onboarding"),
+        ] = None,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Add an anycast gateway (the client subnet's default gateway, the same IP on every edge) for an IP
         pool in a virtual network at a fabric site. Catalyst Center pushes the VLAN, SVI and LISP instance
-        to every edge node of the fabric site. Preview-first: lists the edges that get it."""
+        to every edge node of the fabric site. In INFRA_VN (the global routing table) the pool is for
+        extended nodes or fabric APs (pool_type). Preview-first: lists the edges that get it."""
         app: CatcApp = get_client(ctx)
         fabric, fsite = await resolve_fabric(app, fabric_site)
         blockers: list[str] = []
@@ -446,7 +455,7 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(
                 f"No virtual network {virtual_network}; create it with catc_create_virtual_network."
             )
-        elif str(fabric["id"]) not in ensure_list(vns[0].get("fabricIds")):
+        elif virtual_network != "INFRA_VN" and str(fabric["id"]) not in ensure_list(vns[0].get("fabricIds")):
             blockers.append(
                 f"{virtual_network} is not at this fabric site; add it with catc_create_virtual_network."
             )
@@ -479,6 +488,17 @@ def register(reg: ToolRegistrar) -> None:
             "isMultipleIpToMacAddresses": False,
             "isWirelessPool": False,
         }
+        if virtual_network == "INFRA_VN":
+            if pool_type is None:
+                blockers.append("An INFRA_VN gateway needs pool_type (EXTENDED_NODE or FABRIC_AP).")
+            else:
+                item["poolType"] = pool_type
+            if supplicant_based_onboarding is not None:
+                if pool_type != "EXTENDED_NODE":
+                    blockers.append("supplicant_based_onboarding applies to an EXTENDED_NODE pool.")
+                item["isSupplicantBasedExtendedNodeOnboarding"] = supplicant_based_onboarding
+        elif pool_type is not None or supplicant_based_onboarding is not None:
+            blockers.append("pool_type and supplicant_based_onboarding apply to INFRA_VN gateways only.")
         if vlan_name:
             item["vlanName"] = vlan_name
         if vlan_id:
@@ -526,6 +546,8 @@ def register(reg: ToolRegistrar) -> None:
                 "traffic_type": traffic_type,
                 "critical_pool": critical_pool,
                 "layer2_flooding": layer2_flooding,
+                "pool_type": pool_type,
+                "supplicant_based_onboarding": supplicant_based_onboarding,
             },
             confirm=confirm,
             plan=plan,
@@ -546,7 +568,18 @@ def register(reg: ToolRegistrar) -> None:
         ] = None,
         voice_vlan: Annotated[str | None, Field(description="Voice VLAN name or pool")] = None,
         connected_device_type: Annotated[
-            Literal["USER_DEVICE", "ACCESS_POINT", "TRUNKING_DEVICE"], Field(description="What is plugged in")
+            Literal[
+                "USER_DEVICE",
+                "ACCESS_POINT",
+                "TRUNKING_DEVICE",
+                "AUTHENTICATOR_SWITCH",
+                "SUPPLICANT_BASED_EXTENDED_NODE",
+            ],
+            Field(
+                description="What is plugged in: a host, an AP, a trunk, or an extended node "
+                "(AUTHENTICATOR_SWITCH: a policy extended node that authenticates its own hosts; "
+                "SUPPLICANT_BASED_EXTENDED_NODE: one that onboards with 802.1X)"
+            ),
         ] = "USER_DEVICE",
         authentication: Annotated[
             AuthProfile | None,
@@ -579,7 +612,24 @@ def register(reg: ToolRegistrar) -> None:
 
         data, voice = vlan_of(data_vlan), vlan_of(voice_vlan)
         if connected_device_type == "USER_DEVICE" and not (data or voice):
-            blockers.append("A USER_DEVICE port needs data_vlan and/or voice_vlan.")
+            # 3.2.2: a VLAN is required unless the port's template is Closed Authentication (ISE assigns it).
+            template = authentication or next(
+                (
+                    f.get("authenticationProfileName")
+                    for f in await sda_list(app, "fabricSites")
+                    if str(f.get("id")) == fid
+                ),
+                None,
+            )
+            if template != "Closed Authentication":
+                blockers.append(
+                    "A USER_DEVICE port needs data_vlan and/or voice_vlan unless its template is Closed "
+                    "Authentication (then ISE assigns the VLAN)."
+                )
+        if connected_device_type in ("AUTHENTICATOR_SWITCH", "SUPPLICANT_BASED_EXTENDED_NODE") and (
+            data or voice
+        ):
+            blockers.append("An extended-node port takes no data or voice VLAN (it onboards over INFRA_VN).")
         current = await sda_list(
             app,
             "portAssignments",
