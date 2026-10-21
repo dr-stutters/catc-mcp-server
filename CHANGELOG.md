@@ -29,6 +29,12 @@
   VLAN (VLAN or pool name), authentication template, static security group, description, a trunk's native
   and allowed VLANs on a port. The PUT carries the current record with only the changed fields replaced; the
   preview shows current -> new per field; fields the API won't change are not offered.
+- **SD-Access drift (D100, #171, Wave 6 part F).** `catc_list_pending_fabric_events(fabric_site?)` (read):
+  the pending fabric events Catalyst Center has queued per fabric site (configuration it wants to push again
+  after an RMA, a reload, a failed provision or a device-side change), with id and detail; live-read on the
+  3.2.2 lab appliance. `catc_apply_pending_fabric_events(fabric_site, event_ids?)` (dangerous) applies them
+  (`POST sda/pendingFabricEvents/apply`, one event per request as the API asks), stopping at the first
+  failure with what was applied and returning what is still pending.
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
