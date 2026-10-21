@@ -59,6 +59,12 @@
   failure with what was applied and returning what is still pending.
 
 ### Changed
+- Least-privilege roles after the SD-Access packages (Wave 6 part E): `mcp-catc-ro` gains Policy.Group-Based
+  Policy Read (a dependency of Network Provision.SD-Access) and Network Operations.LAN Automation Read;
+  `mcp-catc-dangerous` gains Utilities.Scheduler Write (a dependency of Device Provision and SD-Access Write).
+  Both Policy and LAN automation permissions only exist once `aca` + `sda` are deployed; roles seeded before
+  the install have them at Deny (LAN automation reads answered 403 on the lab appliance). Re-run the seed step
+  after installing the packages (docs/least-privilege.md).
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
   `ise_audit_nads(expected=<catc_list_devices(site) rows>, check_stale=false)` (ise I67) and its
   `coverage.verdict`. Devices match NADs by IP, so a NAD Catalyst Center reused under another name

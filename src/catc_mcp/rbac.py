@@ -30,6 +30,11 @@ READ: dict[str, str] = {
     "Network Provision.Device Provision": "Read",  # provisioning status in device_360
     "Network Provision.Network-wide Config": "Read",  # (fixed at Read)
     "Network Provision.SD-Access": "Read",  # catc_get_sda_fabric
+    # The next two exist only once the Access Control Application / SD Access packages are deployed
+    # (seed_access.py skips permissions an appliance doesn't have). SD-Access depends on Group-Based
+    # Policy Read.
+    "Policy.Group-Based Policy": "Read",
+    "Network Operations.LAN Automation": "Read",  # LAN automation sessions and status
     "Security.Audit Log": "Read",  # audit logs, recent activity
     "System.System Settings": "Read",  # catc_get_policy_servers (ISE)
     "System.System Administration": "Read",  # catc_get_system_health, the account check in catc_status
@@ -59,6 +64,8 @@ DANGEROUS: dict[str, str] = {
     "Network Operations.PnP": "Write",
     "Network Provision.Device Provision": "Write",
     "Network Provision.SD-Access": "Write",
+    # A dependency of Device Provision and SD-Access Write (GET /dna/system/api/v2/roles/permissions).
+    "Utilities.Scheduler": "Write",
     # The ISE integration writes (catc_add_ise_server / update / accept / delete policy server) need
     # SUPER-ADMIN-ROLE: 3.2.2 refuses them (403) to custom roles even with every System permission at Write.
     "System.System Settings": "Write",

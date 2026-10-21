@@ -53,15 +53,17 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Network Operations.SWIM | Read | images, golden tags |
 | Network Provision.Device Provision | Read | provisioning status in `catc_device_360` |
 | Network Provision.Network-wide Config | Read | (fixed at Read) |
-| Network Provision.SD-Access | Read | `catc_get_sda_fabric` |
+| Network Provision.SD-Access | Read | `catc_get_sda_fabric` and the other SD-Access reads |
+| Policy.Group-Based Policy | Read | a dependency of Network Provision.SD-Access (exists once the `aca` package is deployed) |
+| Network Operations.LAN Automation | Read | LAN automation sessions and status (exists once `sda` is deployed; 403 without it) |
 | Security.Audit Log | Read | `catc_list_audit_logs`, `catc_recent_activity` |
 | System.System Settings | Read | `catc_get_policy_servers` (ISE integration) |
 | System.System Administration | Read | `catc_get_system_health`, the account check in `catc_status` |
 | Utilities.Command Runner | Read | `catc_run_show_commands` (Read is enough for show commands) |
 | Utilities.Event Viewer, Scheduler, Machine Reasoner, Reports, App Hosting | Read | dependencies of Assurance.Monitoring |
 
-**Denied** (not used by any read tool): Extensions.ITSM, Network Design.Wireless Maps (floor writes only), Network Operations.LAN
-Automation, Policy.* (Application, Group-Based, IP Based Access Control), Security.Rogue and aWIPS, SSI,
+**Denied** (not used by any read tool): Extensions.ITSM, Network Design.Wireless Maps (floor writes only), Policy.Application
+Policy, Policy.IP Based Access Control, Security.Rogue and aWIPS, SSI,
 Security Advisory, Stealthwatch, Umbrella, Utilities.Bonjour, Utilities.Remote Support Authorization.
 
 **Expected denial in the read tier:** `catc_preview_template`. The template preview API is a `PUT` that needs
@@ -96,7 +98,12 @@ sites, and Inventory Write allows deleting devices. Those tools are in the serve
 
 Everything in `mcp-catc-rw`, plus Write on Network Operations.PnP (`catc_claim_pnp_device`, reset, delete),
 Network Provision.Device Provision (`catc_provision_devices`, `catc_delete_device` of a provisioned device,
-`catc_replace_device`; template deploys also need this role: tested, rw gets 403 on the deploy API), Network Provision.SD-Access, and System.System Settings.
+`catc_replace_device`; template deploys also need this role: tested, rw gets 403 on the deploy API), Network Provision.SD-Access, Utilities.Scheduler (a dependency of Device Provision and SD-Access Write) and System.System Settings.
+
+**After deploying the SD-Access packages, re-run the seed step.** Installing `aca` + `sda` adds Policy.Group-Based
+Policy and Network Operations.LAN Automation to the permission list, and SD-Access Write then depends on Group-Based
+Policy Read; roles created before the install have them at Deny (seen on the 3.2.2 lab appliance, 2026-10-21:
+LAN automation reads answered 403 to `mcp-catc-rw`).
 
 **The ISE integration writes need SUPER-ADMIN-ROLE.** `catc_add_ise_server`, `catc_update_policy_server`,
 `catc_accept_ise_certificate` and `catc_delete_policy_server` are refused to every custom role on 3.2.2: tested

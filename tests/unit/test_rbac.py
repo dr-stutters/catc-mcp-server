@@ -23,6 +23,17 @@ def test_roles_are_nested() -> None:
     assert rbac.DANGEROUS["Network Provision.Device Provision"] == "Write"
 
 
+def test_sda_package_permissions() -> None:
+    """The aca/sda packages add these; SD-Access and Device Provision Write depend on them (3.2.2 catalog)."""
+    assert rbac.READ["Policy.Group-Based Policy"] == "Read"
+    assert rbac.READ["Network Operations.LAN Automation"] == "Read"
+    assert rbac.DANGEROUS["Utilities.Scheduler"] == "Write" and rbac.WRITE["Utilities.Scheduler"] == "Read"
+    # A dangerous role seeded before the install (Scheduler Read, no Group-Based Policy) is still dangerous.
+    before = {k: v for k, v in rbac.DANGEROUS.items() if k != "Policy.Group-Based Policy"}
+    before["Utilities.Scheduler"] = "Read"
+    assert rbac.permissions_tier(perms(before)) == "dangerous"
+
+
 def perms(d: dict[str, str]) -> list[dict[str, str]]:
     return [{"id": k, "privilege": v} for k, v in d.items()]
 
