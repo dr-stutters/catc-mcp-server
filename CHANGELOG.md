@@ -13,6 +13,12 @@
   (`POST sda/fabricZones`; the template defaults to the fabric site's), so anycast gateways can be limited to
   it. `catc_delete_sda_object` gains kind `fabric_zone` (refused while the zone still has gateways or ports);
   the `catc_delete_fabric_site` cascade already removes zones.
+- **SD-Access port channels (D98, #169, Wave 6 part F).** `catc_set_fabric_port_channel(device,
+  port_channel?, interfaces?, connected_device_type=TRUNK|EXTENDED_NODE, protocol=LACP|PAGP|ON, description?,
+  native_vlan?, allowed_vlans?, delete=false)` (dangerous) creates a port channel on a fabric device (Catalyst
+  Center names it), changes its members, description or trunk VLANs, or deletes it (`sda/portChannels`);
+  refuses member ports that have a port assignment or sit in another port channel, PAgP-less extended nodes
+  and more than 8 ports for PAgP/ON. The `catc_delete_fabric_*` cascades already remove port channels.
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
