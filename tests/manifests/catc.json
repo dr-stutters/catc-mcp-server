@@ -3,6 +3,24 @@
   "manifest": 1,
   "prefix": "catc",
   "prompts": {
+    "catc_admin_access_via_ise": {
+      "arguments": [
+        "catc_ip",
+        "ad_group",
+        "ad_user",
+        "role",
+        "mirror_local_accounts",
+        "keep_enabled"
+      ],
+      "references": [],
+      "rendered": false,
+      "tier": "dangerous",
+      "uses": [
+        "catc",
+        "ise",
+        "win"
+      ]
+    },
     "catc_change_window": {
       "arguments": [
         "template",
