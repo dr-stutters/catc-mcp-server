@@ -97,7 +97,8 @@ sites, and Inventory Write allows deleting devices. Those tools are in the serve
 Everything in `mcp-catc-rw`, plus Write on Network Operations.PnP (`catc_claim_pnp_device`, reset, delete),
 Network Provision.Device Provision (`catc_provision_devices`, `catc_delete_device` of a provisioned device,
 `catc_replace_device`; template deploys also need this role: tested, rw gets 403 on the deploy API), Network Provision.SD-Access, and System.System Settings
-(`catc_add_ise_server`, `catc_accept_ise_certificate`, `catc_delete_policy_server`). SWIM distribute/activate use
+(`catc_add_ise_server`, `catc_update_policy_server`, `catc_accept_ise_certificate`,
+`catc_delete_policy_server`). SWIM distribute/activate use
 SWIM Write (already in rw). Prefer a separate server instance (token, container) for this tier.
 
 ## 4. Create them

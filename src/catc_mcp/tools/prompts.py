@@ -307,12 +307,17 @@ tools are missing, say so and stop after step 5. Every write is preview-first: s
 wait for approval, then repeat the call with the confirm token. Stop and report on any failure.
 
 1. ISE integration: {tool_ref("catc_get_policy_servers")}. An ISE entry must exist with its nodes
-   TRUSTED and the integration COMPLETE. If none, it has to be added with
+   TRUSTED and the integration COMPLETE (next_action "none"). If none, it has to be added with
    {tool_ref("catc_add_ise_server")} (ISE PAN IP/FQDN, a super-admin login, a RADIUS shared secret;
-   suggest the user enters the secrets themselves rather than pasting them into the chat); when it
-   stops at WAITING_USER_INPUT show the certificate fingerprints and, after the user confirms them,
-   {tool_ref("catc_accept_ise_certificate")}. ISE needs ERS and the pxGrid persona. Both tools are
-   dangerous tier: if they are missing here, stop and say ISE must be integrated first.
+   suggest the user enters the secrets themselves rather than pasting them into the chat). If the
+   entry exists but FAILED, next_action names the fix: "update_entry" ->
+   {tool_ref("catc_update_policy_server")} with the field it names (an ISE edit needs the ISE
+   password re-entered; a name-resolution failure needs the appliance's DNS fixed by an admin, not
+   an edit); "approve_pxgrid_on_ise" -> approve the Catalyst Center pxGrid client on ISE. When
+   the integration stops at WAITING_USER_INPUT ("accept_certificate"), show the certificate
+   fingerprints and, after the user confirms them, {tool_ref("catc_accept_ise_certificate")}. ISE
+   needs ERS and the pxGrid persona. These tools are dangerous tier: if they are missing here,
+   stop and say the ISE integration must be fixed first.
 2. Site AAA: {tool_ref("catc_get_site_settings")} with categories ["aaa"] for "{site_path}". Set
    client (endpoint) AAA to ISE with {tool_ref("catc_update_site_aaa_settings")}:
    client={{"server_type": "ISE", "protocol": "RADIUS", "primary": "<ISE PSN IP from step 1>"}}.

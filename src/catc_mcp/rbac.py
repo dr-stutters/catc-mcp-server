@@ -59,7 +59,7 @@ DANGEROUS: dict[str, str] = {
     "Network Operations.PnP": "Write",
     "Network Provision.Device Provision": "Write",
     "Network Provision.SD-Access": "Write",
-    "System.System Settings": "Write",  # catc_add_ise_server / accept / delete policy server
+    "System.System Settings": "Write",  # catc_add_ise_server / update / accept / delete policy server
 }
 ROLES: dict[str, tuple[str, dict[str, str]]] = {
     "mcp-catc-ro": ("catc-mcp-server read tier. Managed by the suite's seed step.", READ),
