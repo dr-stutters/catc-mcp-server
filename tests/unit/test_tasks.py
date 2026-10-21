@@ -38,6 +38,7 @@ LONG = {
     "catc_delete_fabric_device",
     "catc_update_anycast_gateway",
     "catc_apply_pending_fabric_events",
+    "catc_set_fabric_authentication_profile",
     "catc_export_config",
     "catc_diff_config",
     "catc_import_config",
