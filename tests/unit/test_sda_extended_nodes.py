@@ -105,4 +105,8 @@ async def test_port_vlan_rules(api: respx.MockRouter, default: str, args: dict[s
     )
     assert (out["status"] == "preview") is ok, out.get("blockers")
     if ok:
-        assert "dataVlanName" not in out["preview"]["body"][0]
+        body = out["preview"]["body"][0]
+        assert "dataVlanName" not in body
+        if body["connectedDeviceType"] == "USER_DEVICE":
+            # no VLAN only with the template named in the request, even when it comes from the site default
+            assert body["authenticateTemplateName"] == "Closed Authentication"

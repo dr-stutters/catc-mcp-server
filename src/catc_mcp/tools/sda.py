@@ -621,7 +621,10 @@ def register(reg: ToolRegistrar) -> None:
                 ),
                 None,
             )
-            if template != "Closed Authentication":
+            if template == "Closed Authentication":
+                # The spec exempts the VLAN only when the request names Closed Authentication: send it.
+                authentication = "Closed Authentication"
+            else:
                 blockers.append(
                     "A USER_DEVICE port needs data_vlan and/or voice_vlan unless its template is Closed "
                     "Authentication (then ISE assigns the VLAN)."
