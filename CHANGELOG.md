@@ -28,6 +28,13 @@
   `anchoredSiteId` out clears an anchor is unproven. `catc_create_virtual_network` now carries a VN's anchor
   when it adds sites (a PUT without it could unanchor the VN). Unit-tested only: the live proof needs a second
   fabric site.
+- **SD-Access fabric device changes (D103, #188, Wave 6 part G).** `catc_update_fabric_device(device, roles?,
+  border_asn?, default_exit?, import_external_routes?, border_priority?, prepend_as_count?, layer2_border?,
+  bgp_router_id?)` (dangerous): roles and border settings in place over `PUT sda/fabricDevices` (an edge that
+  becomes a border, a second control plane, a border's priority, default exit, route import, AS-path prepends,
+  layer 2 border type), instead of removing the device from the fabric and adding it back. A new border needs
+  its AS; an existing border's AS can't change; refuses dropping the last control plane while edges remain and
+  dropping EDGE_NODE while ports are assigned.
 - **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
   subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services
