@@ -259,6 +259,13 @@ def register(reg: ToolRegistrar) -> None:
         import_external_routes: Annotated[
             bool, Field(description="BORDER_NODE: import external routes")
         ] = True,
+        border_priority: Annotated[
+            int | None,
+            Field(ge=1, le=9, description="BORDER_NODE: 1 (preferred) to 9; default: Catalyst Center's (10)"),
+        ] = None,
+        prepend_as_count: Annotated[
+            int | None, Field(ge=1, le=10, description="BORDER_NODE: AS-path prepends (1-10); default: none")
+        ] = None,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Give a provisioned device a fabric role (control plane, border, edge) at a fabric site.
@@ -294,10 +301,14 @@ def register(reg: ToolRegistrar) -> None:
                     "localAutonomousSystemNumber": border_asn,
                     "isDefaultExit": default_exit,
                     "importExternalRoutes": import_external_routes,
-                    "borderPriority": 10,
-                    "prependAutonomousSystemCount": 0,
                 },
             }
+            # 3.2.2: priority 1-9 (unset = 10), prepend 1-10 (unset = none); out-of-range values are refused.
+            l3 = item["borderDeviceSettings"]["layer3Settings"]
+            if border_priority is not None:
+                l3["borderPriority"] = border_priority
+            if prepend_as_count is not None:
+                l3["prependAutonomousSystemCount"] = prepend_as_count
         has_cp = any(
             "CONTROL_PLANE_NODE" in (d.get("deviceRoles") or [])
             for d in await sda_list(app, "fabricDevices", {"fabricId": fabric["id"]})
@@ -335,6 +346,8 @@ def register(reg: ToolRegistrar) -> None:
                 "border_asn": border_asn,
                 "default_exit": default_exit,
                 "import_external_routes": import_external_routes,
+                "border_priority": border_priority,
+                "prepend_as_count": prepend_as_count,
             },
             confirm=confirm,
             plan=plan,
