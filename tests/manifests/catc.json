@@ -372,6 +372,10 @@
       "tier": "read",
       "title": "Device hardware and licences"
     },
+    "catc_get_external_authentication": {
+      "tier": "read",
+      "title": "External authentication (admin login through AAA)"
+    },
     "catc_get_issue": {
       "tier": "read",
       "title": "Get assurance issue"
@@ -636,6 +640,10 @@
       "tier": "read",
       "title": "Search the Cisco Catalyst Center API spec"
     },
+    "catc_set_external_authentication": {
+      "tier": "dangerous",
+      "title": "Turn external authentication on or off"
+    },
     "catc_set_rf_profile": {
       "tier": "write",
       "title": "Set RF profile"
@@ -667,6 +675,10 @@
     "catc_template_usage": {
       "tier": "read",
       "title": "Template usage"
+    },
+    "catc_test_login": {
+      "tier": "read",
+      "title": "Test a Catalyst Center login"
     },
     "catc_top_problems": {
       "tier": "read",
