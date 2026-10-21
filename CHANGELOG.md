@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **SD-Access fabric site settings (D104, #189, Wave 6 part G).** `catc_update_fabric_site(fabric_site,
+  pub_sub?, underlay_transport?)` (dangerous): move a fabric site's control plane between LISP/BGP and LISP
+  pub/sub, or set its underlay transport (IPv4, IPv6, dual stack), over `PUT sda/fabricSites` with the rest of
+  the record (the authentication template) kept; the preview shows current -> new and counts the fabric
+  devices Catalyst Center re-provisions, and warns that going back to LISP/BGP may be refused.
 - **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
   subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services
