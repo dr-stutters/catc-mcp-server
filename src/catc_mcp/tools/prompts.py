@@ -461,3 +461,139 @@ preview to the user and confirm only after they approve. Stop if a step fails an
 7. Summary: what was saved (config), what was removed (inventory entry, tags, ISE NAD), whether the
    device's configuration was cleaned, and how to bring it back: the {tool_ref("catc_onboard_device")}
    prompt (discovery, site, provisioning)."""
+
+    @reg.prompt(
+        title="Catalyst Center admin login through ISE",
+        uses=["catc", "ise", "win"],
+        tier=Tier.DANGEROUS,
+    )
+    def catc_admin_access_via_ise(
+        catc_ip: Annotated[
+            str, Field(description="The IP Catalyst Center sends RADIUS from (its enterprise interface)")
+        ],
+        ad_group: Annotated[
+            str, Field(description="AD group whose members get the role, e.g. mcp-catc-admins")
+        ] = "mcp-catc-admins",
+        ad_user: Annotated[
+            str, Field(description="AD user to prove the login with (created if missing)")
+        ] = "",
+        role: Annotated[
+            str,
+            Field(
+                description="Catalyst Center role the group gets: SUPER-ADMIN-ROLE, NETWORK-ADMIN-ROLE, "
+                "OBSERVER-ROLE or a custom role name"
+            ),
+        ] = "OBSERVER-ROLE",
+        mirror_local_accounts: Annotated[
+            Literal["true", "false"],
+            Field(
+                description="true: first mirror every local Catalyst Center account in use as an ISE "
+                "internal user with its current role (break-glass while ISE answers)"
+            ),
+        ] = "true",
+        keep_enabled: Annotated[
+            Literal["true", "false"],
+            Field(description="false: a proof run, external authentication is switched off again at the end"),
+        ] = "false",
+    ) -> str:
+        """Move Catalyst Center administrator logins onto Active Directory through ISE: an AD group and
+        user, ISE's NAD for Catalyst Center, an authorization profile returning cisco-av-pair
+        Role=<role>, a policy set for Catalyst Center's RADIUS logins, then external authentication on,
+        a local and an AD test login, the ISE auth record, and an undo list. Every write is
+        preview-first; uses the ise and Windows_Server (win_) servers; dangerous tier."""
+        texts = (catc_ip, ad_group, ad_user, role)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        try:
+            ip = str(ipaddress.ip_address(catc_ip.strip()))
+        except ValueError as exc:
+            raise ValueError(f"catc_ip must be an IP address: {exc}") from exc
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", role.strip()):
+            raise ValueError(f"role must be a Catalyst Center role name, not {role!r}.")
+        group, user, role = ad_group.strip(), ad_user.strip() or "(ask the user)", role.strip()
+        slug = role.lower().removesuffix("-role")
+        profile = f"mcp-catc-{slug}"
+        pset = "mcp-catc-admin-login"
+        mirror = (
+            f"""5. Break-glass mirror (mirror_local_accounts=true). Some releases ask ISE first and use the
+   local user list only when ISE is unreachable, so a local account may stop working once ISE answers.
+   List the local accounts with {tool_ref("catc_api_call")} GET /dna/system/api/v1/user
+   (authSource=internal): their usernames and roleList. Ask the user which are in use (their own
+   admin and this server's account at least). For each role among them create, preview-first:
+   an ISE identity group mcp-catc-mirror-<role> ({tool_ref("ise_create_group")}), an authorization
+   profile mcp-catc-mirror-<role> ({tool_ref("ise_create_authz_profile")} with
+   av_pairs=["Cisco:cisco-av-pair=Role=<role>"]), and per account an ISE internal user with the SAME
+   name and password in that group ({tool_ref("ise_create_internal_user")}; the user types each
+   password: never ask for it in chat if they can enter it themselves). The rules come in step 6.
+   These users hold copies of local passwords: the undo deletes them."""
+            if mirror_local_accounts == "true"
+            else "5. Break-glass mirror: skipped (mirror_local_accounts=false). Say clearly that a local "
+            "account may stop working while ISE answers, and get the user's explicit go before step 7."
+        )
+        mirror_rules = (
+            """   For each mirror group: rule mcp-catc-mirror-<role> with condition
+   "IdentityGroup:Name equals User Identity Groups:mcp-catc-mirror-<role>" -> profile
+   mcp-catc-mirror-<role>, ranked above the AD rule."""
+            if mirror_local_accounts == "true"
+            else ""
+        )
+        end = (
+            f"""11. Switch off (keep_enabled=false): {tool_ref("catc_set_external_authentication")}
+    enable=false (preview, approval), then {tool_ref("catc_test_login")} with the local admin once more.
+    Then the undo, each preview-first, in this order: the mirror internal users (they hold copies of
+    local passwords) and groups, policy set {pset} ({tool_ref("ise_delete_object")}), profile
+    {profile} and the mirror profiles, the NAD if step 3 created it ({tool_ref("ise_delete_nad")}),
+    and the AD user/group if step 2 created them for this proof (ask first)."""
+            if keep_enabled == "false"
+            else """11. Leave it on (keep_enabled=true). Recommend keeping the mirror users only as long as
+    the user wants a break-glass path, and write the undo list down."""
+        )
+        return f"""Move Catalyst Center admin logins onto AD through ISE: members of AD group "{group}" get
+{role}; prove it with AD user {user}. Catalyst Center sends RADIUS (PAP) from {ip}. Every write is
+preview-first: show the preview, wait for the user's approval, then repeat the call with the confirm
+token. Stop and report on any failure. Run in a quiet window: ask the user to confirm nobody else is
+using Catalyst Center while external authentication is on.
+
+1. Preconditions: {tool_ref("catc_get_policy_servers")}: an ISE entry must be COMPLETE with
+   next_action "none"; if not, stop and name its next_action (the integration must be fixed first).
+   {tool_ref("catc_get_external_authentication")}: note whether it is already on, the AAA attribute
+   (default Cisco-AVPair) and that the ISE node is among its servers; if no server is listed, stop.
+   Check that {role} is among its roles.
+2. Active Directory: {tool_ref("win_list_ad_groups")} for "{group}"; create it with
+   {tool_ref("win_create_ad_group")} if missing. {tool_ref("win_get_ad_user")} for {user}; create
+   it with {tool_ref("win_create_ad_user")} if missing (the user sets the password) and add it with
+   {tool_ref("win_add_group_member")}. On ISE: {tool_ref("ise_get_ad_join_point")} (joined, its
+   name and domain), {tool_ref("ise_list_ad_groups")}; if "{group}" isn't selectable yet, add it with
+   {tool_ref("ise_add_ad_groups")}. {tool_ref("ise_test_ad_user")} for {user} must list the group.
+3. ISE NAD for Catalyst Center: {tool_ref("ise_get_nad")} "{ip}". If none, preview
+   {tool_ref("ise_create_nad")} name "catalyst-center", ips ["{ip}"], with the RADIUS shared secret
+   of Catalyst Center's ISE entry (the user enters it: Catalyst Center never returns it). If one
+   exists, check it has a RADIUS secret and keep it.
+4. Authorization profile: {tool_ref("ise_create_authz_profile")} name "{profile}", access accept,
+   av_pairs=["Cisco:cisco-av-pair=Role={role}"] (the attribute must match step 1's AAA attribute).
+{mirror}
+6. Policy: create policy set "{pset}" with {tool_ref("ise_create_policy_set")}, condition
+   "Radius:NAS-IP-Address equals {ip}", rank 0, allowed protocols that permit PAP (Default Network
+   Access). Authentication: an identity source sequence mcp_catc_admins with stores
+   {"Internal Users, then the AD join point" if mirror_local_accounts == "true" else "the AD join point"}
+   ({tool_ref("ise_set_identity_sequence")}), used by an authentication rule in the set
+   ({tool_ref("ise_create_authn_rule")}, condition "Radius:NAS-IP-Address equals {ip}"). Authorization
+   ({tool_ref("ise_create_authz_rule")}): rule mcp-catc-ad with condition
+   "<join point>:ExternalGroups equals <domain>/<path>/{group}" (the exact value from step 2) ->
+   {profile}.
+{mirror_rules}
+   The set's Default rule stays DenyAccess. Review the set with {tool_ref("ise_get_policy_set")}.
+7. Before enabling: {tool_ref("catc_test_login")} with the user's local admin (proves the password
+   now; this server keeps its own session for about an hour, which is the undo path). Then
+   {tool_ref("catc_set_external_authentication")} enable=true: show the preview with its lockout
+   warning and apply only after approval.
+8. Right after enabling: {tool_ref("catc_test_login")} with the local admin again. If it fails, at
+   once {tool_ref("catc_set_external_authentication")} enable=false (preview, approval) and stop.
+9. The AD login: {tool_ref("catc_test_login")} with {user}: it must pass with roles [{role}]
+   (authSource external). Then {tool_ref("ise_get_auth_list")} user "{user}" (and nad "{ip}"): the
+   RADIUS session from Catalyst Center, matched by {pset} / mcp-catc-ad. Also look up the local admin
+   there and in {tool_ref("ise_recent_auth_failures")}: a pass or a reject from {ip} means Catalyst
+   Center asked ISE first for a local account (record which), nothing means it used its local list.
+10. Summary: what was created where (AD, ISE NAD, profile(s), sequence, policy set, mirror users),
+    the login results with the roles granted, the fallback finding from step 9, and the undo list.
+{end}"""

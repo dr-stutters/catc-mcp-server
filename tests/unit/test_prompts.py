@@ -36,6 +36,14 @@ SAMPLES = {
         "rollback": "negation",
     },
     "catc_decommission_device": {"device": "r2.mcp.lab", "clean_config": "false", "remove_ise_nad": "true"},
+    "catc_admin_access_via_ise": {
+        "catc_ip": "198.18.128.11",
+        "ad_group": "mcp-catc-admins",
+        "ad_user": "mcp-catc-observer1",
+        "role": "OBSERVER-ROLE",
+        "mirror_local_accounts": "true",
+        "keep_enabled": "false",
+    },
     "catc_onboard_switch_with_nac": {
         "switch_ip": "198.18.128.170",
         "site_path": "Global/mcp-test-lab/mcp-test-nac",
@@ -56,7 +64,7 @@ async def test_prompt_contract_all_tiers() -> None:
         server,
         "catc",
         samples=SAMPLES,
-        known_prefixes={"cml", "ise", "fmc", "catc"},
+        known_prefixes={"cml", "ise", "fmc", "catc", "win"},
         external_tools={k: v for k, v in manifests.items() if k != "catc"},
     )
 
@@ -214,3 +222,44 @@ async def test_decommission_prompt_hidden_below_dangerous() -> None:
     async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
         names = {p.name for p in await c.list_prompts()}
     assert "catc_decommission_device" not in names
+
+
+async def test_admin_access_prompt_renders() -> None:
+    args = SAMPLES["catc_admin_access_via_ise"]
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        text = (await c.get_prompt("catc_admin_access_via_ise", args)).messages[0].content.text  # type: ignore[union-attr]
+        keep = (
+            (
+                await c.get_prompt(
+                    "catc_admin_access_via_ise",
+                    {**args, "keep_enabled": "true", "mirror_local_accounts": "false"},
+                )
+            )
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+    for tool in (
+        "catc_get_policy_servers",
+        "catc_get_external_authentication",
+        "catc_set_external_authentication",
+        "catc_test_login",
+        "ise_create_nad",
+        "ise_create_authz_profile",
+        "ise_create_policy_set",
+        "ise_create_authz_rule",
+        "ise_create_internal_user",
+        "ise_get_auth_list",
+        "win_create_ad_group",
+    ):
+        assert f"`{tool}`" in text, tool
+    assert "Cisco:cisco-av-pair=Role=OBSERVER-ROLE" in text and "mcp-catc-observer" in text
+    assert "Radius:NAS-IP-Address equals 198.18.128.11" in text and "enable=false" in text
+    assert "Break-glass mirror: skipped" in keep and "Leave it on" in keep
+
+
+async def test_admin_access_prompt_dangerous_only_and_validates() -> None:
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        assert "catc_admin_access_via_ise" not in {p.name for p in await c.list_prompts()}
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        with pytest.raises(Exception, match="catc_ip"):
+            await c.get_prompt("catc_admin_access_via_ise", {"catc_ip": "not-an-ip"})

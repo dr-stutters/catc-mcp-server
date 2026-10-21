@@ -24,6 +24,13 @@
   waits or failed: names the Catalyst Center subscriber to approve on ISE), `wait` or `none`.
   `include_sites=true` adds the sites whose own network or client AAA points at each server (reads every
   site's AAA settings; off by default).
+- **Prompt `catc_admin_access_via_ise` (D89, #145).** Dangerous tier, uses ise and Windows_Server: preconditions
+  (a COMPLETE ISE entry, the external-auth servers and roles), AD group and user, ISE AD groups, ISE NAD for
+  Catalyst Center with the policy-server shared secret, an authorization profile with
+  `av_pairs=["Cisco:cisco-av-pair=Role=<role>"]` (ise-mcp-server's new `av_pairs`), optional break-glass mirror
+  users for the local accounts, a policy set on `Radius:NAS-IP-Address`, a local test login before and right after
+  enabling (disable at once if it fails), the AD test login with the role granted, the ISE auth record and the
+  local-account fallback finding, then (keep_enabled=false) external authentication off and the undo.
 - **Catalyst Center admin login through ISE (D88, #144).** `catc_get_external_authentication()` (read: whether
   external authentication is on, the AAA attribute the role is read from, empty meaning the default
   Cisco-AVPair / cisco-av-pair, the AAA servers Catalyst Center asks from `users/external-servers` without
