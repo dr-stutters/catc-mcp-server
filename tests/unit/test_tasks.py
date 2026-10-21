@@ -26,6 +26,7 @@ LONG = {
     "catc_add_anycast_gateway",
     "catc_set_extranet_policy",
     "catc_set_fabric_port_channel",
+    "catc_set_fabric_multicast",
     "catc_delete_fabric_site",
     "catc_delete_fabric_device",
     "catc_update_anycast_gateway",
