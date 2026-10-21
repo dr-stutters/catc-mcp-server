@@ -39,6 +39,7 @@ from catc_mcp.tools import (
     sda_health,
     sda_multicast,
     sda_port_channels,
+    sda_transits,
     sda_updates,
     sda_zones,
     settings_writes,
@@ -74,6 +75,7 @@ Workflows:
   border first, then edges) -> catc_create_virtual_network -> catc_create_ip_pool (reserve at the site) ->
   catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric. Tear down:
   catc_delete_fabric_device / catc_delete_fabric_site (cascade=true removes everything in reverse order).
+  Way out of the fabric: catc_create_transit_network -> catc_add_l3_handoff (border, per VN VLAN + eBGP).
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
   locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
   catc_get_wireless_controller -> catc_get_wlc_config (feature config, intended vs deployed, diff=true).
@@ -152,6 +154,7 @@ REGISTER = [
     sda_zones.register,
     sda_port_channels.register,
     sda_multicast.register,
+    sda_transits.register,
     wireless.register,
     wireless_config.register,
     wireless_writes.register,

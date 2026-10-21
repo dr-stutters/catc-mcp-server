@@ -27,6 +27,8 @@ LONG = {
     "catc_set_extranet_policy",
     "catc_set_fabric_port_channel",
     "catc_set_fabric_multicast",
+    "catc_add_l3_handoff",
+    "catc_delete_l3_handoff",
     "catc_delete_fabric_site",
     "catc_delete_fabric_device",
     "catc_update_anycast_gateway",
