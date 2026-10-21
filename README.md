@@ -310,7 +310,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (83)
+### Read (84)
 
 | Tool | What it does |
 |---|---|
@@ -386,6 +386,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_list_template_projects` | Template projects (folders of templates) with description, id and template count. |
 | `catc_list_template_versions` | Version history of a template: every committed version with its number, commit time, author, comment, size and lines added/removed against the version before, and whether the template has uncommitted changes. |
 | `catc_list_templates` | Configuration templates (Template Editor) with project, language (Jinja/Velocity), software type, device families, committed version count and id. |
+| `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
 | `catc_recent_activity` | What happened on this device or site recently? Queries Catalyst Center's assurance issues, assurance events (syslog, traps), platform event notifications and the audit log for the same window and scope, and merges them newest first with a `source` column. |
