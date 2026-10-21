@@ -486,7 +486,9 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
 | `catc_set_external_authentication` | Turn Catalyst Center's external authentication on or off (System > Users & Roles > External Authentication), optionally setting the AAA attribute first. |
+| `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
 | `catc_update_policy_server` | Edit an authentication and policy server (System > Settings > Authentication and Policy Servers > Edit): the ISE FQDN and login, ports, protocol, pxGrid, retries and timeout. |
+| `catc_update_port_assignment` | Change an edge port's fabric assignment in place. |
 
 ## API spec
 

@@ -21,6 +21,14 @@
   AAA, CTS environment data, port channels, VN exit, ...; grouped generically from the
   `<dim>{Good,Fair,Poor,No,Total}Health...` keys), the same per VN and transit, an optional per-site trend
   and a one-line verdict. Live-read on the 3.2.2 lab appliance (no fabric yet: the empty verdict).
+- **SD-Access day-N edits (D99, #170, Wave 6 part F).** `catc_update_anycast_gateway(fabric_site, ip_pool,
+  ...)` and `catc_update_port_assignment(device, interface, ...)` (dangerous) change a gateway or an edge port
+  in place (`PUT sda/anycastGateways`, `PUT sda/portAssignments`) instead of a delete and re-add that drops
+  every client: layer 2 flooding and its address, IP-directed broadcast, multiple IP-to-MAC, traffic type, a
+  static security group, group-based policy enforcement, TCP MSS and resource guard on a gateway; data/voice
+  VLAN (VLAN or pool name), authentication template, static security group, description, a trunk's native
+  and allowed VLANs on a port. The PUT carries the current record with only the changed fields replaced; the
+  preview shows current -> new per field; fields the API won't change are not offered.
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
