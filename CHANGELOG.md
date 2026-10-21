@@ -143,6 +143,16 @@
   fabric: Closed Authentication with MAB first (3 s fallback) moved both edge ports to
   `PMAP_DefaultWiredDot1xClosedAuth_MAB_1X`, and both clients came up Authorized by MAB with their SGT and dACL
   from ISE.
+- **Group-based access control, verified on the edge (D91, #147, Wave 6 part E).** ISE stays the policy
+  owner and Catalyst Center the verifier, so the group-based policy migration is never needed.
+  `catc_get_group_policy_enforcement(device, source?, destination?, ips?)` (read) reads, through the command
+  runner, what a fabric edge or TrustSec switch downloaded and enforces: environment data (state, servers,
+  the security group name table), every source -> destination cell with its SGACLs and the default policy,
+  the SW/HW denied and permitted counters per cell, the IP-to-SGT bindings and whether `cts role-based
+  enforcement` is on. A pair (by tag or name) gets its verdict (the cell's SGACLs, or the default when the
+  switch has no cell) with that cell's counters; `ips` gives each client's SGT. Prompt
+  `catc_group_policy_rollout` (write tier, uses ise) changes one cell in ISE (`ise_set_egress_policy`,
+  `ise_push_trustsec_matrix`, previewed) and proves it on the edge with a test flow and the counters.
 
 ### Changed
 - Least-privilege roles after the SD-Access packages (Wave 6 part E): `mcp-catc-ro` gains Policy.Group-Based

@@ -61,6 +61,13 @@ SAMPLES = {
         "border_asn": "65001",
         "authentication": "Closed Authentication",
     },
+    "catc_group_policy_rollout": {
+        "source_group": "Contractors",
+        "destination_group": "Production_Servers",
+        "edge": "mcp-catc-fab-edge1",
+        "policy": "deny",
+        "client_ips": "10.10.40.100, 10.10.40.101",
+    },
     "catc_onboard_switch_with_nac": {
         "switch_ip": "198.18.128.170",
         "site_path": "Global/mcp-test-lab/mcp-test-nac",
