@@ -614,6 +614,10 @@
       "tier": "write",
       "title": "Mark a device for replacement"
     },
+    "catc_network_services_health": {
+      "tier": "read",
+      "title": "Network services health (AAA, DHCP, DNS)"
+    },
     "catc_path_trace": {
       "tier": "read",
       "title": "Path trace"
