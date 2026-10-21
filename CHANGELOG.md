@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.12.1 (2026-10-21)
+
+The NAC onboarding prompt ends with the site's NAD coverage check through ise v0.12.0's `ise_audit_nads(expected=...)`
+(ise I67), the last open item of Wave 6 part D's D9 amendment.
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
