@@ -26,6 +26,7 @@ LONG = {
     "catc_add_anycast_gateway",
     "catc_delete_fabric_site",
     "catc_delete_fabric_device",
+    "catc_update_anycast_gateway",
     "catc_export_config",
     "catc_diff_config",
     "catc_import_config",
