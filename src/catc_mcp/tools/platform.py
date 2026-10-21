@@ -21,6 +21,21 @@ from catc_mcp._core.http import Page, fetch_all
 from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, gather_sections, pick, resolve_site
 
+# Per-fabric SD-Access objects beyond devices, gateways and ports (shown when present).
+EXTRA_SECTIONS = {
+    "layer2_virtual_networks": "layer2VirtualNetworks",
+    "port_channels": "portChannels",
+    "layer3_handoffs_ip": "fabricDevices/layer3Handoffs/ipTransits",
+    "layer3_handoffs_sda": "fabricDevices/layer3Handoffs/sdaTransits",
+    "layer2_handoffs": "fabricDevices/layer2Handoffs",
+    "multicast": "multicast",
+    "multicast_virtual_networks": "multicast/virtualNetworks",
+}
+
+
+def _inside(path: Any, root: Any) -> bool:
+    return bool(path) and bool(root) and str(path) != str(root) and str(path).startswith(str(root) + "/")
+
 
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Appliance health")
@@ -188,7 +203,9 @@ def register(reg: ToolRegistrar) -> None:
         """SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the
         fabric devices at each with their roles (control plane, border, edge) and border settings,
         layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the
-        ids catc_delete_sda_object takes. Empty when SD-Access isn't deployed."""
+        ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs,
+        border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet
+        policies. Empty when SD-Access isn't deployed."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {}
         if site:
@@ -207,6 +224,18 @@ def register(reg: ToolRegistrar) -> None:
             for s in (await fetch_all(app.pager, app.api, "/dna/intent/api/v1/sites", cap=20_000)).items
             if isinstance(s, dict)
         }
+        extra, extra_errors = await gather_sections(
+            {
+                "zones": fetch_all(app.pager, app.api, "/dna/intent/api/v1/sda/fabricZones", cap=2000),
+                "transit_networks": fetch_all(
+                    app.pager, app.api, "/dna/intent/api/v1/sda/transitNetworks", cap=500
+                ),
+                "extranet_policies": fetch_all(
+                    app.pager, app.api, "/dna/intent/api/v1/sda/extranetPolicies", cap=500
+                ),
+            }
+        )
+        all_zones = [z for z in extra["zones"].items if isinstance(z, dict)] if "zones" in extra else []
         out: list[dict[str, Any]] = []
         for f in fabrics:
             fid = str(f.get("id"))
@@ -233,6 +262,12 @@ def register(reg: ToolRegistrar) -> None:
                         {"fabricId": fid},
                         cap=2000,
                     ),
+                    **{
+                        key: fetch_all(
+                            app.pager, app.api, f"/dna/intent/api/v1/sda/{path}", {"fabricId": fid}, cap=2000
+                        )
+                        for key, path in EXTRA_SECTIONS.items()
+                    },
                 }
             )
             entry: dict[str, Any] = {
@@ -273,6 +308,20 @@ def register(reg: ToolRegistrar) -> None:
                     for p in sec["ports"].items
                     if isinstance(p, dict)
                 ]
+            for key in EXTRA_SECTIONS:
+                rows = [r for r in sec[key].items if isinstance(r, dict)] if key in sec else []
+                if rows:
+                    entry[key] = [{k: v for k, v in r.items() if k != "fabricId"} for r in rows]
+            zones = [z for z in all_zones if _inside(sites.get(str(z.get("siteId"))), entry["site"])]
+            if zones:
+                entry["fabric_zones"] = [
+                    {
+                        "site": sites.get(str(z.get("siteId"))),
+                        "authentication_profile": z.get("authenticationProfileName"),
+                        "id": z.get("id"),
+                    }
+                    for z in zones
+                ]
             if errors:
                 entry["unavailable"] = errors
             out.append(entry)
@@ -295,7 +344,14 @@ def register(reg: ToolRegistrar) -> None:
             for f in out:
                 for d in f.get("devices", []):
                     d["hostname"] = names.get(str(d.get("networkDeviceId")))
-        return object_result({"fabric_sites": out, "layer3_virtual_networks": l3})
+        result: dict[str, Any] = {"fabric_sites": out, "layer3_virtual_networks": l3}
+        for key in ("transit_networks", "extranet_policies"):
+            rows = [r for r in extra[key].items if isinstance(r, dict)] if key in extra else []
+            if rows:
+                result[key] = rows
+        if extra_errors:
+            result["unavailable"] = extra_errors
+        return object_result(result)
 
     @reg.read(title="List SSIDs")
     async def catc_list_ssids(

@@ -612,7 +612,28 @@ async def test_pnp_devices(api: respx.MockRouter) -> None:
     ]
 
 
+SDA_EXTRA = [
+    "fabricZones",
+    "transitNetworks",
+    "extranetPolicies",
+    "layer2VirtualNetworks",
+    "portChannels",
+    "fabricDevices/layer3Handoffs/ipTransits",
+    "fabricDevices/layer3Handoffs/sdaTransits",
+    "fabricDevices/layer2Handoffs",
+    "multicast",
+    "multicast/virtualNetworks",
+]
+
+
+def mock_sda_extra(api: respx.MockRouter, rows: dict[str, list[dict[str, Any]]] | None = None) -> None:
+    """The part F sections of catc_get_sda_fabric (empty unless given)."""
+    for path in SDA_EXTRA:
+        api.get(f"/dna/intent/api/v1/sda/{path}").respond(json={"response": (rows or {}).get(path, [])})
+
+
 async def test_sda_fabric(api: respx.MockRouter) -> None:
+    mock_sda_extra(api)
     fid = "eeeeeeee-0000-0000-0000-000000000001"
     api.get("/dna/intent/api/v1/sda/fabricSites").respond(
         json={
@@ -647,6 +668,51 @@ async def test_sda_fabric(api: respx.MockRouter) -> None:
         site["anycast_gateways"][0]["vlanId"] == 1021
         and out["layer3_virtual_networks"][0]["virtualNetworkName"] == "CORP"
     )
+
+
+async def test_sda_fabric_part_f_sections(api: respx.MockRouter) -> None:
+    fid = "eeeeeeee-0000-0000-0000-000000000001"
+    floor = {
+        **BLDG,
+        "id": "aaaaaaaa-0000-0000-0000-000000000009",
+        "nameHierarchy": BLDG["nameHierarchy"] + "/F1",
+    }
+    api.get("/dna/intent/api/v1/sda/fabricSites").respond(
+        json={
+            "response": [{"id": fid, "siteId": BLDG["id"], "authenticationProfileName": "No Authentication"}]
+        }
+    )
+    mock_sites(api, [GLOBAL, AREA, BLDG, floor])
+    mock_device_lookup(api)
+    for path in ("fabricDevices", "anycastGateways", "portAssignments", "layer3VirtualNetworks"):
+        api.get(f"/dna/intent/api/v1/sda/{path}").respond(json={"response": []})
+    mock_sda_extra(
+        api,
+        {
+            "fabricZones": [
+                {"id": "z1", "siteId": floor["id"], "authenticationProfileName": "Closed Authentication"},
+                {"id": "z2", "siteId": "elsewhere"},
+            ],
+            "transitNetworks": [{"id": "t1", "name": "mcp-ip-transit", "type": "IP_BASED_TRANSIT"}],
+            "layer2VirtualNetworks": [
+                {"id": "l1", "fabricId": fid, "vlanName": "MCP_PRINTERS", "vlanId": 1031}
+            ],
+            "fabricDevices/layer3Handoffs/ipTransits": [
+                {"id": "h1", "fabricId": fid, "virtualNetworkName": "MCP_VN"}
+            ],
+            "multicast": [{"fabricId": fid, "replicationMode": "HEADEND_REPLICATION"}],
+        },
+    )
+    out = await call("catc_get_sda_fabric")
+    site = out["fabric_sites"][0]
+    assert site["fabric_zones"] == [
+        {"site": floor["nameHierarchy"], "authentication_profile": "Closed Authentication", "id": "z1"}
+    ]
+    assert site["layer2_virtual_networks"] == [{"id": "l1", "vlanName": "MCP_PRINTERS", "vlanId": 1031}]
+    assert site["layer3_handoffs_ip"][0]["virtualNetworkName"] == "MCP_VN"
+    assert site["multicast"] == [{"replicationMode": "HEADEND_REPLICATION"}]
+    assert "port_channels" not in site and "layer2_handoffs" not in site
+    assert out["transit_networks"][0]["name"] == "mcp-ip-transit" and "extranet_policies" not in out
 
 
 async def test_sda_fabric_empty(api: respx.MockRouter) -> None:

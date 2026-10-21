@@ -92,6 +92,10 @@
   Both Policy and LAN automation permissions only exist once `aca` + `sda` are deployed; roles seeded before
   the install have them at Deny (LAN automation reads answered 403 on the lab appliance). Re-run the seed step
   after installing the packages (docs/least-privilege.md).
+- `catc_get_sda_fabric` also shows the Wave 6 part F objects when present: per fabric site its fabric zones,
+  layer 2 VNs, port channels, border handoffs (IP transit, SD-Access transit, layer 2) and multicast
+  (replication mode, per-VN settings); at the top the transit networks and extranet policies. Each section
+  fails on its own (`unavailable`).
 - The `catc_onboard_switch_with_nac` prompt ends with the site's NAD coverage check (D9, Wave 6 part D):
   `ise_audit_nads(expected=<catc_list_devices(site) rows>, check_stale=false)` (ise I67) and its
   `coverage.verdict`. Devices match NADs by IP, so a NAD Catalyst Center reused under another name
