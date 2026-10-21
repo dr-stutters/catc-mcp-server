@@ -469,7 +469,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (39)
+### Dangerous (40)
 
 | Tool | What it does |
 |---|---|
@@ -479,6 +479,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_add_fabric_device` | Give a provisioned device a fabric role (control plane, border, edge) at a fabric site. |
 | `catc_add_ise_server` | Integrate Cisco ISE with Catalyst Center as the AAA and policy server: CatC connects to ISE (ERS over 443, pxGrid 8910), discovers its nodes and, after you accept ISE's certificate, trusts it. |
 | `catc_add_l3_handoff` | Hand a border off onto a transit network. |
+| `catc_anchor_virtual_network` | Anchor a layer 3 virtual network at one fabric site and extend it to others (multi-site SD-Access). |
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
 | `catc_apply_pending_fabric_events` | Apply a fabric site's pending fabric events. |
 | `catc_assign_fabric_port` | Assign an edge port to a fabric VLAN (host onboarding): Catalyst Center configures the access port (VLAN, authentication template) on the edge. |

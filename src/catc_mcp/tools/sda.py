@@ -388,6 +388,9 @@ def register(reg: ToolRegistrar) -> None:
                 "virtualNetworkName": name,
                 "fabricIds": sorted(have | set(fids)),
             }
+            if current[0].get("anchoredSiteId"):
+                # A PUT without it could unanchor an anchored VN (catc_anchor_virtual_network).
+                body["anchoredSiteId"] = current[0]["anchoredSiteId"]
             method, action = "PUT", f"Add virtual network {name} to {', '.join(map(str, names))}"
         else:
             body = {"virtualNetworkName": name, **({"fabricIds": fids} if fids else {})}
