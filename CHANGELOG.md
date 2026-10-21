@@ -29,6 +29,10 @@
 - The `catc_onboard_switch_with_nac` prompt's first step follows `next_action` (an entry that FAILED is
   fixed with `catc_update_policy_server` instead of stopping), and `check`'s ISE warning names the update
   tool.
+- The prompt also carries the lab window's provisioning findings (3.2.2): Catalyst Center refuses a switch that already
+  has AAA config (it names the lines; remove them with approval, resync, provision, restore what must stay), an
+  existing ISE NAD with the switch's IP is reused, and a discovery that finds nothing may be a stale ARP entry on
+  the appliance or a TACACS+ VTY login that rejects the CLI user.
 
 ## 0.11.0 (2026-10-18)
 
