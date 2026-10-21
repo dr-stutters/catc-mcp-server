@@ -148,7 +148,9 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append("The traffic type of a critical pool can't be changed.")
         if gw.get("virtualNetworkName") == "INFRA_VN" and changes:
             blockers.append("INFRA_VN gateways take none of these settings.")
-        changed = diff(before, after)
+        # Diff against the merged changes, not `after`: a cleared security group is dropped from the body,
+        # and diffing the body alone would hide the removal (and refuse it as 'Nothing to change').
+        changed = diff(before, {**before, **changes})
         if not changed and not blockers:
             blockers.append("Nothing to change: the gateway already has those settings.")
         edges = [

@@ -102,6 +102,17 @@ async def test_gateway_flooding_and_sgt(api: respx.MockRouter) -> None:
     assert done["result"]["gateway"]["securityGroupName"] == "Employees"
 
 
+async def test_gateway_removes_the_security_group(api: respx.MockRouter) -> None:
+    fab = Fabric(api)
+    fab.gws[0] = {**GW, "securityGroupName": "Employees"}
+    args = {"fabric_site": FID, "ip_pool": "MCP_CLIENTS", "security_group": ""}
+    preview, done = await flow("catc_update_anycast_gateway", args)
+    assert preview["status"] == "preview"
+    assert preview["preview"]["changes"] == {"securityGroupName": {"from": "Employees", "to": None}}
+    assert done and done["status"] == "applied"
+    assert "securityGroupName" not in fab.puts[0][1][0]
+
+
 @pytest.mark.parametrize(
     ("args", "needle"),
     [
