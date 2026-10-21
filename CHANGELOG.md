@@ -8,6 +8,12 @@
   pub/sub, or set its underlay transport (IPv4, IPv6, dual stack), over `PUT sda/fabricSites` with the rest of
   the record (the authentication template) kept; the preview shows current -> new and counts the fabric
   devices Catalyst Center re-provisions, and warns that going back to LISP/BGP may be refused.
+- **SD-Access extended nodes (D106, #191, Wave 6 part G).** `catc_assign_fabric_port` takes the extended-node
+  port types `AUTHENTICATOR_SWITCH` and `SUPPLICANT_BASED_EXTENDED_NODE` (no data/voice VLAN: they onboard over
+  INFRA_VN), and `catc_add_anycast_gateway` takes `pool_type` (EXTENDED_NODE or FABRIC_AP, required for INFRA_VN)
+  and `supplicant_based_onboarding` for the INFRA_VN pool. A USER_DEVICE port on Closed Authentication (its own
+  template or the fabric site's) no longer needs a VLAN: ISE assigns it (the 3.2.2 spec requires a VLAN only for
+  the other templates).
 - **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
   subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services
