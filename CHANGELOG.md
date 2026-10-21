@@ -45,6 +45,13 @@
   and external authentication was switched off again. Findings in the tools' text: logins go to ISE first (a local
   account only works while ISE accepts it with a role), and a custom role in the reply is refused with 400
   'Invalid user profile' (built-in roles only); `catc_test_login` now returns Catalyst Center's own failure text.
+- **Prompt `catc_client_troubleshoot` (D45, #81).** Read tier, uses ise: find the client by MAC, IP or username
+  (Assurance's user column, or ISE's session) → client 360 and issues → live CLI on the switch (access session,
+  port, running config, device tracking, RADIUS server state) and the VLAN check → path trace → ISE auth history
+  and failure reason, NAD check → `catc_network_services_health` verdict for the switch → a diagnosis (auth
+  failure, ISE not reached or wrong secret, wrong VLAN/authorization, port/DHCP, path, healthy) → a fix shown as
+  a preview only. Notes the 3.2.2 lab finding that a wrong shared secret is silent in ISE and a MAB lookup can
+  still pass with it.
 - **Network services health (D68, #115).** `catc_network_services_health(service='aaa'|'dhcp'|'dns'|'all', site?,
   hours=24, server?, device?, trend=true)` (read) over the data API's `aaaServices` / `dhcpServices` /
   `dnsServices`: per server the transactions, successful/failed, success %, average latency weighted by

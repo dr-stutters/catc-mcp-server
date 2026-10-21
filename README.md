@@ -280,6 +280,9 @@ logins onto an AD group through ISE: AD group and user, ISE NAD for Catalyst Cen
 returning `cisco-av-pair = Role=<role>`, a policy set for Catalyst Center's RADIUS logins (with ISE mirror users
 for the local accounts as a break-glass path), external authentication on, a local and an AD test login, the ISE
 auth record and an undo list; by default it switches external authentication off again at the end.
+`catc_client_troubleshoot` (read tier, uses **ise**) takes a client by MAC, IP or username through Catalyst
+Center (360, issues, live CLI, path trace), ISE (auth history, failure reason, NAD) and the switch's AAA health to a
+diagnosis and a previewed-only fix.
 `catc_decommission_device` (dangerous tier, uses **ise**) keeps a copy of the config, shows what
 un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
 removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
