@@ -1,5 +1,5 @@
 {
-  "core_version": "0.12.4",
+  "core_version": "0.14.0",
   "manifest": 1,
   "prefix": "ise",
   "prompts": {
@@ -88,6 +88,14 @@
   },
   "server": "ise-mcp-server",
   "tools": {
+    "ise_add_ad_groups": {
+      "tier": "write",
+      "title": "Add AD groups to a join point"
+    },
+    "ise_admin_policy_explain": {
+      "tier": "read",
+      "title": "Explain a device-admin (TACACS+) login and command"
+    },
     "ise_api_call": {
       "tier": "dangerous",
       "title": "Raw Cisco ISE API call"
@@ -95,6 +103,10 @@
     "ise_apply_anc": {
       "tier": "dangerous",
       "title": "Apply ANC policy to an endpoint"
+    },
+    "ise_approve_pxgrid_client": {
+      "tier": "write",
+      "title": "Approve a pxGrid client"
     },
     "ise_audit_nads": {
       "tier": "read",
@@ -120,6 +132,10 @@
       "tier": "dangerous",
       "title": "CoA: reauthenticate a session"
     },
+    "ise_create_ad_join_point": {
+      "tier": "write",
+      "title": "Create an AD join point"
+    },
     "ise_create_anc_policy": {
       "tier": "write",
       "title": "Create ANC policy"
@@ -140,6 +156,10 @@
       "tier": "write",
       "title": "Create identity or endpoint group"
     },
+    "ise_create_guest_user": {
+      "tier": "write",
+      "title": "Create a guest account"
+    },
     "ise_create_internal_user": {
       "tier": "write",
       "title": "Create internal user"
@@ -156,6 +176,10 @@
       "tier": "write",
       "title": "Create policy set"
     },
+    "ise_decline_pxgrid_client": {
+      "tier": "write",
+      "title": "Decline a pending pxGrid client"
+    },
     "ise_delete_certificate": {
       "tier": "dangerous",
       "title": "Delete a certificate"
@@ -163,6 +187,10 @@
     "ise_delete_csr": {
       "tier": "write",
       "title": "Delete a CSR"
+    },
+    "ise_delete_guest_user": {
+      "tier": "write",
+      "title": "Delete a guest account"
     },
     "ise_delete_nad": {
       "tier": "dangerous",
@@ -180,6 +208,14 @@
       "tier": "dangerous",
       "title": "Delete a policy set"
     },
+    "ise_delete_profiling_rule": {
+      "tier": "write",
+      "title": "Delete a custom profiling rule"
+    },
+    "ise_delete_pxgrid_client": {
+      "tier": "write",
+      "title": "Delete a pxGrid client"
+    },
     "ise_delete_trustsec_object": {
       "tier": "write",
       "title": "Delete an IP-SGT mapping or SXP connection"
@@ -192,13 +228,29 @@
       "tier": "read",
       "title": "Deployment health check"
     },
+    "ise_diff_config": {
+      "tier": "read",
+      "title": "Diff ISE configuration exports"
+    },
     "ise_endpoint_360": {
       "tier": "read",
       "title": "Endpoint 360"
     },
+    "ise_explain_profile": {
+      "tier": "read",
+      "title": "Explain an endpoint's profile"
+    },
+    "ise_export_config": {
+      "tier": "read",
+      "title": "Export ISE configuration as YAML"
+    },
     "ise_export_csr": {
       "tier": "read",
       "title": "Export a CSR (PEM)"
+    },
+    "ise_extend_guest_user": {
+      "tier": "write",
+      "title": "Extend a guest account"
     },
     "ise_find_session": {
       "tier": "read",
@@ -207,6 +259,10 @@
     "ise_generate_csr": {
       "tier": "write",
       "title": "Generate a CSR"
+    },
+    "ise_get_ad_join_point": {
+      "tier": "read",
+      "title": "Get an AD join point (config + join status)"
     },
     "ise_get_auth_history": {
       "tier": "read",
@@ -236,6 +292,14 @@
       "tier": "read",
       "title": "TrustSec egress matrix"
     },
+    "ise_get_guest_locations": {
+      "tier": "read",
+      "title": "Guest locations and SSIDs"
+    },
+    "ise_get_guest_user": {
+      "tier": "read",
+      "title": "Get a guest account"
+    },
     "ise_get_internal_user": {
       "tier": "read",
       "title": "Get an internal user"
@@ -252,17 +316,49 @@
       "tier": "read",
       "title": "Get a policy set with its rules"
     },
+    "ise_get_pxgrid_client": {
+      "tier": "read",
+      "title": "Get a pxGrid client"
+    },
+    "ise_get_tacacs_servers": {
+      "tier": "read",
+      "title": "List TACACS+ external servers and sequences"
+    },
     "ise_get_task": {
       "tier": "read",
       "title": "Get an ISE task's status"
+    },
+    "ise_get_trustsec_settings": {
+      "tier": "read",
+      "title": "TrustSec general settings"
+    },
+    "ise_import_config": {
+      "tier": "dangerous",
+      "title": "Import ISE configuration from an export"
     },
     "ise_import_trusted_cert": {
       "tier": "write",
       "title": "Import a trusted (CA) certificate"
     },
+    "ise_issue_pxgrid_client_cert": {
+      "tier": "write",
+      "title": "Issue a pxGrid client certificate"
+    },
+    "ise_join_ad": {
+      "tier": "dangerous",
+      "title": "Join ISE nodes to Active Directory"
+    },
+    "ise_leave_ad": {
+      "tier": "dangerous",
+      "title": "Leave Active Directory"
+    },
     "ise_list_active_sessions": {
       "tier": "read",
       "title": "List active sessions"
+    },
+    "ise_list_ad_groups": {
+      "tier": "read",
+      "title": "Search an AD domain's groups"
     },
     "ise_list_allowed_protocols": {
       "tier": "read",
@@ -320,6 +416,18 @@
       "tier": "read",
       "title": "Search failure reasons"
     },
+    "ise_list_guest_portals": {
+      "tier": "read",
+      "title": "List guest and sponsor portals"
+    },
+    "ise_list_guest_types": {
+      "tier": "read",
+      "title": "List guest types"
+    },
+    "ise_list_guest_users": {
+      "tier": "read",
+      "title": "List guest accounts"
+    },
     "ise_list_identity_groups": {
       "tier": "read",
       "title": "List user identity groups"
@@ -368,6 +476,14 @@
       "tier": "read",
       "title": "List profiler profiles"
     },
+    "ise_list_profiling_rules": {
+      "tier": "read",
+      "title": "List custom profiling rules"
+    },
+    "ise_list_pxgrid_clients": {
+      "tier": "read",
+      "title": "List pxGrid clients"
+    },
     "ise_list_sgacls": {
       "tier": "read",
       "title": "List SGACLs"
@@ -379,6 +495,10 @@
     "ise_list_shell_profiles": {
       "tier": "read",
       "title": "List TACACS+ shell profiles"
+    },
+    "ise_list_sponsor_groups": {
+      "tier": "read",
+      "title": "List sponsor groups"
     },
     "ise_list_sxp_bindings": {
       "tier": "read",
@@ -392,17 +512,33 @@
       "tier": "read",
       "title": "Explain which policy rule a request would hit"
     },
+    "ise_profiler_status": {
+      "tier": "read",
+      "title": "Profiler status per PSN"
+    },
     "ise_push_trustsec_matrix": {
       "tier": "dangerous",
       "title": "Push TrustSec policy to devices (CoA)"
+    },
+    "ise_pxgrid_status": {
+      "tier": "read",
+      "title": "pxGrid service status"
     },
     "ise_recent_auth_failures": {
       "tier": "read",
       "title": "Recent authentication failures"
     },
+    "ise_reinstate_guest_user": {
+      "tier": "write",
+      "title": "Reinstate a suspended guest account"
+    },
     "ise_release_rejected_endpoint": {
       "tier": "write",
       "title": "Release rejected endpoints"
+    },
+    "ise_reprofile_endpoint": {
+      "tier": "dangerous",
+      "title": "Reprofile an endpoint (CoA)"
     },
     "ise_search_spec": {
       "tier": "read",
@@ -432,6 +568,10 @@
       "tier": "write",
       "title": "Create or update an endpoint"
     },
+    "ise_set_guest_type": {
+      "tier": "write",
+      "title": "Create or update a guest type"
+    },
     "ise_set_identity_sequence": {
       "tier": "write",
       "title": "Create or update an identity source sequence"
@@ -439,6 +579,14 @@
     "ise_set_ip_sgt": {
       "tier": "write",
       "title": "Create or update a static IP-SGT mapping"
+    },
+    "ise_set_profiling_rule": {
+      "tier": "write",
+      "title": "Create or update a custom profiling rule"
+    },
+    "ise_set_pxgrid_settings": {
+      "tier": "write",
+      "title": "Set the pxGrid approval settings"
     },
     "ise_set_sgt": {
       "tier": "write",
@@ -448,17 +596,53 @@
       "tier": "write",
       "title": "Create or update a TACACS+ shell profile"
     },
+    "ise_set_sponsor_group": {
+      "tier": "write",
+      "title": "Create or update a sponsor group"
+    },
     "ise_set_sxp_connection": {
       "tier": "write",
       "title": "Create or update an SXP connection"
+    },
+    "ise_set_tacacs_server": {
+      "tier": "write",
+      "title": "Create or update a TACACS+ external server"
+    },
+    "ise_set_tacacs_server_sequence": {
+      "tier": "write",
+      "title": "Create or update a TACACS+ server sequence"
+    },
+    "ise_set_trustsec_settings": {
+      "tier": "write",
+      "title": "Change TrustSec general settings"
     },
     "ise_status": {
       "tier": "read",
       "title": "Cisco ISE status"
     },
+    "ise_suspend_guest_user": {
+      "tier": "write",
+      "title": "Suspend a guest account"
+    },
+    "ise_test_ad_user": {
+      "tier": "read",
+      "title": "Test an AD user (lookup + groups)"
+    },
+    "ise_test_command_set": {
+      "tier": "read",
+      "title": "Test a command against TACACS+ command sets"
+    },
+    "ise_trustsec_device_report": {
+      "tier": "read",
+      "title": "TrustSec policy status per device"
+    },
     "ise_update_authz_profile": {
       "tier": "write",
       "title": "Update authorization profile"
+    },
+    "ise_update_guest_user": {
+      "tier": "write",
+      "title": "Update a guest account's details"
     },
     "ise_update_internal_user": {
       "tier": "write",
@@ -485,5 +669,5 @@
       "title": "Why did authentication fail?"
     }
   },
-  "version": "0.7.2"
+  "version": "0.11.1"
 }

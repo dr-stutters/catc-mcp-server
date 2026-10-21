@@ -275,6 +275,11 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
 the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_auth_failed`,
 `ise_endpoint_360`, `catc_client_360`).
+`catc_admin_access_via_ise` (dangerous tier, uses **ise** and **Windows_Server**) moves Catalyst Center admin
+logins onto an AD group through ISE: AD group and user, ISE NAD for Catalyst Center, an authorization profile
+returning `cisco-av-pair = Role=<role>`, a policy set for Catalyst Center's RADIUS logins (with ISE mirror users
+for the local accounts as a break-glass path), external authentication on, a local and an AD test login, the ISE
+auth record and an undo list; by default it switches external authentication off again at the end.
 `catc_decommission_device` (dangerous tier, uses **ise**) keeps a copy of the config, shows what
 un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
 removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
