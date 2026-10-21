@@ -629,7 +629,14 @@ def register(reg: ToolRegistrar) -> None:
     async def catc_delete_sda_object(
         ctx: Context,
         kind: Annotated[
-            Literal["port_assignment", "anycast_gateway", "virtual_network", "fabric_device", "fabric_site"],
+            Literal[
+                "port_assignment",
+                "anycast_gateway",
+                "virtual_network",
+                "fabric_device",
+                "fabric_zone",
+                "fabric_site",
+            ],
             Field(description="What to remove"),
         ],
         id: Annotated[  # noqa: A002 - the API's term
@@ -640,9 +647,9 @@ def register(reg: ToolRegistrar) -> None:
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a
-        device's fabric role or a fabric site. Catalyst Center removes the matching configuration from the
-        fabric devices. Remove in reverse order (ports -> gateways -> VNs -> devices -> site); the preview
-        refuses a fabric site or VN that is still in use."""
+        device's fabric role, a fabric zone or a fabric site. Catalyst Center removes the matching
+        configuration from the fabric devices. Remove in reverse order (ports -> gateways -> VNs -> devices ->
+        zones -> site); the preview refuses a fabric site, zone or VN that is still in use."""
         app: CatcApp = get_client(ctx)
         blockers: list[str] = []
         params: dict[str, Any] | None = None
@@ -651,6 +658,7 @@ def register(reg: ToolRegistrar) -> None:
             "port_assignment": "portAssignments",
             "anycast_gateway": "anycastGateways",
             "fabric_device": "fabricDevices",
+            "fabric_zone": "fabricZones",
             "fabric_site": "fabricSites",
         }
         if kind == "virtual_network":
@@ -705,6 +713,16 @@ def register(reg: ToolRegistrar) -> None:
                     blockers.append(f"{len(gws)} anycast gateway(s) still exist here; remove them first.")
                 if vns:
                     blockers.append(f"Virtual networks still at this fabric site: {', '.join(vns)}.")
+            if kind == "fabric_zone":
+                gws = await sda_list(app, "anycastGateways", {"fabricId": oid})
+                ports = await sda_list(app, "portAssignments", {"fabricId": oid})
+                dependents = sorted(str(x.get("id")) for x in gws + ports)
+                if gws or ports:
+                    blockers.append(
+                        f"The zone still has {len(gws)} anycast gateway(s) and {len(ports)} port "
+                        "assignment(s); remove them first."
+                    )
+                radius = None
             if kind == "fabric_device":
                 fid = obj.get("fabricId")
                 ports = await sda_list(
