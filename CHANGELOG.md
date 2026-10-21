@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
+  subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
+  or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services
+  through LISP route leaking inside the fabric; refuses unknown VNs, a provider that is also a subscriber,
+  and a no-op; blast radius = the fabric devices of the sites concerned.
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
