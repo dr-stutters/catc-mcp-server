@@ -24,6 +24,20 @@
   waits or failed: names the Catalyst Center subscriber to approve on ISE), `wait` or `none`.
   `include_sites=true` adds the sites whose own network or client AAA points at each server (reads every
   site's AAA settings; off by default).
+- **Catalyst Center admin login through ISE (D88, #144).** `catc_get_external_authentication()` (read: whether
+  external authentication is on, the AAA attribute the role is read from, empty meaning the default
+  Cisco-AVPair / cisco-av-pair, the AAA servers Catalyst Center asks from `users/external-servers` without
+  their shared secrets, the roles a server can return, and the external users seen so far);
+  `catc_set_external_authentication(enable, aaa_attribute?)` (dangerous tier: the preview lists the servers,
+  the attribute and the lockout risk, and refuses to enable with no AAA server or to repeat the current state;
+  a custom attribute is posted before the flag); `catc_test_login(username, password)` (read tier: one token
+  request with those credentials; pass/fail with Catalyst Center's reason, or the token's claims and the
+  user's roles and auth source from the user list; the password and the token are registered as secrets and
+  never stored, logged or returned).
+  Live on 3.2.2 (2026-10-21, ISE 3.5): an AD user in `mcp-catc-admins` logged in with OBSERVER-ROLE through ISE
+  and external authentication was switched off again. Findings in the tools' text: logins go to ISE first (a local
+  account only works while ISE accepts it with a role), and a custom role in the reply is refused with 400
+  'Invalid user profile' (built-in roles only); `catc_test_login` now returns Catalyst Center's own failure text.
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt's first step follows `next_action` (an entry that FAILED is

@@ -23,6 +23,7 @@ from catc_mcp.tools import (
     credentials,
     dangerous,
     discovery,
+    external_auth,
     inventory,
     ipam,
     ops_writes,
@@ -73,6 +74,9 @@ Workflows:
 - Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
   settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then
   re-provision (catc_provision_devices). Use templates for everything else.
+- Admin login through ISE (external authentication): catc_get_external_authentication -> ISE NAD + an
+  authorization profile returning 'Role=<role>' -> catc_set_external_authentication -> catc_test_login (local
+  admin first: lockout risk).
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
   commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Issues stay 'active' for
   hours after the problem clears: check last_seen and the live state before calling one current.
@@ -124,6 +128,7 @@ REGISTER = [
     site_writes.register,
     settings_writes.register,
     aaa.register,
+    external_auth.register,
     pnp.register,
     template_writes.register,
     ops_writes.register,

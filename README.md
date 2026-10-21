@@ -285,6 +285,11 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
   gives each server a `next_action`; an entry that FAILED (ISE renamed, certificate renewed, FQDN not
   matching its CN) is fixed in place with `catc_update_policy_server` (ISE password re-entered), then
   the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
+- **Admin login through ISE:** `catc_get_external_authentication` (on/off, AAA attribute, servers, roles) →
+  ISE side (Catalyst Center as a NAD with the policy-server shared secret, an authorization profile returning
+  `cisco-av-pair = Role=<role>`) → `catc_set_external_authentication(enable=true)` (dangerous; lockout risk named
+  in the preview) → `catc_test_login` with a local admin first, then the external user (pass/fail and the roles
+  granted; the password and token are never stored or returned).
 - **Zero-touch / RMA:** `catc_list_pnp_devices(state='Unclaimed')` → `catc_claim_pnp_device` (day-0
   template from the *Onboarding Configuration* project; `hostname` is a blocked template command, pass
   it to the claim). RMA: `catc_mark_device_for_replacement` (the faulty device must be unreachable and
@@ -300,7 +305,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (81)
+### Read (83)
 
 | Tool | What it does |
 |---|---|
@@ -323,6 +328,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_device` | Full inventory record for one network device: platform, serial, software, role, uptime, reachability and collection status (with failure reason), management IP, MAC, location. |
 | `catc_get_device_config` | The device's running configuration as last collected by Catalyst Center (not live: run catc_run_show_commands for that). |
 | `catc_get_device_hardware` | Hardware and licensing of one device in one call: stack members (role, state, priority, serial, platform, software) and StackWise Virtual links, PoE budget (allocated / consumed / remaining watts) and the PoE ports drawing power, module count, and smart-licensing state with the licences in use. |
+| `catc_get_external_authentication` | How Catalyst Center admins log in: whether external authentication (System > Users & Roles > External Authentication) is on, the AAA attribute it reads the role from (empty = the default, Cisco-AVPair for RADIUS / cisco-av-pair for TACACS+), the AAA servers it asks (from the authentication and policy servers, e.g. the integrated ISE), the roles an external user can be given (the value the AAA server must return: 'Role=<name>'), and the external users that have logged in so far. |
 | `catc_get_issue` | One assurance issue in full: description, affected device/client/site, timeline, additional attributes and Catalyst Center's suggested actions with the show commands it proposes (run them with catc_run_show_commands). |
 | `catc_get_l3_topology` | Layer 3 topology for one routing protocol: routers and the adjacencies between them with interface names and addresses. |
 | `catc_get_network_health` | Overall network health score and the healthy/unhealthy device counts per category (access, distribution, core, router, wireless), plus a per-site health summary. |
@@ -384,6 +390,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 | `catc_template_drift` | Template drift per device: for every device a template was deployed to, the version it last received against the template's latest committed version. |
 | `catc_template_usage` | Where a template is used: the network profiles it is attached to, the sites those profiles are assigned to, and the devices it was deployed to with the version each one runs against the latest committed version (current / behind / failed). |
+| `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
 ### Write (46)
@@ -437,7 +444,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (24)
+### Dangerous (25)
 
 | Tool | What it does |
 |---|---|
@@ -464,6 +471,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_provision_wireless_controller` | Provision a Catalyst 9800 WLC: set its primary managed AP locations, then push the WLANs, policy profiles and tags of the wireless profiles assigned to those sites (plus the site's AAA, DNS, NTP and telemetry settings). |
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
+| `catc_set_external_authentication` | Turn Catalyst Center's external authentication on or off (System > Users & Roles > External Authentication), optionally setting the AAA attribute first. |
 | `catc_update_policy_server` | Edit an authentication and policy server (System > Settings > Authentication and Policy Servers > Edit): the ISE FQDN and login, ports, protocol, pxGrid, retries and timeout. |
 
 ## API spec
