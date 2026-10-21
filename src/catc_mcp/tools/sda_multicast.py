@@ -27,6 +27,16 @@ async def multicast_state(app: CatcApp, fid: str) -> dict[str, Any]:
     return {"replication": rows[0].get("replicationMode") if rows else None, "virtual_networks": vns}
 
 
+def ranges_to_default_rp(rps: list[dict[str, Any]], ranges: list[str]) -> bool:
+    """Put ASM ranges given without `rp` on the VN's IPv4 RP: the default one, or the only one. False when
+    there is no single such RP."""
+    target = [r for r in rps if r.get("isDefaultV4RP")] or (rps if len(rps) == 1 else [])
+    if len(target) != 1:
+        return False
+    target[0]["ipv4AsmRanges"] = ranges
+    return True
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Fabric multicast")
     async def catc_get_fabric_multicast(ctx: Context, fabric_site: FabricRef) -> dict[str, Any]:
@@ -145,12 +155,21 @@ def register(reg: ToolRegistrar) -> None:
                     }
                 else:
                     rp_entry = {}
+                ranges = [r.strip() for r in (asm_ranges or "").split(",") if r.strip()]
                 if rp_entry:
-                    if asm_ranges:
-                        rp_entry["ipv4AsmRanges"] = [r.strip() for r in asm_ranges.split(",") if r.strip()]
+                    if ranges:
+                        rp_entry["ipv4AsmRanges"] = ranges
                     item["multicastRPs"] = [rp_entry]
                 elif current and current.get("multicastRPs"):
-                    item["multicastRPs"] = current["multicastRPs"]
+                    rps = [dict(r) for r in current["multicastRPs"] if isinstance(r, dict)]
+                    if ranges and not ranges_to_default_rp(rps, ranges):
+                        blockers.append(
+                            f"{virtual_network} has {len(rps)} rendezvous points and none is the default "
+                            "IPv4 RP: give rp (and rp_devices or external_rp_ip) for asm_ranges."
+                        )
+                    item["multicastRPs"] = rps
+                elif ranges:
+                    blockers.append("asm_ranges need a rendezvous point: give rp (fabric or external).")
                 if not item.get("multicastRPs") and not item.get("ipv4SsmRanges"):
                     blockers.append("Give a rendezvous point (rp) for ASM, ssm_ranges for SSM, or both.")
                 if current is not None:

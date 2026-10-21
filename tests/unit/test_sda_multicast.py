@@ -150,3 +150,43 @@ async def test_remove_unknown(api: respx.MockRouter) -> None:
         await flow(
             "catc_set_fabric_multicast", {"fabric_site": FID, "virtual_network": "MCP_VN", "remove_vn": True}
         )
+
+
+async def test_asm_ranges_without_rp_go_to_the_existing_rp(api: respx.MockRouter) -> None:
+    lab = Lab(api, mode="HEADEND_REPLICATION", vns=[MVN])
+    preview, done = await flow(
+        "catc_set_fabric_multicast",
+        {"fabric_site": FID, "virtual_network": "MCP_VN", "asm_ranges": "239.2.0.0/16"},
+    )
+    assert preview["preview"]["changes"]["MCP_VN"]["multicastRPs"]["to"][0]["ipv4AsmRanges"] == [
+        "239.2.0.0/16"
+    ]
+    assert done and lab.sent[0][2][0]["multicastRPs"] == [
+        {**MVN["multicastRPs"][0], "ipv4AsmRanges": ["239.2.0.0/16"]}
+    ]
+
+
+async def test_asm_ranges_without_any_rp_or_an_ambiguous_one(api: respx.MockRouter) -> None:
+    two = [
+        {"rpDeviceLocation": "EXTERNAL", "ipv4Address": "10.0.0.1"},
+        {"rpDeviceLocation": "EXTERNAL", "ipv4Address": "10.0.0.2"},
+    ]
+    lab = Lab(api, mode="HEADEND_REPLICATION", vns=[{**MVN, "multicastRPs": two}])
+    out, _ = await flow(
+        "catc_set_fabric_multicast",
+        {"fabric_site": FID, "virtual_network": "MCP_VN", "asm_ranges": "239.2.0.0/16"},
+    )
+    assert out["status"] == "blocked" and "none is the default IPv4 RP" in " ".join(out["blockers"])
+    lab.vns = []
+    out, _ = await flow(
+        "catc_set_fabric_multicast",
+        {
+            "fabric_site": FID,
+            "virtual_network": "MCP_VN",
+            "ip_pool": "p",
+            "ssm_ranges": "232.0.0.0/8",
+            "asm_ranges": "239.2.0.0/16",
+        },
+    )
+    assert out["status"] == "blocked" and "asm_ranges need a rendezvous point" in " ".join(out["blockers"])
+    assert not lab.sent

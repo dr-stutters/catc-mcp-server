@@ -90,6 +90,9 @@
   the 3.2.2 spec allows 1-9 and 1-10 (unset = Catalyst Center's defaults), so the request could be refused.
   Both are now left out unless the new optional `border_priority` (1-9) or `prepend_as_count` (1-10) is
   given. Found while planning D103.
+- `catc_set_fabric_multicast`: `asm_ranges` given without `rp` on a VN that already has multicast were dropped
+  (the current RP was kept as it was). They now go to the VN's default IPv4 RP, or its only one; several RPs
+  with no default, or no RP at all, are refused with a blocker.
 
 ## 0.12.0 (2026-10-21)
 
