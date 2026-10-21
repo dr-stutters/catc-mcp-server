@@ -59,7 +59,9 @@ DANGEROUS: dict[str, str] = {
     "Network Operations.PnP": "Write",
     "Network Provision.Device Provision": "Write",
     "Network Provision.SD-Access": "Write",
-    "System.System Settings": "Write",  # catc_add_ise_server / update / accept / delete policy server
+    # The ISE integration writes (catc_add_ise_server / update / accept / delete policy server) need
+    # SUPER-ADMIN-ROLE: 3.2.2 refuses them (403) to custom roles even with every System permission at Write.
+    "System.System Settings": "Write",
 }
 ROLES: dict[str, tuple[str, dict[str, str]]] = {
     "mcp-catc-ro": ("catc-mcp-server read tier. Managed by the suite's seed step.", READ),

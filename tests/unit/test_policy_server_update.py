@@ -302,3 +302,32 @@ async def test_update_changed_password_invalidates_token(api: respx.MockRouter) 
         )
     assert put.call_count == 0
     assert res.is_error or (res.structured_content or {}).get("status") != "applied"
+
+
+def test_next_action_recorded_waiting_and_complete() -> None:
+    """The live run (2026-10-21): after the FQDN edit 3.2.2 waits at step 1 for ISE's admin certificate; after
+    the accept the entry is ACTIVE with a PRIMARY and a PXGRID node, both TRUSTED."""
+    st = summary(FIX["status_waiting"])
+    assert (
+        st
+        and st["certificate_to_accept"][0]["fingerPrints"]["SHA-1"]
+        == "01B37DD8104BF6FB14DB08008FD538D6C3A28ACC"
+    )
+    assert next_action(server_row(servers()[0]), st)["action"] == "accept_certificate"
+    row = server_row(FIX["servers_complete"]["response"][0])
+    assert {n["role"] for n in row["ise_nodes"]} == {"PRIMARY", "PXGRID"}
+    assert next_action(row, summary(FIX["status_complete"])) == {"action": "none"}
+
+
+async def test_update_complete_entry_resends_the_primary_node(api: respx.MockRouter) -> None:
+    api.get(POLICY).respond(json=FIX["servers_complete"])
+    api.get(STATUS).respond(json=FIX["status_complete"])
+    async with Client(rw()) as c:
+        out = await run(
+            c, "catc_update_policy_server", {"server": SID, "ise_password": PASSWORD, "retries": 2}
+        )
+    body = out["preview"]["body"]
+    assert out["status"] == "preview" and out["preview"]["changes"] == {"retries": {"from": 3, "to": 2}}
+    assert body["ciscoIseDtos"] == [
+        {"fqdn": "ise.mitchcloud.lab", "userName": "admin", "password": "********"}
+    ]

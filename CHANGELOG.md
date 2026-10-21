@@ -14,6 +14,10 @@
   client to approve or pxGrid off). After the PUT the tool waits for the integration to re-run (a status left
   over from before the edit is ignored by its step times) and returns the certificate chain when Catalyst
   Center asks for it, with `next_action: accept_certificate`.
+  Live on 3.2.2: the lab's FAILED entry repaired (FQDN `ise.demo.dcloud.cisco.com` → `ise.mitchcloud.lab`, ISE's
+  admin certificate accepted after comparing fingerprints, pxGrid client auto-approved on ISE): COMPLETE,
+  both nodes TRUSTED. The four ISE integration writes need SUPER-ADMIN-ROLE: 3.2.2 refuses them (403) to
+  custom roles even with every System permission at Write (docs/least-privilege.md).
 - `catc_get_policy_servers` gives every server a `next_action`: `update_entry` with the field Catalyst
   Center's failure message names (`fqdn` for a CN mismatch or a name the appliance can't resolve,
   `ise_password` for a login/ERS failure), `accept_certificate`, `approve_pxgrid_on_ise` (the pxGrid step
