@@ -29,6 +29,8 @@ LONG = {
     "catc_set_fabric_multicast",
     "catc_add_l3_handoff",
     "catc_delete_l3_handoff",
+    "catc_set_l2_virtual_network",
+    "catc_set_l2_handoff",
     "catc_delete_fabric_site",
     "catc_delete_fabric_device",
     "catc_update_anycast_gateway",
