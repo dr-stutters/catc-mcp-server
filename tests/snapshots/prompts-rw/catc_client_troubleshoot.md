@@ -36,7 +36,10 @@ missing, skip steps 5 and say ISE could not be checked.
    `ise_endpoint_360` for its profile and group. No ISE record at all while the switch sends
    RADIUS (step 3) points at the shared secret or the NAD: `ise_get_nad` with the switch's IP
    (exists, secret set). A wrong shared secret is silent in ISE, and a MAB lookup can still pass with it
-   while 802.1X fails, so compare the methods.
+   while 802.1X fails, so compare the methods. No ISE record does not prove the request never reached
+   ISE: an EAP session the client abandons mid-way (it doesn't trust ISE's EAP certificate, or its
+   supplicant is misconfigured) leaves no record either; the switch then shows the session
+   Unauthorized with the method still Running and its RADIUS request counter rising without timeouts.
 6. AAA health from Catalyst Center: `catc_network_services_health` with service "aaa", the
    switch as device and hours 4: quote its verdict line (success %, latency, EAP vs MAB failures
    on that switch). It lags the logins by minutes; an empty result right after a failure is not a pass.
@@ -45,6 +48,9 @@ missing, skip steps 5 and say ISE could not be checked.
    - ISE not reached or wrong shared secret (no ISE record, RADIUS timeouts or dead on the switch, AAA
      health failures);
    - wrong VLAN or authorization (authenticated, but the VLAN/dACL/SGT differs from what is expected);
+   - client side (the supplicant stops mid-EAP: the session is Unauthorized and still Running, no ISE
+     record, Catalyst Center shows low health and often a DHCP root cause): fix the supplicant or trust
+     ISE's EAP certificate on the client, nothing on the network;
    - port or link (down, err-disabled, no MAC learned) or DHCP (authenticated, no IP; DHCP root cause);
    - path (step 4 stops), or the client looks healthy (say so: nothing to fix on the network).
 8. Fix, previewed only: name the change and show its preview without confirming it, e.g. register an unknown
