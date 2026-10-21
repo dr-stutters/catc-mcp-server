@@ -42,10 +42,10 @@ first failure; never skip a check.
    devices.
 6. Fabric site: `catc_create_fabric_site` site "Global/mcp-test-lab/mcp-test-fabric", authentication_profile
    "Closed Authentication". Read back with `catc_get_sda_fabric`.
-7. Border and control plane first: `catc_add_fabric_device` device "198.18.128.176", roles
-   ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "65001". Then each edge:
-   `catc_add_fabric_device` with roles ["EDGE_NODE"]. After each,
-   `catc_get_sda_fabric` shows the device with its roles.
+7. Border and control plane first: `catc_add_fabric_device` device "198.18.128.176", fabric_site
+   "Global/mcp-test-lab/mcp-test-fabric", roles ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "65001". Then each
+   edge: `catc_add_fabric_device` with fabric_site "Global/mcp-test-lab/mcp-test-fabric" and roles ["EDGE_NODE"]. After
+   each, `catc_get_sda_fabric` shows the device with its roles.
 8. Virtual network: `catc_create_virtual_network` name "MCP_VN", fabric_sites ["Global/mcp-test-lab/mcp-test-fabric"].
 9. Anycast gateway: `catc_add_anycast_gateway` fabric_site "Global/mcp-test-lab/mcp-test-fabric", virtual_network "MCP_VN",
    ip_pool "<pool name from step 4>". The preview names every edge that gets the SVI.
