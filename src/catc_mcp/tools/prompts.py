@@ -654,15 +654,16 @@ using Catalyst Center while external authentication is on.
             try:
                 ip = str(ipaddress.ip_address(who))
                 find = (
-                    f'IP {ip}: {tool_ref("catc_list_clients")} with ip "{ip}" (hours {window:g}) gives the '
-                    f"MAC; then {tool_ref('catc_client_360')} with it."
+                    f'IP {ip}: {tool_ref("catc_find_host")} with ip "{ip}" (hours {window:g}) gives the '
+                    f"MAC, switch and port (add search_devices with the site's access switches when "
+                    f"Assurance has no record); then {tool_ref('catc_client_360')} with the MAC."
                 )
             except ValueError:
                 find = (
-                    f'username "{who}": {tool_ref("catc_list_clients")} (hours {window:g}; filter by site '
-                    "or switch if the user says where) and pick the rows whose user column is that "
-                    f"username; more than one: ask which. Then {tool_ref('catc_client_360')} with its MAC. "
-                    f'If none matches, {tool_ref("ise_find_session")} with username "{who}" gives the MAC.'
+                    f'username "{who}": {tool_ref("catc_find_host")} with user "{who}" (hours {window:g}) '
+                    "gives the MAC, switch, port, VLAN and site of each host that logged in with it; more "
+                    f"than one: ask which. Then {tool_ref('catc_client_360')} with its MAC. If none "
+                    f'matches, {tool_ref("ise_find_session")} with username "{who}" gives the MAC.'
                 )
         mac_ref = f'"{mac}"' if mac else "the client's MAC (step 1)"
         path = (

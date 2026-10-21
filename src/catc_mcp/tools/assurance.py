@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import fnmatch
 import re
 import time
 from datetime import UTC, datetime
@@ -16,6 +17,7 @@ from catc_mcp._core import (
     ResponseFormat,
     ToolRegistrar,
     UpstreamError,
+    ValidationFailed,
     get_client,
     list_result,
     object_result,
@@ -27,6 +29,7 @@ from catc_mcp.common import (
     PAGE_EVENTS,
     PAGE_ISSUES,
     ago,
+    ensure_list,
     inventory_names,
     is_uuid,
     norm_mac,
@@ -115,6 +118,117 @@ def client_row(c: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]
         "last_seen": ago(c.get("lastUpdatedTime"), now_ms),
     }
     return {k: v for k, v in row.items() if v not in (None, "", -1)}
+
+
+USER_SCAN = 500  # clients matched by username, newest first (clients/query pages of QUERY_PAGE)
+QUERY_PAGE = 100
+CLIENT_SCAN_CAP = 2000  # GET clients scan when the username filter is rejected
+
+
+def user_pattern(user: str, *, partial: bool) -> str:
+    """The clients/query `like` value for a username. 3.2.2 matches `like` case-insensitively, with
+    '*' as the wildcard and no wildcard meaning the whole name; `eq` is case-sensitive."""
+    u = user.strip()
+    if not u or not u.replace("*", ""):
+        raise InvalidRequest("Give a username (or part of one); '*' alone matches every client.")
+    if any(not ch.isprintable() for ch in u):
+        raise InvalidRequest("The username contains control characters.")
+    return u if "*" in u or not partial else f"*{u}*"
+
+
+def is_user(c: dict[str, Any]) -> bool:
+    """A real login name: MAB clients carry their own MAC as the username."""
+    name = str(c.get("username") or "")
+    return bool(name) and norm_or_none(name) != norm_or_none(str(c.get("macAddress") or ""))
+
+
+def norm_or_none(value: str) -> str | None:
+    try:
+        return norm_mac(value)
+    except InvalidRequest:
+        return value.strip().lower() or None
+
+
+async def clients_by_user(
+    app: CatcApp, user: str, hours: float, *, partial: bool, cap: int = USER_SCAN
+) -> tuple[list[dict[str, Any]], str, bool]:
+    """Clients Assurance saw in the window whose username matches, newest first: (clients, how they
+    were matched, complete). POST clients/query with a `username` filter; a release that rejects the
+    key (400 'Filter key ... invalid') falls back to scanning GET clients and matching client-side."""
+    pattern = user_pattern(user, partial=partial)
+    w = window(hours)
+    rows: list[dict[str, Any]] = []
+    try:
+        offset = 1
+        while True:
+            body = {
+                **w,
+                "filters": [{"key": "username", "operator": "like", "value": pattern}],
+                "page": {
+                    "limit": QUERY_PAGE,
+                    "offset": offset,
+                    "sortBy": [{"name": "lastUpdatedTime", "order": "desc"}],
+                },
+            }
+            resp = await app.api.post("/dna/data/api/v1/clients/query", body)
+            batch = [
+                c
+                for c in ensure_list(resp.get("response") if isinstance(resp, dict) else resp)
+                if isinstance(c, dict)
+            ]
+            rows += [c for c in batch if is_user(c)]
+            if len(batch) < QUERY_PAGE:
+                return rows[:cap], "username filter (clients/query)", True
+            if len(rows) >= cap:
+                return rows[:cap], "username filter (clients/query)", False
+            offset += QUERY_PAGE
+    except ValidationFailed as e:
+        if "filter key" not in str(e).lower():
+            raise
+    full = await fetch_all(
+        app.data_pager,
+        app.api,
+        "/dna/data/api/v1/clients",
+        {**w, "sortBy": "lastUpdatedTime", "order": "desc"},
+        cap=CLIENT_SCAN_CAP,
+        max_page=PAGE_CLIENTS,
+    )
+    rx = re.compile(fnmatch.translate(pattern), re.IGNORECASE)
+    rows = [c for c in full.items if isinstance(c, dict) and is_user(c) and rx.fullmatch(str(c["username"]))]
+    how = "matched client-side: this release rejects the clients/query username filter"
+    return rows[:cap], how, full.complete and len(rows) <= cap
+
+
+def client_matches(
+    c: dict[str, Any], params: dict[str, Any], device: str | None, connected_only: bool
+) -> bool:
+    """Apply catc_list_clients' GET filters to a clients/query row (same record shape)."""
+    nd: dict[str, Any] = c.get("connectedNetworkDevice") or {}
+    cn: dict[str, Any] = c.get("connection") or {}
+
+    def like(value: Any, pattern: str) -> bool:
+        return fnmatch.fnmatchcase(str(value or "").lower(), pattern.lower())
+
+    if device:
+        # Assurance may hold the short name or the FQDN of the inventory hostname.
+        names = {
+            str(n).lower().split(".")[0]
+            for n in (nd.get("connectedNetworkDeviceName"), cn.get("wlcName"))
+            if n
+        }
+        if device.lower().split(".")[0] not in names:
+            return False
+    if params.get("siteId") and f"/{params['siteId']}/" not in f"/{c.get('siteHierarchyId') or ''}/":
+        return False
+    if params.get("ssid") and str(cn.get("ssid") or "") != params["ssid"]:
+        return False
+    if params.get("type") and str(c.get("type") or "").lower() != params["type"].lower():
+        return False
+    if params.get("macAddress") and not like(c.get("macAddress"), params["macAddress"]):
+        return False
+    if params.get("ipv4Address") and not like(c.get("ipv4Address"), params["ipv4Address"]):
+        return False
+    return not connected_only or str(c.get("connectionStatus") or "").lower() == "connected"
 
 
 # camelCase id-like attribute keys (siteId, deviceUuid, siteHierarchyGraphId...), not ssid/bssid.
@@ -468,6 +582,13 @@ def register(reg: ToolRegistrar) -> None:
         ip: Annotated[
             str | None, Field(description="IPv4 address; '*' wildcards allowed, e.g. '10.10.*'")
         ] = None,
+        user: Annotated[
+            str | None,
+            Field(
+                description="Username the client logged in with (802.1X/web identity): part of the name, "
+                "case-insensitive; '*' wildcards allowed, e.g. 'jsmith' or 'j*@corp.com'"
+            ),
+        ] = None,
         connected_only: Annotated[
             bool, Field(description="Only clients connected now (default: everything seen in the window)")
         ] = False,
@@ -479,16 +600,19 @@ def register(reg: ToolRegistrar) -> None:
         """Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP,
         user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last
         onboarding failure and when it was last seen. Filter by the device they connect through, site,
-        SSID, type, MAC or IP. Then catc_client_360 for one client."""
+        SSID, type, MAC, IP or username (a ticket with a username: `user` finds the MAC for
+        ise_why_auth_failed). Then catc_client_360 for one client, or catc_find_host for where a host
+        is plugged in."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {**window(hours), "sortBy": "lastUpdatedTime", "order": "desc"}
+        dev_name: str | None = None
         if device:
             dev = await resolve_device(app, device)
-            name = str(dev.get("hostname") or "")
+            dev_name = str(dev.get("hostname") or "")
             if "wireless controller" in str(dev.get("family") or "").lower():
-                params["wlcName"] = name
+                params["wlcName"] = dev_name
             else:
-                params["connectedNetworkDeviceName"] = name
+                params["connectedNetworkDeviceName"] = dev_name
         if site:
             params["siteId"] = (await resolve_site(app, site))["id"]
         if ssid:
@@ -499,7 +623,18 @@ def register(reg: ToolRegistrar) -> None:
             params["macAddress"] = mac if "*" in mac else norm_mac(mac)
         if ip:
             params["ipv4Address"] = ip
-        if connected_only:
+        extra: dict[str, Any] | None = None
+        if user:
+            # GET clients has no username filter: query by username, then apply the others here.
+            matched, how, complete = await clients_by_user(app, user, hours, partial=True)
+            rows = [c for c in matched if client_matches(c, params, dev_name, connected_only)]
+            page = page_of(rows, limit=limit, offset=offset)
+            extra = {"user_match": how}
+            if not complete:
+                page.total = None
+                page.more = True
+                extra["scan"] = f"only the newest {USER_SCAN} clients matching the username were read"
+        elif connected_only:
             # The API has no status filter; scan the window and keep the connected ones.
             full = await fetch_all(
                 app.data_pager, app.api, "/dna/data/api/v1/clients", params, cap=2000, max_page=PAGE_CLIENTS
@@ -510,9 +645,8 @@ def register(reg: ToolRegistrar) -> None:
                 if isinstance(c, dict) and str(c.get("connectionStatus") or "").lower() == "connected"
             ]
             page = page_of(rows, limit=limit, offset=offset)
-            extra = (
-                None if full.complete else {"scan": "read the newest 2000 clients only; narrow the filters"}
-            )
+            if not full.complete:
+                extra = {"scan": "read the newest 2000 clients only; narrow the filters"}
         else:
             page = await app.data_pager.fetch_page(
                 app.api,
@@ -522,7 +656,6 @@ def register(reg: ToolRegistrar) -> None:
                 offset=offset,
                 max_page=PAGE_CLIENTS,
             )
-            extra = None
         page.items = [client_row(c) for c in page.items if isinstance(c, dict)]
         return list_result(
             page,
