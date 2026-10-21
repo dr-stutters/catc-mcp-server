@@ -25,6 +25,14 @@
   external_rp_ip?, asm_ranges?, ssm_ranges?, remove_vn=false)` (dangerous): native or head-end replication
   (`PUT sda/multicast`) and/or a VN's multicast (`POST`/`PUT`/`DELETE sda/multicast/virtualNetworks`, one
   request at a time; unset settings keep their value), with current -> new in the preview.
+- **SD-Access transits and layer 3 handoffs (D93, #164, Wave 6 part F).** `catc_list_transit_networks`
+  (read), `catc_create_transit_network(name, transit_type=ip|sda_pubsub|sda_bgp, asn?, control_plane_devices?,
+  site?)` (write: no device change), `catc_add_l3_handoff(border, transit, ...)` (dangerous): an IP transit
+  hands each VN off on its own VLAN/SVI over `interface` with point-to-point addresses (or an external
+  connectivity pool) and eBGP; an SD-Access transit registers the border with the transit control plane.
+  `catc_delete_l3_handoff` (by VN) and `catc_delete_transit_network` (refused while a border uses it). The
+  3.2.2 spec types the transit `type` as an array with an `IP_BASED_TRANSIT,` typo; the tools send the plain
+  string the API answers with. Live-read on the 3.2.2 lab appliance (no transits yet).
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
