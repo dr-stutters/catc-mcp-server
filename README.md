@@ -274,7 +274,8 @@ pre-change archive). Without the dangerous tier it stops after the rails with a 
 (`catc_get_policy_servers`), sets the site's client AAA to ISE, onboards and provisions the switch,
 confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
 the first authentication (`ise_find_session`, `ise_get_auth_history`, `ise_why_auth_failed`,
-`ise_endpoint_360`, `catc_client_360`).
+`ise_endpoint_360`, `catc_client_360`), then checks that every device at the site is a NAD in ISE
+(`ise_audit_nads` with the site's `catc_list_devices` rows, matched by IP).
 `catc_admin_access_via_ise` (dangerous tier, uses **ise** and **Windows_Server**) moves Catalyst Center admin
 logins onto an AD group through ISE: AD group and user, ISE NAD for Catalyst Center, an authorization profile
 returning `cisco-av-pair = Role=<role>`, a policy set for Catalyst Center's RADIUS logins (with ISE mirror users

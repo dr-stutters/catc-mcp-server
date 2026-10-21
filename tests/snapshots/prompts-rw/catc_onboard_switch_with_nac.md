@@ -5,9 +5,9 @@ arguments: {"access_port": "GigabitEthernet1/0/2", "auth_mode": "monitor", "cli_
 
 Onboard an access switch with network access control: check the Catalyst Center <-> ISE
 integration, set the site's client AAA to ISE, discover/assign/provision the switch, confirm
-its NAD in ISE, deploy an 802.1X/MAB access-port template, then verify the first
-authentication in ISE and Catalyst Center. Needs the ise MCP server too. Every write is
-preview-first.
+its NAD in ISE, deploy an 802.1X/MAB access-port template, verify the first
+authentication in ISE and Catalyst Center, then check that every device at the site is a
+NAD in ISE. Needs the ise MCP server too. Every write is preview-first.
 
 ## user
 
@@ -106,6 +106,25 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
    - `ise_endpoint_360` with mac "52:54:00:12:34:56" (profile, group, history);
    - `catc_client_360` with mac "52:54:00:12:34:56" (Catalyst Center's view: switch, port, VLAN,
      health; it can take ~5 minutes to show up).
-9. Summary: switch onboarded (site, provisioning), AAA/ISE config on the switch, NAD in ISE,
-   the port template, and the endpoint's authentication result in both products. In monitor mode
-   remind the user that failures don't block traffic yet, and that "closed" mode enforces it.
+9. NAD coverage for the site: `catc_list_devices` with site "Global/mcp-test-lab/mcp-test-nac",
+   response_format "json" and limit 500, then `ise_audit_nads` with expected = its rows as
+   they are (hostname and managementIpAddress are accepted; leave out access points, family
+   "Unified AP": their WLC is the NAD) and check_stale=false (one site is only part of the
+   inventory, so every other NAD would look stale). Add aaa_server = the RADIUS server address seen
+   in step 5 to this switch's row so aaa_elsewhere is checked too. Read coverage.verdict, then
+   coverage.devices. Devices are matched to NADs by IP, never by name: a row with nad_name_differs
+   (Catalyst Center reused an existing NAD under another name) is fine. These are red; each row's
+   `fix` names the fix, which is offered as a preview only (nothing is applied without approval):
+   - missing_nad: no NAD covers the device's IP, so ISE drops its RADIUS silently (11007):
+     `ise_create_nad`, or provision it again (`catc_provision_devices`), which
+     creates the NAD;
+   - wrong_ndg (only for a row given an ndg): the NAD is not in that device group:
+     `ise_update_nad` with the group paths;
+   - ip_mismatch: a NAD has the device's name but another IP (a re-addressed device or a stale
+     entry): `ise_update_nad` with ips ["<the device's IP>/32"] if it is this device;
+   - aaa_elsewhere: the switch's RADIUS server is not an ISE node: fix the site's client AAA
+     (`catc_update_site_aaa_settings`, step 2) and provision again (step 4).
+10. Summary: switch onboarded (site, provisioning), AAA/ISE config on the switch, NAD in ISE,
+   the port template, the endpoint's authentication result in both products, and the coverage
+   verdict with any red rows and their fixes. In monitor mode remind the user that failures don't
+   block traffic yet, and that "closed" mode enforces it.
