@@ -44,6 +44,12 @@ SAMPLES = {
         "mirror_local_accounts": "true",
         "keep_enabled": "false",
     },
+    "catc_client_troubleshoot": {
+        "client": "52:54:00:62:c6:b2",
+        "destination_ip": "198.18.133.1",
+        "expected_vlan": "10",
+        "hours": "4",
+    },
     "catc_onboard_switch_with_nac": {
         "switch_ip": "198.18.128.170",
         "site_path": "Global/mcp-test-lab/mcp-test-nac",
@@ -263,3 +269,44 @@ async def test_admin_access_prompt_dangerous_only_and_validates() -> None:
     async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
         with pytest.raises(Exception, match="catc_ip"):
             await c.get_prompt("catc_admin_access_via_ise", {"catc_ip": "not-an-ip"})
+
+
+async def test_client_troubleshoot_renders_for_mac_ip_and_username() -> None:
+    args = SAMPLES["catc_client_troubleshoot"]
+    async with Client(create_server(make_settings())) as c:  # read tier: no writes needed
+        assert "catc_client_troubleshoot" in {p.name for p in await c.list_prompts()}
+        text = (await c.get_prompt("catc_client_troubleshoot", args)).messages[0].content.text  # type: ignore[union-attr]
+        by_ip = (
+            (await c.get_prompt("catc_client_troubleshoot", {"client": "10.10.10.50"}))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+        by_user = (
+            (await c.get_prompt("catc_client_troubleshoot", {"client": "mcp-eaptls-client"}))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+    for tool in (
+        "catc_client_360",
+        "catc_list_issues",
+        "catc_run_show_commands",
+        "catc_path_trace",
+        "catc_network_services_health",
+        "ise_get_auth_history",
+        "ise_why_auth_failed",
+        "ise_get_nad",
+    ):
+        assert f"`{tool}`" in text, tool
+    assert 'mac "52:54:00:62:c6:b2"' in text and "198.18.133.1" in text and "must be 10" in text
+    assert 'ip "10.10.10.50"' in by_ip and "skipped (no destination_ip)" in by_ip
+    assert 'username "mcp-eaptls-client"' in by_user and "`ise_find_session`" in by_user
+
+
+async def test_client_troubleshoot_validates() -> None:
+    async with Client(create_server(make_settings())) as c:
+        with pytest.raises(Exception, match="expected_vlan"):
+            await c.get_prompt(
+                "catc_client_troubleshoot", {"client": "aa:bb:cc:dd:ee:ff", "expected_vlan": "5000"}
+            )
+        with pytest.raises(Exception, match="destination_ip"):
+            await c.get_prompt("catc_client_troubleshoot", {"client": "x", "destination_ip": "nope"})

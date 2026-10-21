@@ -36,6 +36,21 @@
         "catc"
       ]
     },
+    "catc_client_troubleshoot": {
+      "arguments": [
+        "client",
+        "destination_ip",
+        "expected_vlan",
+        "hours"
+      ],
+      "references": [],
+      "rendered": false,
+      "tier": "read",
+      "uses": [
+        "catc",
+        "ise"
+      ]
+    },
     "catc_decommission_device": {
       "arguments": [
         "device",
