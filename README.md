@@ -260,6 +260,9 @@ Typical flows:
   `catc_deploy_wlc_config` (dangerous) pushes it and reports each config group's status
   (`catc_get_wlc_deployments`). Needs the provisioning settings without "require preview"
   ([docs](docs/wireless-per-device.md)).
+- **SD-Access:** prerequisites (the `aca` + `sda` packages, re-seeded roles, ISE), the build order
+  (`catc_build_fabric_site`), the way out of the fabric, day-N changes, checks, group-based policy and teardown
+  are in [docs/sd-access.md](docs/sd-access.md), with the 3.2.2 quirks found live.
 - **Profiles:** `catc_attach_template_to_profile` / `catc_assign_profile_to_sites` record which Day-N
   templates belong to a site; the provisioning API doesn't push them (3.2.2), so deploy them with
   `catc_deploy_template`.
