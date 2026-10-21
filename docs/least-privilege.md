@@ -57,13 +57,14 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Policy.Group-Based Policy | Read | a dependency of Network Provision.SD-Access (exists once the `aca` package is deployed) |
 | Network Operations.LAN Automation | Read | LAN automation sessions and status (exists once `sda` is deployed; 403 without it) |
 | Security.Audit Log | Read | `catc_list_audit_logs`, `catc_recent_activity` |
+| Security.SSI | Read | `catc_get_ssi_readiness` (Security Service Insertion readiness) |
 | System.System Settings | Read | `catc_get_policy_servers` (ISE integration) |
 | System.System Administration | Read | `catc_get_system_health`, the account check in `catc_status` |
 | Utilities.Command Runner | Read | `catc_run_show_commands` (Read is enough for show commands) |
 | Utilities.Event Viewer, Scheduler, Machine Reasoner, Reports, App Hosting | Read | dependencies of Assurance.Monitoring |
 
 **Denied** (not used by any read tool): Extensions.ITSM, Network Design.Wireless Maps (floor writes only), Policy.Application
-Policy, Policy.IP Based Access Control, Security.Rogue and aWIPS, SSI,
+Policy, Policy.IP Based Access Control, Security.Rogue and aWIPS,
 Security Advisory, Stealthwatch, Umbrella, Utilities.Bonjour, Utilities.Remote Support Authorization.
 
 **Expected denial in the read tier:** `catc_preview_template`. The template preview API is a `PUT` that needs

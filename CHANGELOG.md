@@ -14,6 +14,11 @@
   and `supplicant_based_onboarding` for the INFRA_VN pool. A USER_DEVICE port on Closed Authentication (its own
   template or the fabric site's) no longer needs a VLAN: ISE assigns it (the 3.2.2 spec requires a VLAN only for
   the other templates).
+- **SD-Access Security Service Insertion readiness (D107, #192, Wave 6 part G).** `catc_get_ssi_readiness(
+  fabric_site?, virtual_network?)` (read): per fabric site its SSI readiness and message, per VN its readiness,
+  gateways, extranet role and ready/total devices, per device its role, reachability, licence and readiness
+  (`securityServiceInsertion/fabricSitesReadiness`); the first step before steering a VN through a firewall at
+  the border (fmc). The read-only role gains Security.SSI Read; without it 3.2.2 answers 403 (live-checked).
 - **SD-Access extranet policies (D95, #166, Wave 6 part F).** `catc_set_extranet_policy(name, provider_vn?,
   subscriber_vns?, fabric_sites?, delete=false)` (dangerous): create, update (unset fields keep their value)
   or delete a policy over `sda/extranetPolicies`, so subscriber VNs reach a provider VN's shared services

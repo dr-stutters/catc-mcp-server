@@ -319,7 +319,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (91)
+### Read (92)
 
 | Tool | What it does |
 |---|---|
@@ -360,6 +360,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
 | `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the device credentials the site uses (shown as 'TYPE:description', never secrets). |
+| `catc_get_ssi_readiness` | Security Service Insertion (SSI) readiness of the SD-Access fabric. |
 | `catc_get_system_health` | Health of the Catalyst Center appliance itself: service health events (counts by state and the ones that are not healthy), last backups and the backup target, system licence (registration/evaluation), ISE/AAA server integration status, and release version. |
 | `catc_get_task` | Status of an asynchronous Catalyst Center operation: progress, whether it finished or failed, the failure reason and any result data. |
 | `catc_get_template` | One template in full: content (CLI body), language, variables (name, type, required, default, choices), target device families/software, project and version history. |

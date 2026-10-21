@@ -36,6 +36,7 @@ READ: dict[str, str] = {
     "Policy.Group-Based Policy": "Read",
     "Network Operations.LAN Automation": "Read",  # LAN automation sessions and status
     "Security.Audit Log": "Read",  # audit logs, recent activity
+    "Security.SSI": "Read",  # catc_get_ssi_readiness (Security Service Insertion readiness)
     "System.System Settings": "Read",  # catc_get_policy_servers (ISE)
     "System.System Administration": "Read",  # catc_get_system_health, the account check in catc_status
     "Utilities.Command Runner": "Read",  # catc_run_show_commands (Read is enough for show commands)
