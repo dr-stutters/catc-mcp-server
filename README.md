@@ -406,7 +406,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (46)
+### Write (47)
 
 | Tool | What it does |
 |---|---|
@@ -420,6 +420,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http server']. |
 | `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
 | `catc_create_fabric_site` | Make a site an SD-Access fabric site. |
+| `catc_create_fabric_zone` | Make a building or floor inside an SD-Access fabric site a fabric zone. |
 | `catc_create_global_credential` | Create a global device credential that discovery and site assignment can use. |
 | `catc_create_ip_pool` | Create a global IP pool, or reserve a subpool of one for a site (pass site + global_pool). |
 | `catc_create_report` | Create a report from a view and run it now (delivery: download). |
@@ -477,7 +478,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_delete_fabric_site` | Remove an SD-Access fabric site; the site itself stays in the hierarchy. |
 | `catc_delete_pnp_device` | Remove a device from the Plug and Play list (not from the inventory). |
 | `catc_delete_policy_server` | Remove an authentication and policy server (plain AAA or the integrated ISE) from Catalyst Center. |
-| `catc_delete_sda_object` | Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a device's fabric role or a fabric site. |
+| `catc_delete_sda_object` | Remove an SD-Access object: a port assignment, an anycast gateway, a layer 3 virtual network, a device's fabric role, a fabric zone or a fabric site. |
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
 | `catc_deploy_wlc_config` | Deploy a Catalyst 9800 WLC's per-device intended configuration to the WLC (what catc_set_wlan_security, catc_set_wlan_vlan and catc_set_rf_profile staged, and any other intended change). |
