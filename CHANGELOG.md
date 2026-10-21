@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- **SD-Access guide (D109, #194, Wave 6 part G).** docs/sd-access.md: prerequisites (installing the `aca` +
+  `sda` packages over the API, re-seeding the roles, ISE, devices), the build order and the
+  `catc_build_fabric_site` prompt, the way out (transits and handoffs), day-N changes, checks, group-based
+  policy as ISE-owned and edge-verified, teardown with the cascades, and the 3.2.2 quirks found live; a unit test
+  keeps every tool it names real. Linked from the README.
 - **SD-Access fabric site settings (D104, #189, Wave 6 part G).** `catc_update_fabric_site(fabric_site,
   pub_sub?, underlay_transport?)` (dangerous): move a fabric site's control plane between LISP/BGP and LISP
   pub/sub, or set its underlay transport (IPv4, IPv6, dual stack), over `PUT sda/fabricSites` with the rest of
