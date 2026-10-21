@@ -33,6 +33,12 @@
   `catc_delete_l3_handoff` (by VN) and `catc_delete_transit_network` (refused while a border uses it). The
   3.2.2 spec types the transit `type` as an array with an `IP_BASED_TRANSIT,` typo; the tools send the plain
   string the API answers with. Live-read on the 3.2.2 lab appliance (no transits yet).
+- **SD-Access layer 2 (D94, #165, Wave 6 part F).** `catc_set_l2_virtual_network(fabric_site, vlan_name,
+  vlan_id?, traffic_type?, layer3_vn?, flooding_address?, multiple_ip_to_mac?, resource_guard?, delete=false)`
+  (dangerous): create, change or delete a layer 2 VN (a fabric VLAN without an anycast gateway) over
+  `sda/layer2VirtualNetworks`; delete is refused while edge ports or a layer 2 handoff use it.
+  `catc_set_l2_handoff(border, interface, vlan, external_vlan?, delete=false)` (dangerous): extend a layer 2
+  VN's or a gateway's VLAN out of a border port into an external VLAN (`sda/fabricDevices/layer2Handoffs`).
 - **SD-Access teardown (D13, #20, Wave 6 part E).** `catc_delete_fabric_site(fabric_site, cascade=false)`
   (dangerous): without `cascade` it refuses while the fabric still holds anything and lists it; with
   `cascade=true` the preview lists every object and the apply removes them in reverse order: edge port
