@@ -281,7 +281,10 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 
 - **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
   `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
-  NAD in ISE; deleting the device later does **not** remove that NAD).
+  NAD in ISE; deleting the device later does **not** remove that NAD). `catc_get_policy_servers`
+  gives each server a `next_action`; an entry that FAILED (ISE renamed, certificate renewed, FQDN not
+  matching its CN) is fixed in place with `catc_update_policy_server` (ISE password re-entered), then
+  the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
 - **Zero-touch / RMA:** `catc_list_pnp_devices(state='Unclaimed')` → `catc_claim_pnp_device` (day-0
   template from the *Onboarding Configuration* project; `hostname` is a blocked template command, pass
   it to the claim). RMA: `catc_mark_device_for_replacement` (the faulty device must be unreachable and
@@ -434,7 +437,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (23)
+### Dangerous (24)
 
 | Tool | What it does |
 |---|---|
@@ -461,6 +464,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_provision_wireless_controller` | Provision a Catalyst 9800 WLC: set its primary managed AP locations, then push the WLANs, policy profiles and tags of the wireless profiles assigned to those sites (plus the site's AAA, DNS, NTP and telemetry settings). |
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
+| `catc_update_policy_server` | Edit an authentication and policy server (System > Settings > Authentication and Policy Servers > Edit): the ISE FQDN and login, ports, protocol, pxGrid, retries and timeout. |
 
 ## API spec
 

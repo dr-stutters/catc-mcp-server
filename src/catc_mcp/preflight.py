@@ -119,8 +119,9 @@ async def _ise(app: CatcApp, pf: Preflight) -> None:
     pf.warn(
         "ise",
         detail,
-        hint="catc_get_policy_servers shows each step and any ISE certificate waiting to be accepted "
-        "(catc_accept_ise_certificate).",
+        hint="catc_get_policy_servers shows each step and next_action: catc_update_policy_server for an "
+        "entry that FAILED (e.g. an FQDN that doesn't match ISE's certificate), catc_accept_ise_certificate "
+        "for a certificate waiting to be accepted.",
         servers=rows,
     )
 

@@ -307,12 +307,17 @@ tools are missing, say so and stop after step 5. Every write is preview-first: s
 wait for approval, then repeat the call with the confirm token. Stop and report on any failure.
 
 1. ISE integration: {tool_ref("catc_get_policy_servers")}. An ISE entry must exist with its nodes
-   TRUSTED and the integration COMPLETE. If none, it has to be added with
+   TRUSTED and the integration COMPLETE (next_action "none"). If none, it has to be added with
    {tool_ref("catc_add_ise_server")} (ISE PAN IP/FQDN, a super-admin login, a RADIUS shared secret;
-   suggest the user enters the secrets themselves rather than pasting them into the chat); when it
-   stops at WAITING_USER_INPUT show the certificate fingerprints and, after the user confirms them,
-   {tool_ref("catc_accept_ise_certificate")}. ISE needs ERS and the pxGrid persona. Both tools are
-   dangerous tier: if they are missing here, stop and say ISE must be integrated first.
+   suggest the user enters the secrets themselves rather than pasting them into the chat). If the
+   entry exists but FAILED, next_action names the fix: "update_entry" ->
+   {tool_ref("catc_update_policy_server")} with the field it names (an ISE edit needs the ISE
+   password re-entered; a name-resolution failure needs the appliance's DNS fixed by an admin, not
+   an edit); "approve_pxgrid_on_ise" -> approve the Catalyst Center pxGrid client on ISE. When
+   the integration stops at WAITING_USER_INPUT ("accept_certificate"), show the certificate
+   fingerprints and, after the user confirms them, {tool_ref("catc_accept_ise_certificate")}. ISE
+   needs ERS and the pxGrid persona. These tools are dangerous tier: if they are missing here,
+   stop and say the ISE integration must be fixed first.
 2. Site AAA: {tool_ref("catc_get_site_settings")} with categories ["aaa"] for "{site_path}". Set
    client (endpoint) AAA to ISE with {tool_ref("catc_update_site_aaa_settings")}:
    client={{"server_type": "ISE", "protocol": "RADIUS", "primary": "<ISE PSN IP from step 1>"}}.
@@ -323,9 +328,19 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
    {tool_ref("catc_create_discovery")} with ip_ranges ["{switch_ip}"], discovery_type "Range", wait=true;
    poll {tool_ref("catc_get_device")} until Reachable + Managed (2-5 minutes); create missing site
    levels with {tool_ref("catc_create_site")}; {tool_ref("catc_assign_devices_to_site")}.
+   A discovery that finds nothing at all, although the switch answers ping: the appliance may hold a
+   stale ARP entry for the IP (a re-created lab switch); a ping from the switch to the appliance
+   refreshes it. "CLI validation failed": check the switch's VTY login (a TACACS+ server that rejects
+   the CLI credential's user is not a fallback to local).
 4. Provision: {tool_ref("catc_provision_devices")} with devices ["{switch_ip}"] and site
-   "{site_path}". This pushes the AAA/RADIUS config pointing at ISE and creates the switch as a
-   NAD in ISE. (Dangerous tier; if it isn't available, stop and say so.)
+   "{site_path}". This pushes the AAA/RADIUS config pointing at ISE; an existing NAD in ISE with the
+   switch's IP is reused (not duplicated), otherwise one is created. (Dangerous tier; if it isn't
+   available, stop and say so.) Catalyst Center refuses a switch that already has AAA config
+   ("AAA CLI(s) are already present ...", or "Unable to push ... address ipv4 <ISE> auth-port 1812"
+   for a RADIUS server on the same address and ports): show the user the lines it names, keep a copy
+   of the running config, and only with their approval remove them on the switch, resync
+   ({tool_ref("catc_resync_devices")}) and provision again; restore anything that must stay (e.g.
+   device-admin TACACS+) afterwards.
 5. Check the switch: {tool_ref("catc_run_show_commands")} with
    "show running-config | section aaa|radius" and "show running-config | include dot1x|device-tracking":
    the radius server must be the ISE PSN and aaa authentication dot1x / authorization network must
