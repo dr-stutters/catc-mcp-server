@@ -458,7 +458,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (31)
+### Dangerous (32)
 
 | Tool | What it does |
 |---|---|
@@ -490,6 +490,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
 | `catc_set_external_authentication` | Turn Catalyst Center's external authentication on or off (System > Users & Roles > External Authentication), optionally setting the AAA attribute first. |
 | `catc_set_extranet_policy` | Create, update or delete an SD-Access extranet policy. |
+| `catc_set_fabric_port_channel` | Create, change or delete a port channel on an SD-Access fabric device. |
 | `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
 | `catc_update_policy_server` | Edit an authentication and policy server (System > Settings > Authentication and Policy Servers > Edit): the ISE FQDN and login, ports, protocol, pxGrid, retries and timeout. |
 | `catc_update_port_assignment` | Change an edge port's fabric assignment in place. |
