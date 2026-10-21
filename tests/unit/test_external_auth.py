@@ -178,3 +178,20 @@ async def test_test_login_failure_reason(api: respx.MockRouter) -> None:
         out = await run(c, "catc_test_login", {"username": "nobody", "password": PASSWORD})
     assert out["login"] == "failed" and out["http_status"] == 401 and "valid credentials" in out["reason"]
     assert PASSWORD not in json.dumps(out)
+
+
+async def test_test_login_reports_catc_text_reason(api: respx.MockRouter) -> None:
+    """3.2.2 live: an ISE reply with a custom role -> 400 with a plain-text reason."""
+
+    def login(request: httpx.Request) -> httpx.Response:
+        if "admin:pw" in base64.b64decode(request.headers["Authorization"].split()[1]).decode():
+            return httpx.Response(200, json={"Token": "tok-123"})
+        return httpx.Response(
+            400, text="Invalid user profile. Please check your Radius/TACACS+ configuration."
+        )
+
+    api.post(LOGIN).mock(side_effect=login)
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_test_login", {"username": "mcp-catc-ro", "password": PASSWORD})
+    assert out["login"] == "failed" and out["http_status"] == 400
+    assert out["reason"].startswith("Invalid user profile")

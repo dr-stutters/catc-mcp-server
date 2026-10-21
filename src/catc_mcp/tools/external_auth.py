@@ -24,7 +24,7 @@ from catc_mcp._core import (
 )
 from catc_mcp._core.http import basic_header
 from catc_mcp._core.secrets import register_secret
-from catc_mcp.client import LOGIN_PATH, CatcApp
+from catc_mcp.client import LOGIN_PATH, CatcApp, catc_error_detail
 from catc_mcp.common import ensure_list, gather_sections, pick
 
 FLAG_PATH = "/dna/system/api/v1/users/external-authentication"
@@ -172,9 +172,9 @@ def register(reg: ToolRegistrar) -> None:
         Authentication), optionally setting the AAA attribute first. With it on, a GUI or API login is
         sent to the AAA servers listed in the preview (RADIUS or TACACS+); the server must answer with
         '<attribute>=Role=<SUPER-ADMIN-ROLE|NETWORK-ADMIN-ROLE|OBSERVER-ROLE|custom role>' or the user
-        gets no access. LOCKOUT RISK: some releases ask the AAA server first and fall back to the local
-        user list only when it is unreachable, so a local account (including the one this server uses)
-        may stop working while ISE answers 'reject'. Before enabling: hold a working local session,
+        gets no access; 3.2.2 refuses a custom role name in the reply ('Invalid user profile'). LOCKOUT
+        RISK: 3.2.2 asks the AAA server first, so a local account (including the one this server uses)
+        stops working while ISE rejects it. Before enabling: hold a working local session,
         mirror the local accounts in ISE, and re-test a local login (catc_test_login) right after.
         Dangerous tier; preview-first. Needs a SUPER-ADMIN account."""
         app: CatcApp = get_client(ctx)
@@ -206,9 +206,11 @@ def register(reg: ToolRegistrar) -> None:
                 "Admin logins (GUI and API) are sent to "
                 + ", ".join(f"{s.get('serverIp')} ({s.get('protocol')}, {s.get('role')})" for s in servers)
                 + f"; a user gets the role in the reply's {attr} 'Role=<role>' value (no role: no access).",
-                "Lockout risk: a local account may stop working while the AAA server answers (some releases "
-                "use the local user list only when the server is unreachable). Keep a session open, have the "
-                "local accounts mirrored on the AAA server, and test a local login right after "
+                "Lockout risk: logins go to the AAA server first (3.2.2, tested): a local account then only "
+                "works if the server accepts it with a role, and when the server doesn't answer, 3.2.2 let "
+                "a SUPER-ADMIN local account in but refused a custom-role one. Keep a session open, mirror "
+                "the local accounts on the AAA server (built-in roles only: a custom role in the reply is "
+                "refused with 'Invalid user profile'), and test a local login right after "
                 "(catc_test_login); undo with catc_set_external_authentication(enable=false).",
                 "Catalyst Center must be a network device (NAD) on ISE with the shared secret of its "
                 "authentication and policy server entry, and an ISE authorization rule must return the role.",
@@ -272,7 +274,9 @@ def register(reg: ToolRegistrar) -> None:
         else. Reports pass/fail, Catalyst Center's reason on failure, and on success the roles and auth
         source Catalyst Center granted (from the token and the user list). The password and the token
         are never stored, logged or returned; the token simply expires. Each failed try counts towards
-        Catalyst Center's lockout of that account."""
+        Catalyst Center's lockout of that account. On 3.2.2 a reply whose AVPair names a custom role
+        fails with 400 'Invalid user profile': return a built-in role (SUPER-ADMIN-ROLE,
+        NETWORK-ADMIN-ROLE, OBSERVER-ROLE)."""
         app: CatcApp = get_client(ctx)
         user = username.strip()
         if not user or any(not ch.isprintable() for ch in user):
@@ -286,11 +290,11 @@ def register(reg: ToolRegistrar) -> None:
         if resp.status_code != 200:
             out["login"] = "failed"
             try:
-                detail = resp.json()
+                detail: Any = resp.json()
             except ValueError:
-                detail = resp.text[:200]
-            reason = detail.get("error") or detail.get("message") if isinstance(detail, dict) else detail
-            out["reason"] = str(reason or f"HTTP {resp.status_code}")[:300]
+                detail = resp.text
+            reason = catc_error_detail(detail) or (resp.text or "").strip()
+            out["reason"] = (reason or f"HTTP {resp.status_code}")[:300]
             return out
         try:
             token = str(resp.json()["Token"])

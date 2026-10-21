@@ -34,6 +34,10 @@
   request with those credentials; pass/fail with Catalyst Center's reason, or the token's claims and the
   user's roles and auth source from the user list; the password and the token are registered as secrets and
   never stored, logged or returned).
+  Live on 3.2.2 (2026-10-21, ISE 3.5): an AD user in `mcp-catc-admins` logged in with OBSERVER-ROLE through ISE
+  and external authentication was switched off again. Findings in the tools' text: logins go to ISE first (a local
+  account only works while ISE accepts it with a role), and a custom role in the reply is refused with 400
+  'Invalid user profile' (built-in roles only); `catc_test_login` now returns Catalyst Center's own failure text.
 
 ### Changed
 - The `catc_onboard_switch_with_nac` prompt's first step follows `next_action` (an entry that FAILED is
