@@ -25,7 +25,11 @@ decision alone. If the ise tools are missing, stop after step 2 and say the chan
    destination Production_Servers, ips ["10.10.40.100", "10.10.40.101"]: the edge's environment data (COMPLETE? the ISE server listed?), whether
    'cts role-based enforcement' is configured, the cell it has now, and the clients' SGTs. Environment data
    not COMPLETE or no enforcement: fix that first (the switch is not a TrustSec device of ISE yet, or
-   Catalyst Center has not provisioned it into the fabric), no matrix change will show.
+   Catalyst Center has not provisioned it into the fabric), no matrix change will show. On a fabric edge the
+   usual cause is RADIUS: `catc_run_show_commands` "show aaa servers" shows the ISE server DEAD
+   when ISE has no route back to the edge's Loopback0 (the RLOC, which fabric provisioning makes the RADIUS
+   source and the NAD's address). After that route is fixed the switch keeps the server DEAD until its
+   automate-tester probe gets an answer (minutes); the environment data downloads after that.
 3. Change: preview `ise_set_egress_policy` with source Contractors, destination Production_Servers, sgacls
    ["Deny IP"]; show the preview and apply it only on approval. Then preview
    `ise_push_trustsec_matrix` (sends a CoA so devices fetch the change now instead of at the
@@ -35,9 +39,12 @@ decision alone. If the ise tools are missing, stop after step 2 and say the chan
    that security group in its result (preview `ise_update_policy_rule`), then re-authenticate it
    (preview `ise_coa_reauth`).
 5. Edge after: `catc_get_group_policy_enforcement` again (same arguments). The pair's policy must
-   be "Deny IP" with source_of_policy "cell downloaded from ISE", and each client IP bound to its SGT. Not
-   there yet: the push may still be running; wait a minute and read again (at most three times), then compare
-   the edge's group name table with ISE's.
+   be "Deny IP" with source_of_policy "cell downloaded from ISE", and each client IP bound to its SGT. An
+   SD-Access edge keeps the clients' bindings in their VN's VRF ("show cts role-based sgt-map vrf <VN> all";
+   the global table only has the switch's own addresses): the tool reads the VRFs too (the first 4; pass
+   vrfs ["<VN>"] on a switch with more) and each binding shows its vrf. Not there yet: the push may still be
+   running; wait a minute and read again (at most three times), then compare the edge's group name table
+   with ISE's.
 6. Test flow from 10.10.40.100 to 10.10.40.101: run it from the client (ping or a TCP connect; on a CML lab, the cml server's command
    tool runs it on the client node), then read the counters with
    `catc_get_group_policy_enforcement`: the pair's denied (deny) or permitted (permit) counters
