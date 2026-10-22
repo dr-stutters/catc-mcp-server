@@ -101,7 +101,7 @@ async def test_mode_and_new_vn_in_one_call(api: respx.MockRouter) -> None:
                 {
                     "rpDeviceLocation": "FABRIC",
                     "networkDeviceIds": [DEV_ID],
-                    "isDefaultV4RP": True,
+                    "isDefaultV4RP": False,  # an RP with ASM ranges can't be the default (3.2.2 refuses it)
                     "ipv4AsmRanges": ["239.1.0.0/16"],
                 }
             ],
@@ -152,8 +152,9 @@ async def test_remove_unknown(api: respx.MockRouter) -> None:
         )
 
 
-async def test_asm_ranges_without_rp_go_to_the_existing_rp(api: respx.MockRouter) -> None:
-    lab = Lab(api, mode="HEADEND_REPLICATION", vns=[MVN])
+async def test_asm_ranges_without_rp_go_to_the_existing_non_default_rp(api: respx.MockRouter) -> None:
+    rp = {"rpDeviceLocation": "EXTERNAL", "ipv4Address": "10.255.255.20", "isDefaultV4RP": False}
+    lab = Lab(api, mode="HEADEND_REPLICATION", vns=[{**MVN, "multicastRPs": [rp]}])
     preview, done = await flow(
         "catc_set_fabric_multicast",
         {"fabric_site": FID, "virtual_network": "MCP_VN", "asm_ranges": "239.2.0.0/16"},
@@ -161,8 +162,32 @@ async def test_asm_ranges_without_rp_go_to_the_existing_rp(api: respx.MockRouter
     assert preview["preview"]["changes"]["MCP_VN"]["multicastRPs"]["to"][0]["ipv4AsmRanges"] == [
         "239.2.0.0/16"
     ]
+    assert done and lab.sent[0][2][0]["multicastRPs"] == [{**rp, "ipv4AsmRanges": ["239.2.0.0/16"]}]
+
+
+async def test_asm_ranges_refused_on_the_default_rp(api: respx.MockRouter) -> None:
+    """Live 2026-10-22: 'Default Rendezvous Point null can't have ASM Group Ranges configured.'"""
+    lab = Lab(api, mode="HEADEND_REPLICATION", vns=[MVN])  # MVN's only RP is the default
+    out, _ = await flow(
+        "catc_set_fabric_multicast",
+        {"fabric_site": FID, "virtual_network": "MCP_VN", "asm_ranges": "239.2.0.0/16"},
+    )
+    assert out["status"] == "blocked" and "Catalyst Center refuses ranges on it" in " ".join(out["blockers"])
+    assert not lab.sent
+
+
+async def test_rp_without_ranges_is_the_default(api: respx.MockRouter) -> None:
+    lab = Lab(api, mode="HEADEND_REPLICATION", vns=[])
+    args = {
+        "fabric_site": FID,
+        "virtual_network": "MCP_VN",
+        "ip_pool": "mcp-mcast",
+        "rp": "fabric",
+        "rp_devices": ["edge-sw1"],
+    }
+    _, done = await flow("catc_set_fabric_multicast", args)
     assert done and lab.sent[0][2][0]["multicastRPs"] == [
-        {**MVN["multicastRPs"][0], "ipv4AsmRanges": ["239.2.0.0/16"]}
+        {"rpDeviceLocation": "FABRIC", "networkDeviceIds": [DEV_ID], "isDefaultV4RP": True}
     ]
 
 
@@ -176,7 +201,8 @@ async def test_asm_ranges_without_any_rp_or_an_ambiguous_one(api: respx.MockRout
         "catc_set_fabric_multicast",
         {"fabric_site": FID, "virtual_network": "MCP_VN", "asm_ranges": "239.2.0.0/16"},
     )
-    assert out["status"] == "blocked" and "none is the default IPv4 RP" in " ".join(out["blockers"])
+    blocked = " ".join(out["blockers"])
+    assert out["status"] == "blocked" and "no single non-default rendezvous point" in blocked
     lab.vns = []
     out, _ = await flow(
         "catc_set_fabric_multicast",
