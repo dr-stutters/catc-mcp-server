@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixed
+- `catc_run_show_commands` (and every tool that redacts device text): the `PAC-Opaque` blob in `show cts pacs` is masked,
+  including hex-only continuation lines. It is the device's TrustSec PAC, a bearer credential, and was returned in clear
+  (seen live 2026-10-22 during D110).
 - `catc_set_fabric_multicast`: an RP given with `asm_ranges` is now a non-default RP for those ranges, and ranges given
   without `rp` go only to the VN's non-default RP. Catalyst Center 3.2.2 refuses ASM ranges on the default RP ("Default
   Rendezvous Point ... can't have ASM Group Ranges configured", seen live 2026-10-22); the tool marked every RP it built as
