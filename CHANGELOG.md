@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Fixed
+- `catc_anchor_virtual_network`: a new anchor is now two PUTs, the anchor site alone and then the extension to the other
+  sites, and a VN already on other sites is refused in the preview. Catalyst Center 3.2.2 answers an anchoring request
+  with several sites with NCHS20464 "each VN could only be anchored to one site only" (live 2026-10-22, lab mcp-catc-fabric2).
 - `catc_run_show_commands` (and every tool that redacts device text): the `PAC-Opaque` blob in `show cts pacs` is masked,
   including hex-only continuation lines. It is the device's TrustSec PAC, a bearer credential, and was returned in clear
   (seen live 2026-10-22 during D110).

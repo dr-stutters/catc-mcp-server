@@ -41,8 +41,10 @@ def register(reg: ToolRegistrar) -> None:
         """Anchor a layer 3 virtual network at one fabric site and extend it to others (multi-site SD-Access).
         The anchor hosts the VN's gateways and exit; the other sites reach it over an SD-Access transit (guest
         or IoT networks with one gateway across a campus). remove_anchor stops anchoring it. Catalyst Center
-        pushes the VN to the fabric devices of the sites. Preview-first: refuses without an SD-Access transit
-        and with fewer than two sites."""
+        pushes the VN to the fabric devices of the sites. A new anchor is two requests (the anchor site alone,
+        then the extension), because 3.2.2 anchors a VN only while it is on one site; a VN already on other
+        sites is refused. Preview-first: refuses without an SD-Access transit and with fewer than two
+        sites."""
         app: CatcApp = get_client(ctx)
         vn = next(
             (
@@ -94,6 +96,21 @@ def register(reg: ToolRegistrar) -> None:
         }
         if anchor_id:
             body["anchoredSiteId"] = anchor_id
+        # Catalyst Center 3.2.2 anchors a VN only in a request that names the anchor site alone, then extends
+        # it in a later update (live 2026-10-22: NCHS20464 "each VN could only be anchored to one site only.
+        # ... You can add this virtual network to other sites after the anchor is done using a update
+        # request"). So a new anchor takes two PUTs, and a VN already on other sites can't be anchored.
+        requests: list[dict[str, Any]] = [body]
+        if anchor_id and vn.get("anchoredSiteId") != anchor_id:
+            elsewhere = [f for f in map(str, ensure_list(vn.get("fabricIds"))) if f != anchor_id]
+            if elsewhere:
+                blockers.append(
+                    f"{virtual_network} is already on {len(elsewhere)} other fabric site(s): Catalyst Center "
+                    "anchors a VN only while it is on the anchor site alone (NCHS20464). Remove it from the "
+                    "other sites first, or anchor a new VN."
+                )
+            first = {**body, "fabricIds": [anchor_id]}
+            requests = [first, body] if len(fids) > 1 else [first]
         devices = [d for f in fids for d in await sda_list(app, "fabricDevices", {"fabricId": f})]
         blockers += device_limit_blockers(app, len(devices), "fabric devices")
         plan = Plan(
@@ -104,7 +121,7 @@ def register(reg: ToolRegistrar) -> None:
                 "current": vn,
                 "method": "PUT",
                 "path": f"{SDA}/layer3VirtualNetworks",
-                "body": [body],
+                "requests": [[r] for r in requests],
                 "sites_added": names or None,
             },
             side_effects=[
@@ -117,9 +134,10 @@ def register(reg: ToolRegistrar) -> None:
         )
 
         async def apply() -> Any:
-            job = await sda_job(
-                app, "PUT", f"{SDA}/layer3VirtualNetworks", [body], ctx, "anchor virtual network"
-            )
+            job: dict[str, Any] = {}
+            for i, req in enumerate(requests, 1):
+                step = "anchor virtual network" if len(requests) == 1 else f"anchor virtual network ({i}/2)"
+                job = await sda_job(app, "PUT", f"{SDA}/layer3VirtualNetworks", [req], ctx, step)
             now = [
                 v
                 for v in await sda_list(app, "layer3VirtualNetworks", {"virtualNetworkName": virtual_network})
