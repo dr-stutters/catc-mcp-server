@@ -42,6 +42,7 @@ LONG = {
     "catc_export_config",
     "catc_diff_config",
     "catc_import_config",
+    "catc_create_backup",
 }
 
 

@@ -16,6 +16,7 @@ from catc_mcp.tools import (
     archive,
     assurance,
     assurance_analytics,
+    backups,
     compliance,
     compliance_policies,
     config_import,
@@ -113,6 +114,9 @@ Workflows:
   (per-server success %, latency, EAP/MAB split, the failing NADs, a verdict line; Assurance lags by minutes).
 - Over time ("is this site getting worse?", "what keeps breaking?"): catc_site_health_report, or
   catc_health_trend (dips), catc_top_problems, catc_issue_recurrence, catc_ai_insights.
+- Backups (before the group-based policy migration or an upgrade): catc_get_backup_status (target configured?,
+  ready?, last backup, running jobs) -> catc_create_backup (dangerous, SUPER-ADMIN-ROLE) ->
+  catc_get_backup_status(execution=...) -> catc_list_backups. Restores are GUI-only.
 Asynchronous operations return a task id; check it with catc_get_task.
 Anything not covered: catc_search_spec -> catc_get_definition -> catc_api_call.
 """.strip()
@@ -147,6 +151,7 @@ REGISTER = [
     archive.register,
     ipam.register,
     platform.register,
+    backups.register,
     profiles.register,
     prompts.register,
     site_writes.register,

@@ -32,6 +32,26 @@
     - client bindings in the VN's VRF (#162);
     - the DEAD-until-probe behaviour.
 ### Added
+- **System backups before the group-based policy migration (D114, #211, Wave 6 part H).** The owner holds the
+  migration (D108, #193) until both appliances can be backed up; ISE's half is ise-mcp-server I78 (#66).
+  - `catc_get_backup_status(execution?, recent=5)` (read): the backup target (NFS or physical disk, mount path,
+    backups kept, encryption passphrase set, the NFS server's health, disk use), `ready` with the blockers, the
+    last backup and the recent backup/restore executions; with `execution`, one execution's progress and steps.
+  - `catc_list_backups(query?)` (read): the backups on the target, newest first, with status, scope, size,
+    compatibility and who took them.
+  - `catc_create_backup(name, include_assurance=false, wait=false)` (dangerous, preview-first, an MCP task) over
+    `POST /dna/system/api/v1/backups`. The preview refuses with a clear blocker when no backup target is
+    configured, the configuration has no encryption passphrase, the NFS server is unhealthy, a backup or restore
+    is already running, or the name is taken. `wait=true` follows `backupRestoreExecutions/{id}` (the `taskId`
+    the POST returns is an execution id, not an Intent API task) and names the failed step.
+  - Taking a backup needs SUPER-ADMIN-ROLE: System Administration, which covers Backup and Restore, has a
+    maximum of Read for custom roles on 3.2.2. The preview warns for other roles, and a 403 says so
+    (docs/least-privilege.md). The roles themselves are unchanged.
+  - Live reads on the lab appliance (2026-10-22, as `mcp-catc-rw`): no backup target (`backupConfiguration` answers
+    an empty record), no NFS server, no backups and no executions. So the create is unit-tested only, and
+    `catc_create_backup` replaces the `catc_run_backup` D60 dropped for want of a target.
+- **Migration rehearsal plan (D114).** docs/sd-access.md, "Before the group-based policy migration": back up both
+  appliances, `fullSync`, verify, `migration/mode ISE` as the way back, restore. Marked as not yet run.
 - **SD-Access fabric AAA readiness (D110, #207, Wave 6 part H).** `catc_check_fabric_aaa(fabric_site, ise_nads?,
   expected_location?, devices?)` (read): whether every fabric device at a fabric site can do AAA with ISE. One
   command-runner request (5 commands) for every fabric device (up to 20; control plane and border first) reads

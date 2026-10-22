@@ -38,7 +38,9 @@ READ: dict[str, str] = {
     "Security.Audit Log": "Read",  # audit logs, recent activity
     "Security.SSI": "Read",  # catc_get_ssi_readiness (Security Service Insertion readiness)
     "System.System Settings": "Read",  # catc_get_policy_servers (ISE)
-    "System.System Administration": "Read",  # catc_get_system_health, the account check in catc_status
+    # catc_get_system_health, catc_list_backups / catc_get_backup_status, the account check in catc_status.
+    # Its maximum is Read on 3.2.2, so catc_create_backup needs SUPER-ADMIN-ROLE (docs/least-privilege.md).
+    "System.System Administration": "Read",
     "Utilities.Command Runner": "Read",  # catc_run_show_commands (Read is enough for show commands)
     "Utilities.Event Viewer": "Read",
     "Utilities.Scheduler": "Read",  # (minimum Read)

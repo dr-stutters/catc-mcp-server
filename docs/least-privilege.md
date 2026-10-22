@@ -59,7 +59,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Security.Audit Log | Read | `catc_list_audit_logs`, `catc_recent_activity` |
 | Security.SSI | Read | `catc_get_ssi_readiness` (Security Service Insertion readiness). On 3.2.2 custom roles get 403 on the SSI API even with this (Read is its maximum); only a SUPER-ADMIN-ROLE account read it in the live test |
 | System.System Settings | Read | `catc_get_policy_servers` (ISE integration) |
-| System.System Administration | Read | `catc_get_system_health`, the account check in `catc_status` |
+| System.System Administration | Read | `catc_get_system_health`, `catc_list_backups`, `catc_get_backup_status`, the account check in `catc_status` |
 | Utilities.Command Runner | Read | `catc_run_show_commands` (Read is enough for show commands) |
 | Utilities.Event Viewer, Scheduler, Machine Reasoner, Reports, App Hosting | Read | dependencies of Assurance.Monitoring |
 
@@ -112,7 +112,16 @@ LAN automation reads answered 403 to `mcp-catc-rw`).
 permissions to access the API" on `PUT authentication-policy-servers/{id}` and `PUT integrate-ise/{id}`, while the
 reads (`GET authentication-policy-servers`, `GET ise-integration-status`) work with System Settings Read. Run those
 four tools from an instance whose account has SUPER-ADMIN-ROLE (only while you need them), or make the change in the
-GUI. SWIM distribute/activate use
+GUI.
+
+**Backups need SUPER-ADMIN-ROLE too.** `catc_create_backup` is a write under System.System Administration, the
+permission whose description covers "HA, Disaster Recovery, System Health, Backup and Restore", and on 3.2.2 its
+`maximumPrivilege` is **Read** (`GET /dna/system/api/v2/roles/permissions`, 2026-10-22): no custom role can take a
+backup, so the dangerous role does not change for it. The reads (`catc_list_backups`, `catc_get_backup_status`) work
+with System Administration Read (checked live as `mcp-catc-rw`, 2026-10-22). The create itself is unit-tested only:
+the lab appliance has no backup target. When the account's roles are not SUPER-ADMIN-ROLE the preview says so, and a
+403 names this section. Take the backup from a SUPER-ADMIN-ROLE instance while you need it, or in the GUI
+(*System > Backup & Restore*). SWIM distribute/activate use
 SWIM Write (already in rw). Prefer a separate server instance (token, container) for this tier.
 
 ## 4. Create them
