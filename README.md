@@ -263,6 +263,11 @@ Typical flows:
 - **SD-Access:** prerequisites (the `aca` + `sda` packages, re-seeded roles, ISE), the build order
   (`catc_build_fabric_site`), the way out of the fabric, day-N changes, checks, group-based policy and teardown
   are in [docs/sd-access.md](docs/sd-access.md), with the 3.2.2 quirks found live.
+- **Backups (before the group-based policy migration or an upgrade):** `catc_get_backup_status` says whether a
+  backup target (NFS or physical disk) is configured, whether a backup can run now and how the last ones went;
+  `catc_create_backup` (dangerous, needs a SUPER-ADMIN-ROLE account) takes one, refusing in the preview when there
+  is no target, no encryption passphrase, an unhealthy NFS server, a running backup/restore or a duplicate name;
+  follow it with `catc_get_backup_status(execution=...)` and `catc_list_backups`. Restores stay in the GUI.
 - **Profiles:** `catc_attach_template_to_profile` / `catc_assign_profile_to_sites` record which Day-N
   templates belong to a site; the provisioning API doesn't push them (3.2.2), so deploy them with
   `catc_deploy_template`.
@@ -336,7 +341,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (95)
+### Read (97)
 
 | Tool | What it does |
 |---|---|
@@ -353,6 +358,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_export_templates` | Export a template project, or one template, as a JSON document: content, variables, device types and every committed version with its comment, author and time. |
 | `catc_fabric_health` | SD-Access health as Catalyst Center Assurance scores it. |
 | `catc_find_host` | Where is this host plugged in: from a MAC, IP, hostname or username, each matching client Assurance saw in the window, newest first, with its switch (name, management IP) and port or AP/WLC/SSID, VLAN, SGT, site, status, health, last seen and a one-line `where`, plus a live lookup on given switches. |
+| `catc_get_backup_status` | Whether Catalyst Center can take a backup now, and how the last ones went: the backup target (NFS server or physical disk, mount path, backups kept, encryption passphrase set, the NFS server's health and the disk use), `ready` with the blockers (no target, no passphrase, NFS unhealthy, a backup or restore already running), the last backup, and the recent backup/restore executions (job, status, percent done, errors). |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
 | `catc_get_compliance_detail` | Compliance report for one device per category (startup vs running config, image, PSIRT, EoX, network settings, network profile, fabric): status, message, last check time, whether Catalyst Center can remediate it and, with include_diff, what differs. |
@@ -392,6 +398,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
+| `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
 | `catc_list_compliance_policies` | User-defined compliance policies (Provision > Compliance > Policies) with their status (ACTIVE, NO_RULES_CONFIGURED, NO_SITES_ASSIGNED...), rule and site counts. |
 | `catc_list_compliance_violations` | Compliance policy violations from the last compliance run (catc_run_compliance), per device (every violating policy, or one) or per site for one policy: rule, condition, severity and message. |
@@ -489,7 +496,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (42)
+### Dangerous (43)
 
 | Tool | What it does |
 |---|---|
@@ -504,6 +511,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_apply_pending_fabric_events` | Apply a fabric site's pending fabric events. |
 | `catc_assign_fabric_port` | Assign an edge port to a fabric VLAN (host onboarding): Catalyst Center configures the access port (VLAN, authentication template) on the edge. |
 | `catc_claim_pnp_device` | Claim an Unclaimed Plug and Play device to a site: Catalyst Center pushes the day-0 onboarding template (with its variables), optionally an image, then adds the device to the inventory at that site. |
+| `catc_create_backup` | Take an on-demand Catalyst Center system backup to the configured backup target (NFS server or physical disk), e.g. before the group-based policy migration or an upgrade. |
 | `catc_delete_compliance_policy` | Delete a user compliance policy with its rules, conditions and site assignments; its violations disappear from the compliance results. |
 | `catc_delete_device` | Remove a device from Catalyst Center. |
 | `catc_delete_discovery` | Delete a discovery job and its results (devices it added stay in the inventory). |

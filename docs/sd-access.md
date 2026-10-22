@@ -141,6 +141,43 @@ groups, contracts or group-based policy; its internal UI API holds seeded defaul
 *policy migration*, which hands the matrix to Catalyst Center and makes ISE's TrustSec objects read-only. Don't
 start the migration on a shared lab: ise-mcp-server's TrustSec writes stop working.
 
+### Before the group-based policy migration (rehearsal plan, not yet run)
+
+> **Not yet run.** None of these steps has been tried. On 2026-10-22 neither appliance had a backup target:
+> Catalyst Center's `backupConfiguration` was empty and ISE had no repository. The owner holds the migration
+> (D108, [#193](https://github.com/dr-stutters/catc-mcp-server/issues/193); plan from D114,
+> [#211](https://github.com/dr-stutters/catc-mcp-server/issues/211)). Each step needs the owner's explicit go.
+
+1. **Back up both appliances.**
+   - Catalyst Center: `catc_get_backup_status` (a target is configured and `ready` is true), then
+     `catc_create_backup(name='pre-gbp-migration')` (dangerous, a SUPER-ADMIN-ROLE account). Follow it with
+     `catc_get_backup_status(execution=...)` until SUCCESS, then check `catc_list_backups`.
+   - ISE: `ise_list_repositories`, then `ise_create_backup(repository=..., name='pre-gbp-migration')` (the key
+     comes from `ISE_BACKUP_ENCRYPTION_KEY`), then `ise_get_backup_status`.
+   - Record ISE's TrustSec state as well: `ise_list_sgts`, `ise_list_sgacls` and `ise_get_egress_matrix` (the
+     2026-10-22 baseline is on #193).
+2. **Start the migration.** `POST /api/v1/aca-controller-service/fullSync` with an empty body. This is what the
+   ACA UI plugin's "start now" sends when `platform/details` says `importStatus: REQUIRED_DAY_0`; no tool wraps
+   it. Follow it with `GET /api/v1/aca-controller-service/platform/details` and
+   `GET /api/v1/aca-controller-service/migration/log?entityId=3&logLevel=ERROR` (`catc_api_call`).
+3. **Verify.**
+   - Catalyst Center now holds ISE's matrix: the internal objects under
+     `/api/v2/data/customer-facing-service/{scalablegroup,contract,policy}/access` list ISE's groups, SGACLs and
+     cells, for example `mcp_fab_src` -> `mcp_fab_dst` Deny IP.
+   - ISE's Security Groups, Access Contracts and Policies screens are read-only (the UI's own text), so
+     ise-mcp-server's TrustSec writes are expected to stop working.
+   - The edge still enforces the cell: `catc_get_group_policy_enforcement`.
+4. **The way back.** `PUT /api/v1/aca-controller-service/migration/mode {"migrationMode": "ISE"}` should return
+   policy administration to ISE (`GET` on it answers 500 before the migration). Check ISE's screens and
+   `ise_get_egress_matrix` again.
+5. **Know the restore path.** If step 4 fails, restore the step 1 backups; neither restore is automated.
+   - Catalyst Center: *System > Backup & Restore*, restore the backup (`POST /dna/system/api/v1/backups/{id}/restore`
+     exists; no tool).
+   - ISE: *Administration > System > Backup & Restore > Restore* with the file from
+     `ise_list_repositories(repository=...)` and the same key.
+   - Both replace the whole configuration and restart services: plan a window. Then re-check the matrix and the
+     edge as in step 3.
+
 ## 6. Tear it down
 
 `catc_delete_fabric_site` with `cascade=true` removes, in reverse order, edge ports, port channels, multicast
