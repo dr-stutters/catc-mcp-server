@@ -65,8 +65,11 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
 ## 3. Change it
 
 - Authentication template of the site and its profiles (Closed, Open, Low Impact, No Authentication;
-  MAB/802.1X order, fallback timer, hosts, BPDU guard, pre-auth ACL): D90, in PR #161 until its live proof.
-  ISE's policy only works when it matches.
+  MAB/802.1X order, fallback timer, hosts, BPDU guard, pre-auth ACL): `catc_get_fabric_authentication_profile`
+  and `catc_set_fabric_authentication_profile`. ISE's policy only works when it matches: Closed Authentication
+  with MAB first gives each edge port `PMAP_DefaultWiredDot1xClosedAuth_MAB_1X`, and a client stays blocked
+  until ISE authorizes its MAC (live: SGT and dACL from the ISE rule). The edges need RADIUS to ISE from their
+  Loopback0 first (section 7).
 - A gateway or an edge port in place, instead of delete + re-add (which drops the clients):
   `catc_update_anycast_gateway`, `catc_update_port_assignment` (including a static security group).
 - A border's priority, prepends, BGP router id and layer 2 type: `catc_update_fabric_device`. Roles, the local
