@@ -8,8 +8,10 @@ trace, read-only CLI), plus SWIM, topology and appliance health, and a spec-driv
 rest of the Intent API. `docs/GAP-ANALYSIS.md` maps the whole 3.2.2 API to the tools. Built on
 [stutters-mcp-core](https://github.com/dr-stutters/stutters-mcp-core).
 
-> Not affiliated with, endorsed by or supported by Cisco Systems, Inc. "Cisco" and "Catalyst Center"
-> are trademarks of Cisco Systems, Inc.
+> **Disclaimer.** This is not an official Cisco product or repository, and it isn't supported or endorsed by
+> Cisco. It's a personal project by [@dr-stutters](https://github.com/dr-stutters), for lab and learning use
+> only: don't point it at production systems. It's provided as is, with no warranty (see the
+> [license](LICENSE)). Cisco and Catalyst Center are trademarks of Cisco Systems, Inc.
 
 - **Supported version:** Catalyst Center **3.2.2** (tested against 3.2.2-75131). Most tools use
   long-standing Intent API endpoints and should work on 2.3.7.x and 3.1.x; SWIM distribute/activate use
