@@ -263,14 +263,17 @@ def register(reg: ToolRegistrar) -> None:
         """Hand a border off onto a transit network. IP transit: per virtual network, an SVI on the given VLAN
         over `interface` with point-to-point addresses (or allocated from `external_pool`) and eBGP to the
         external router; the router needs the matching VRF, subinterface and BGP neighbour. SD-Access transit:
-        the border registers with the transit control plane. Catalyst Center pushes the VRF/SVI/BGP (or LISP)
-        configuration to the border. Preview-first: the per-VN VLANs and addresses."""
+        the border registers with the transit control plane; Catalyst Center 3.2.2 refuses it while the
+        border's fabric site has extranet policies, so the preview blocks and names them (take the site out
+        of them with catc_set_extranet_policy, hand off, apply them again). Catalyst Center pushes the
+        VRF/SVI/BGP (or LISP) configuration to the border. Preview-first: the per-VN VLANs and addresses."""
         app: CatcApp = get_client(ctx)
         dev, fdev = await border_of(app, border)
         t = await resolve_transit(app, transit)
         fid = str(fdev["fabricId"])
         blockers = device_limit_blockers(app, 1)
         items: list[dict[str, Any]] = []
+        extranet: list[dict[str, Any]] = []
         if t.get("type") == TYPES["ip"]:
             path = IP_HANDOFFS
             if not interface or not virtual_networks:
@@ -326,6 +329,20 @@ def register(reg: ToolRegistrar) -> None:
             have = await sda_list(app, SDA_HANDOFFS, {"fabricId": fid, "networkDeviceId": dev["id"]})
             if any(h.get("transitNetworkId") == t["id"] for h in have):
                 blockers.append(f"{brief([dev])[0]} already hands off onto {t.get('name')}.")
+            extranet = [
+                p
+                for p in await sda_list(app, "extranetPolicies")
+                if fid in map(str, ensure_list(p.get("fabricIds")))
+            ]
+            if extranet:
+                blockers.append(
+                    f"The border's fabric site has extranet policies "
+                    f"({', '.join(str(p.get('extranetPolicyName')) for p in extranet)}); Catalyst Center "
+                    "refuses an SD-Access transit handoff while a fabric site has any (3.2.2, found live). "
+                    "Take the site out of them first: catc_set_extranet_policy(name, delete=true), or "
+                    "fabric_sites without this site when a policy spans other sites too. Hand off, then "
+                    "apply the policies again (across the transit, multisite, unless it is a hybrid transit)."
+                )
             item = {"networkDeviceId": dev["id"], "fabricId": fid, "transitNetworkId": t["id"]}
             if connected_to_internet is not None:
                 item["connectedToInternet"] = connected_to_internet
@@ -342,7 +359,7 @@ def register(reg: ToolRegistrar) -> None:
                 "Catalyst Center pushes the handoff (VRF, SVI per VN and eBGP, or LISP to the transit) "
                 "to the border; the external router needs the matching configuration."
             ],
-            fingerprint={"fdev": fdev, "transit": t, "have": have},
+            fingerprint={"fdev": fdev, "transit": t, "have": have, "extranet": extranet},
             blockers=blockers,
             blast_radius=1,
         )
