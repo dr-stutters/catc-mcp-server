@@ -27,10 +27,12 @@ async def multicast_state(app: CatcApp, fid: str) -> dict[str, Any]:
     return {"replication": rows[0].get("replicationMode") if rows else None, "virtual_networks": vns}
 
 
-def ranges_to_default_rp(rps: list[dict[str, Any]], ranges: list[str]) -> bool:
-    """Put ASM ranges given without `rp` on the VN's IPv4 RP: the default one, or the only one. False when
-    there is no single such RP."""
-    target = [r for r in rps if r.get("isDefaultV4RP")] or (rps if len(rps) == 1 else [])
+def ranges_to_existing_rp(rps: list[dict[str, Any]], ranges: list[str]) -> bool:
+    """Put ASM ranges given without `rp` on the VN's one non-default IPv4 RP. Catalyst Center refuses ASM
+    ranges on the default RP ("Default Rendezvous Point ... can't have ASM Group Ranges configured": it serves
+    every group), so a VN whose only RP is the default has nowhere to put them. False when there isn't exactly
+    one non-default RP."""
+    target = [r for r in rps if not r.get("isDefaultV4RP")]
     if len(target) != 1:
         return False
     target[0]["ipv4AsmRanges"] = ranges
@@ -69,7 +71,11 @@ def register(reg: ToolRegistrar) -> None:
         ] = None,
         external_rp_ip: Annotated[str | None, Field(description="rp=external: the RP's IPv4 address")] = None,
         asm_ranges: Annotated[
-            str | None, Field(description="VN: IPv4 ASM group ranges the RP serves, e.g. '239.1.0.0/16'")
+            str | None,
+            Field(
+                description="VN: IPv4 ASM group ranges, e.g. '239.1.0.0/16'. With rp: that RP becomes a "
+                "non-default RP for just these ranges (the default RP serves every group, takes no ranges)"
+            ),
         ] = None,
         ssm_ranges: Annotated[
             str | None, Field(description="VN: IPv4 SSM ranges, e.g. '232.0.0.0/8'")
@@ -143,7 +149,6 @@ def register(reg: ToolRegistrar) -> None:
                     rp_entry: dict[str, Any] = {
                         "rpDeviceLocation": "FABRIC",
                         "networkDeviceIds": [str(d["id"]) for d in devs],
-                        "isDefaultV4RP": True,
                     }
                 elif rp == "external":
                     if not external_rp_ip:
@@ -151,21 +156,24 @@ def register(reg: ToolRegistrar) -> None:
                     rp_entry = {
                         "rpDeviceLocation": "EXTERNAL",
                         "ipv4Address": external_rp_ip,
-                        "isDefaultV4RP": True,
                     }
                 else:
                     rp_entry = {}
                 ranges = [r.strip() for r in (asm_ranges or "").split(",") if r.strip()]
                 if rp_entry:
+                    # The default RP serves every group and Catalyst Center refuses ASM ranges on it, so an
+                    # RP given with ranges is a non-default RP for just those ranges.
+                    rp_entry["isDefaultV4RP"] = not ranges
                     if ranges:
                         rp_entry["ipv4AsmRanges"] = ranges
                     item["multicastRPs"] = [rp_entry]
                 elif current and current.get("multicastRPs"):
                     rps = [dict(r) for r in current["multicastRPs"] if isinstance(r, dict)]
-                    if ranges and not ranges_to_default_rp(rps, ranges):
+                    if ranges and not ranges_to_existing_rp(rps, ranges):
                         blockers.append(
-                            f"{virtual_network} has {len(rps)} rendezvous points and none is the default "
-                            "IPv4 RP: give rp (and rp_devices or external_rp_ip) for asm_ranges."
+                            f"{virtual_network} has no single non-default rendezvous point for asm_ranges "
+                            "(the default RP serves every group and Catalyst Center refuses ranges on it): "
+                            "give rp (and rp_devices or external_rp_ip) to add an RP for these ranges."
                         )
                     item["multicastRPs"] = rps
                 elif ranges:
