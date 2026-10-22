@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from catc_mcp._core import AuthError, TaskFailed, UpstreamTimeout, ValidationFailed
+from catc_mcp._core import AuthError, NotFound, TaskFailed, UpstreamTimeout, ValidationFailed
 from catc_mcp.client import CatcApp, catc_error_detail, job_ref
 
 from .conftest import make_settings
@@ -69,12 +69,42 @@ async def test_static_token(api: respx.MockRouter) -> None:
 
 async def test_validation_error_uses_extractor(api: respx.MockRouter) -> None:
     api.post("/dna/intent/api/v1/tag").respond(
-        400, json={"response": {"errorCode": "BadRequest", "message": "Tag exists"}}
+        400, json={"response": {"errorCode": "BadRequest", "message": "Tag exists", "detail": "name x"}}
     )
     app = CatcApp(make_settings())
-    with pytest.raises(ValidationFailed, match="Tag exists"):
+    with pytest.raises(ValidationFailed, match="BadRequest: Tag exists: name x"):
         await app.api.post("/dna/intent/api/v1/tag", {"name": "x"})
     await app.aclose()
+
+
+# Live 2026-10-22 (#191): the body of Catalyst Center's 404 on a gateway in a VN the fabric site lacks.
+NCHS20216 = {
+    "response": {
+        "errorCode": "NCHS20216",
+        "message": "The fabric site/zone with id f1 has no virtual network with the name INFRA_VN.",
+        "detail": "Anycast Gateway creation failed. The fabric site/zone with id f1 has no virtual network "
+        "with the name INFRA_VN.",
+    },
+    "version": "1.0",
+}
+
+
+async def test_not_found_keeps_the_error_body(api: respx.MockRouter) -> None:
+    """Core's 404 message named only the request ("Not found (404): POST ... Check the id/name"); the
+    errorCode and detail had to be read with a raw request."""
+    api.post("/dna/intent/api/v1/sda/anycastGateways").respond(404, json=NCHS20216)
+    api.get("/dna/intent/api/v1/sites/nope").respond(404)
+    app = CatcApp(make_settings())
+    try:
+        with pytest.raises(NotFound) as e:
+            await app.api.post("/dna/intent/api/v1/sda/anycastGateways", [{}])
+        where = "POST /dna/intent/api/v1/sda/anycastGateways"
+        assert str(e.value).startswith(f"Not found (404): {where}: NCHS20216:")
+        assert "Anycast Gateway creation failed" in str(e.value) and e.value.status_code == 404
+        with pytest.raises(NotFound, match="Check the id/name"):  # no body: core's message
+            await app.api.get("/dna/intent/api/v1/sites/nope")
+    finally:
+        await app.aclose()
 
 
 async def test_paging_is_one_based(api: respx.MockRouter) -> None:

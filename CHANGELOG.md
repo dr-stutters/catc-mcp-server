@@ -3,9 +3,34 @@
 ## Unreleased
 
 ### Fixed
-- `catc_anchor_virtual_network`: a new anchor is now two PUTs, the anchor site alone and then the extension to the other
-  sites, and a VN already on other sites is refused in the preview. Catalyst Center 3.2.2 answers an anchoring request
-  with several sites with NCHS20464 "each VN could only be anchored to one site only" (live 2026-10-22, lab mcp-catc-fabric2).
+- `catc_set_l2_handoff` refuses in the preview what Catalyst Center 3.2.2 checks only at apply time (live 2026-10-22, bcp2
+  on lab mcp-catc-fabric2, #165):
+  - a border without the LAYER_2 border type (`NCHS20177` "... is not a Layer 2 Border device in fabric ..."); the
+    blocker points to `catc_update_fabric_device(layer2_border=true)`;
+  - a device with the inventory role ACCESS ("Layer 2 Handoff isn't supported on a device that is assigned an ACCESS
+    role in the inventory"); the blocker points to `catc_set_device_role`.
+- `catc_anchor_virtual_network` creates the anchored VN: 3.2.2 anchors a VN only in the request that creates it (#190).
+  - A VN that doesn't exist yet is created at the anchor site alone with the anchor (`POST sda/layer3VirtualNetworks`),
+    then extended to the other sites (`PUT`). If the VN comes back unanchored after the POST, it is not extended.
+  - An existing VN that isn't anchored is refused in the preview. Live, anchoring the existing MCP_VN failed task
+    validation with `NCSO20386`, while a new VN created anchored and extended by a PUT read back anchored.
+  - The anchor and the other sites never go in one request: 3.2.2 answers that with `NCHS20464` "each VN could only be
+    anchored to one site only" (#220 first split the request in two; the anchor step is now the POST).
+  - Extending an anchored VN and `remove_anchor` work as before. An anchor can't move to another site.
+- `catc_add_anycast_gateway` takes the pool of a VN anchored at another fabric site from the anchor site. It used to
+  block with "No IP pool ... is reserved at <site>" (#190). Live, a gateway at mcp-test-fabric2 for a VN anchored at
+  mcp-test-fabric, with the pool reserved only at the anchor, gave edge2 the VRF, the SVI, the anchor's LISP instance
+  id and a LISP session to the anchor's control plane. The preview says that the gateway uses the anchor's pool and
+  that the remote edges register with the anchor's control plane, so they need underlay reachability to it.
+  Unanchored VNs still need the pool at their own site.
+- `catc_add_anycast_gateway` checks INFRA_VN's membership of the fabric site like any other VN's (#191). 3.2.2 doesn't
+  attach INFRA_VN to a fabric site by itself (live 2026-10-22, its record had no `fabricIds`), and the gateway failed
+  after the preview with 404 `NCHS20216` "The fabric site/zone ... has no virtual network with the name INFRA_VN". The
+  blocker names the fix that worked live: `catc_create_virtual_network(name='INFRA_VN', fabric_sites=[site])`. The
+  teardown comment and docs/sd-access.md no longer say INFRA_VN comes with every fabric site.
+- A 404 from Catalyst Center now carries its error body: `errorCode`, `message` and `detail` (for example `NCHS20216`
+  above). The message used to name only the request ("Not found (404): POST .../sda/anycastGateways. Check the id/name"),
+  and the detail had to be read with a raw request (#191). 400 messages already carried them.
 - `catc_update_fabric_site` (D104, #189): the preview blocks a pub/sub change while the fabric site has fabric
   devices and lists them in removal order (edges before the control plane / border). Catalyst Center 3.2.2 refuses
   it ("NCHS20420: ... isPubSubEnabled cannot be updated while there are devices in the fabric.", seen live
@@ -51,6 +76,12 @@
     - client bindings in the VN's VRF (#162);
     - the DEAD-until-probe behaviour.
 ### Added
+- `catc_set_device_role(devices, role)` (write tier) sets the inventory role (ACCESS, CORE, DISTRIBUTION, BORDER
+  ROUTER) over `PUT network-device/brief` and pins it with role source MANUAL. It is preview-first: current -> new per
+  device, a blocker for an unknown role, the CATC_MAX_DEVICES_PER_CHANGE limit, and devices already pinned to that role
+  are skipped. It returns each device's task and the role read back. Nothing is pushed to the devices; it needs
+  Network Management.Inventory Write, which `mcp-catc-rw` already has. Live 2026-10-22 this change (bcp2 ACCESS ->
+  BORDER ROUTER, MANUAL, made with a raw call) cleared the layer 2 handoff's ACCESS-role failure (#165).
 - **System backups before the group-based policy migration (D114, #211, Wave 6 part H).** The owner holds the
   migration (D108, #193) until both appliances can be backed up; ISE's half is ise-mcp-server I78 (#66).
   - `catc_get_backup_status(execution?, recent=5)` (read): the backup target (NFS or physical disk, mount path,

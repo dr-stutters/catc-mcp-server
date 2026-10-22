@@ -335,7 +335,7 @@ async def test_delete_fabric_site_without_cascade_lists_contents(api: respx.Mock
     assert out["status"] == "blocked"
     text = " ".join(out["blockers"])
     assert "1 port_assignments" in text and "2 fabric_devices" in text and "cascade=true" in text
-    # INFRA_VN goes with the fabric site; only CORP is listed
+    # an INFRA_VN membership is left to go with the fabric site; only CORP is listed
     assert out["preview"]["contents"]["virtual_networks_left_by_this_site"] == ["CORP"]
 
 

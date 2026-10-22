@@ -26,6 +26,7 @@ from catc_mcp._core.formatting import MASK
 from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, job_ref, safe_id
 from catc_mcp.common import ensure_list, is_ip, pick, resolve_device, resolve_site, resolve_tag
+from catc_mcp.safety import device_limit_blockers
 from catc_mcp.tools.credentials import all_credentials, resolve_credential
 from catc_mcp.tools.discovery import DEVICE_FIELDS as DISCOVERED_FIELDS
 from catc_mcp.tools.discovery import all_discoveries
@@ -80,6 +81,16 @@ def expand_addresses(ranges: list[str], limit: int = 1024) -> list[str]:
 
 def brief(devs: list[dict[str, Any]]) -> list[str]:
     return [f"{d.get('hostname') or '(not collected yet)'} ({d.get('managementIpAddress')})" for d in devs]
+
+
+# Inventory roles `PUT network-device/brief` takes (3.2.2 spec: "ACCESS, CORE, DISTRIBUTION, BORDER ROUTER").
+DEVICE_ROLES = ("ACCESS", "CORE", "DISTRIBUTION", "BORDER ROUTER")
+ROLE_PATH = "/dna/intent/api/v1/network-device/brief"
+
+
+def normalize_role(role: str) -> str:
+    """'border_router', 'Border-Router' -> 'BORDER ROUTER'."""
+    return " ".join(role.replace("_", " ").replace("-", " ").upper().split())
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -540,6 +551,89 @@ def register(reg: ToolRegistrar) -> None:
             ctx,
             tool="catc_resync_devices",
             args={"devices": devices, "force": force},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
+    @reg.write(title="Set device role", destructive=False, idempotent=True)
+    async def catc_set_device_role(
+        ctx: Context,
+        devices: Devices,
+        role: Annotated[
+            str, Field(description="Inventory role: ACCESS, CORE, DISTRIBUTION or BORDER ROUTER")
+        ],
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it
+        (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. The role
+        places the device in the topology and gates some features: a layer 2 handoff (catc_set_l2_handoff)
+        fails on a device with the ACCESS role. Nothing is pushed to the devices. Preview-first: current role
+        -> new per device; devices already pinned to that role are skipped. Returns each device's task and
+        the role read back."""
+        app: CatcApp = get_client(ctx)
+        devs = await resolve_devices(app, devices)
+        wanted = normalize_role(role)
+        blockers: list[str] = []
+        if wanted not in DEVICE_ROLES:
+            blockers.append(f"Unknown role {role!r}: give one of {', '.join(DEVICE_ROLES)}.")
+        changing = [d for d in devs if (d.get("role"), d.get("roleSource")) != (wanted, "MANUAL")]
+        if not changing and not blockers:
+            blockers.append(f"Nothing to change: the devices already have the role {wanted} (MANUAL).")
+        blockers += device_limit_blockers(app, len(changing))
+        plan = Plan(
+            f"Set the inventory role of {len(changing)} device(s) to {wanted}",
+            details={
+                "devices": [
+                    {
+                        "device": brief([d])[0],
+                        "from": f"{d.get('role')} ({d.get('roleSource')})",
+                        "to": f"{wanted} (MANUAL)",
+                    }
+                    for d in changing
+                ],
+                "unchanged": brief([d for d in devs if d not in changing]) or None,
+                "method": "PUT",
+                "path": ROLE_PATH,
+                "body": [{"id": str(d["id"]), "role": wanted, "roleSource": "MANUAL"} for d in changing],
+            },
+            side_effects=["Inventory only: no configuration is pushed to the devices."],
+            fingerprint={str(d["id"]): [d.get("role"), d.get("roleSource")] for d in devs},
+            blockers=blockers,
+            blast_radius=len(changing) or None,
+        )
+
+        async def apply() -> Any:
+            done: list[dict[str, Any]] = []
+            for d in changing:
+                body = {"id": str(d["id"]), "role": wanted, "roleSource": "MANUAL"}
+                try:
+                    job = await app.run_job("PUT", ROLE_PATH, body, ctx=ctx, what="set device role")
+                except UpstreamError as e:
+                    done.append({"device": brief([d])[0], "error": str(e)[:300]})
+                    return {
+                        "devices": done,
+                        "stopped": "at the first failure; later devices were not changed",
+                    }
+                now = await app.get_response(f"/dna/intent/api/v1/network-device/{safe_id(str(d['id']))}")
+                now = now if isinstance(now, dict) else {}
+                row: dict[str, Any] = {
+                    "device": brief([d])[0],
+                    "task": job,
+                    "role": now.get("role"),
+                    "role_source": now.get("roleSource"),
+                }
+                if now.get("role") != wanted:
+                    row["warning"] = (
+                        f"Catalyst Center reads the role back as {now.get('role')}, not {wanted}."
+                    )
+                done.append(row)
+            return {"devices": done}
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_set_device_role",
+            args={"devices": devices, "role": role},
             confirm=confirm,
             plan=plan,
             apply=apply,
