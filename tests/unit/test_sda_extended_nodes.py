@@ -17,6 +17,7 @@ EDGE = {"id": "fd", "networkDeviceId": DEV_ID, "fabricId": FID, "deviceRoles": [
 
 
 def gateway_lab(api: respx.MockRouter) -> None:
+    mock_inventory(api)  # the preview names the edges
     mock_fabric(api, [EDGE])
     api.get(f"{SDA}/layer3VirtualNetworks").respond(
         json={

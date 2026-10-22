@@ -148,6 +148,12 @@
   fix offered as a preview only.
 
 ### Fixed
+- **SD-Access live run (Wave 6 parts E-G, 2026-10-21).** The previews of `catc_add_anycast_gateway`,
+  `catc_update_anycast_gateway` and `catc_set_l2_virtual_network` name the edges ('hostname (IP)') instead of
+  device ids; `catc_create_ip_pool`'s preview shows the DHCP and DNS servers it sends. `catc_get_ssi_readiness`'s
+  403 says that on 3.2.2 custom roles get 403 even with Security.SSI Read (SUPER-ADMIN-ROLE reads it).
+  docs/sd-access.md gains the quirks found live (RADIUS from the RLOC loopback, border defaults read back out of
+  range, the SSI 403).
 - `catc_add_fabric_device` sent `borderPriority: 10` and `prependAutonomousSystemCount: 0` for every border;
   the 3.2.2 spec allows 1-9 and 1-10 (unset = Catalyst Center's defaults), so the request could be refused.
   Both are now left out unless the new optional `border_priority` (1-9) or `prepend_as_count` (1-10) is

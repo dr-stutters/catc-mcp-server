@@ -116,3 +116,14 @@ first); `catc_delete_sda_object` removes a single object by id; `catc_delete_l3_
   still applies (read the VN back).
 - The group-based policy objects under `/api/v2/data/customer-facing-service/` answer only once the package
   install job has finished (502 before), and hold seeded defaults until the policy migration.
+- Fabric provisioning sends RADIUS from Loopback0 (`ip radius source-interface Loopback0`, global and in
+  `dnac-client-radius-group`), and the NADs Catalyst Center creates in ISE carry the RLOC /32, not the management
+  IP. ISE needs a route back to the RLOCs (in a lab whose underlay isn't routed, the switch's RADIUS server stays
+  DEAD and the edge's TrustSec environment data never completes). The NADs also land in `Location#All Locations`:
+  move them into the location your policy set matches.
+- A border added without priority or prepends reads back `borderPriority: 10` and
+  `prependAutonomousSystemCount: 0`, outside the 1–9 / 1–10 the API takes on a write; `catc_update_fabric_device`
+  sets them (priority 2 shows as `priority 2` on the border's LISP locators), but has no way back to the
+  unset default yet.
+- `securityServiceInsertion/*` answers 403 to custom roles even with Security.SSI Read (the permission's
+  maximum); a SUPER-ADMIN-ROLE account reads it.

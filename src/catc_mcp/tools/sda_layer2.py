@@ -25,7 +25,7 @@ from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, resolve_device
 from catc_mcp.safety import device_limit_blockers
 from catc_mcp.tools.ops_writes import brief
-from catc_mcp.tools.sda import SDA, FabricRef, fabric_devices, resolve_fabric, sda_job, sda_list
+from catc_mcp.tools.sda import SDA, FabricRef, edge_labels, fabric_devices, resolve_fabric, sda_job, sda_list
 
 L2VN_FIELDS = [
     "id",
@@ -174,7 +174,7 @@ def register(reg: ToolRegistrar) -> None:
                 "method": method,
                 "path": path,
                 "body": [body] if body else None,
-                "edges": [d.get("networkDeviceId") for d in edges],
+                "edges": await edge_labels(app, edges),
             },
             side_effects=[f"Catalyst Center pushes the VLAN change to {len(edges)} edge device(s)."],
             fingerprint={"current": current},

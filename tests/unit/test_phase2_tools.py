@@ -372,7 +372,7 @@ async def test_reserve_ip_pool_body(api: respx.MockRouter) -> None:
         202, json={"response": {"taskId": "tp"}}
     )
     api.get("/dna/intent/api/v1/task/tp").respond(json={"response": {"progress": "new-pool", "endTime": 1}})
-    _, done = await preview_then_apply(
+    preview, done = await preview_then_apply(
         "catc_create_ip_pool",
         {
             "name": "syd-mgmt",
@@ -396,6 +396,8 @@ async def test_reserve_ip_pool_body(api: respx.MockRouter) -> None:
             "globalPoolId": GPOOL["id"],
         },
     }
+    # the preview shows the servers the body sends (live run 2026-10-21: they were missing)
+    assert preview["preview"]["dhcp_servers"] == ["10.0.0.5"] and "dns_servers" not in preview["preview"]
     assert done["result"]["pool_id"] == "new-pool"
 
 
