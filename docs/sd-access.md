@@ -57,7 +57,9 @@ The prompt `catc_build_fabric_site` walks all of this with a check after each st
 (`catc_create_transit_network`, then `catc_add_l3_handoff` with one VLAN/SVI and point-to-point addresses per VN,
 eBGP to the fusion router or WAN) or an SD-Access transit between fabric sites. Until then DHCP from a server
 outside the fabric fails; prove the gateway with a static address. Shared services between VNs:
-`catc_set_extranet_policy`.
+`catc_set_extranet_policy`. On 3.2.2 a fabric site with extranet policies can't hand off onto an SD-Access
+transit (live: "Failed to add SD-Access Transit ... due to existing Extranet Policies"): the
+`catc_add_l3_handoff` preview blocks and names them; take the site out of them, hand off, then apply them again.
 
 **AAA before an authentication template.** Prove a client in the VN on No Authentication first, then set
 Closed Authentication, Low Impact or Open Authentication with `catc_set_fabric_authentication_profile` (its
@@ -102,7 +104,11 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
   AS, default exit and route import can't be updated on 3.2.2: remove the device and add it back. A priority is
   one way: a border added without one reads back as 10, but 3.2.2 refuses 10 on a write (`NCHS20769`), so once
   set it only moves within 1–9 (9 is the closest to unset); the tool's preview warns when it sets the first one.
-- The site's control plane (LISP/BGP or pub/sub) and underlay transport: `catc_update_fabric_site`.
+- The site's control plane (LISP/BGP or pub/sub) and underlay transport: `catc_update_fabric_site`. 3.2.2
+  changes the control plane mode only on a fabric site without fabric devices (`NCHS20420`), so the preview
+  blocks and lists them: remove them with `catc_delete_fabric_device` (edges before the control plane / border),
+  change the mode, add them back with `catc_add_fabric_device`; they come back in the new mode (proven live).
+  An underlay transport change wasn't tried live and isn't blocked.
 
 ## 4. Check it
 
@@ -115,8 +121,11 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
   each RLOC /32, its location and TrustSec settings too; without them the result gives the `ise_audit_nads`
   arguments. Every finding names its fix (ISE route back to the RLOCs, missing NAD, wrong location, dead server),
   to preview. Run it after adding the fabric devices and before Closed Authentication.
-- `catc_list_pending_fabric_events` and `catc_apply_pending_fabric_events`: drift Catalyst Center wants to push
-  again (after an RMA, a reload, a failed provision).
+- `catc_list_pending_fabric_events` and `catc_apply_pending_fabric_events`: fabric intent Catalyst Center still
+  has to push (after an RMA, a failed provision, or a fabric setting saved without a push). They don't show a
+  change made on the device: live, removing a pushed `ip pim vrf ... rp-address` line on an edge by CLI got a
+  resync ('Config Change Event') but no pending fabric event in 25 minutes. For device-side drift use
+  `catc_config_drift` or `catc_compare_device_configs`.
 - `catc_run_show_commands` on the edges: `show lisp session`, `show vlan brief`, `show running-config interface
   <port>`, `show access-session`, `show aaa servers`, and with SGTs `show cts role-based sgt-map vrf <VN> all`
   (the clients' IP-to-SGT bindings; the global table only lists the switch's own addresses). It takes up to 10

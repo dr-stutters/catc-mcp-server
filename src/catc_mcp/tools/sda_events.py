@@ -1,9 +1,13 @@
 """SD-Access drift (roadmap D100): pending fabric events and applying them on purpose.
 
-Catalyst Center queues a "pending fabric event" when a fabric device's configuration no longer matches the
-fabric intent and needs a push (after an RMA, a reload, a failed provision, a device-side change, or a
-fabric setting that only reaches devices on the next push); the GUI shows them as a banner. These tools list
-them per fabric site and apply them, one request per event as the API asks.
+Catalyst Center queues a "pending fabric event" for fabric intent it still has to push to the devices (after
+an RMA, a failed provision, or a fabric setting saved without a push); the GUI shows them as a banner. These
+tools list them per fabric site and apply them, one request per event as the API asks.
+
+They don't catch device-side drift. Live on 3.2.2 (2026-10-22), removing a pushed line on a fabric edge by CLI
+(`ip pim vrf ... rp-address`) made Catalyst Center resync the device ('Config Change Event') but queued no
+pending fabric event in 25 minutes. A change made on the device is catc_config_drift's and
+catc_compare_device_configs' job.
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
@@ -59,9 +63,11 @@ def register(reg: ToolRegistrar) -> None:
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
-        """SD-Access drift: the pending fabric events Catalyst Center has queued, per fabric site. These are
-        configuration pushes it wants to make again after an RMA, a reload, a failed provision or a
-        device-side change; each comes with its id and detail. Apply them on purpose with
+        """SD-Access fabric intent still to push: the pending fabric events Catalyst Center has queued, per
+        fabric site. They come from its own intent (after an RMA, a failed provision, or a fabric setting
+        saved without a push), not from a change made on the device: a CLI change on a fabric edge queued
+        none in a live test, so check device-side drift with catc_config_drift or
+        catc_compare_device_configs. Each comes with its id and detail. Apply them on purpose with
         catc_apply_pending_fabric_events."""
         app: CatcApp = get_client(ctx)
         if fabric_site:
@@ -79,7 +85,8 @@ def register(reg: ToolRegistrar) -> None:
         note = (
             "No SD-Access fabric sites."
             if not fabrics
-            else "No pending fabric events: the fabric devices match the intent."
+            else "No pending fabric events: Catalyst Center has no fabric intent left to push (a change made "
+            "on a device doesn't queue one; catc_config_drift / catc_compare_device_configs show those)."
             if not events
             else "Apply with catc_apply_pending_fabric_events (dangerous; it pushes configuration)."
         )

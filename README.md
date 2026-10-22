@@ -419,7 +419,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, the device they are about, summary, status, site and how long ago each last occurred, newest first. |
 | `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
 | `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
-| `catc_list_pending_fabric_events` | SD-Access drift: the pending fabric events Catalyst Center has queued, per fabric site. |
+| `catc_list_pending_fabric_events` | SD-Access fabric intent still to push: the pending fabric events Catalyst Center has queued, per fabric site. |
 | `catc_list_pnp_devices` | Plug and Play (PnP) devices waiting for or going through zero-touch onboarding: serial, platform, state, the site and workflow they're claimed to, first/last contact, and any error. |
 | `catc_list_report_views` | Report view groups (Inventory, Compliance, SWIM, Licensing, EoX, Access Point, ...) or, with group, that group's views. |
 | `catc_list_reports` | Reports defined in Catalyst Center with their view, format and executions (newest first: id, status, start/end), for catc_get_report_content. |
