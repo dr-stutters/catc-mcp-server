@@ -310,6 +310,12 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
   gives each server a `next_action`; an entry that FAILED (ISE renamed, certificate renewed, FQDN not
   matching its CN) is fixed in place with `catc_update_policy_server` (ISE password re-entered), then
   the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
+- **SD-Access fabric AAA:** `catc_check_fabric_aaa(fabric_site)` reads every fabric device live (one command
+  runner request): the RLOC its RADIUS comes from (Loopback0), each RADIUS server's state (DEAD, dead count,
+  automate-tester), TrustSec environment data and PAC, with a verdict and the fix per device. Pass the ise
+  server's `ise_list_nads(response_format='json')` results as `ise_nads` (and `expected_location`) to check
+  the NAD covering each RLOC and its location group too; without them the result gives the `ise_audit_nads`
+  arguments.
 - **Admin login through ISE:** `catc_get_external_authentication` (on/off, AAA attribute, servers, roles) →
   ISE side (Catalyst Center as a NAD with the policy-server shared secret, an authorization profile returning
   `cisco-av-pair = Role=<role>`) → `catc_set_external_authentication(enable=true)` (dangerous; lockout risk named
@@ -330,11 +336,12 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (94)
+### Read (95)
 
 | Tool | What it does |
 |---|---|
 | `catc_ai_insights` | AI-driven issues from Cisco AI Network Analytics (baseline deviations Catalyst Center learns in the cloud) for the network or a site. |
+| `catc_check_fabric_aaa` | Whether every fabric device at an SD-Access fabric site can do AAA with ISE, with a verdict and the fix per device. |
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
 | `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
 | `catc_compliance_report` | Which devices are out of standard: compliance at a site (and below) from the last compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX, network settings, your compliance policies as NETWORK_RULES...) and severity, with the non-compliant devices and their failing categories and policy rule violations (worst first). |

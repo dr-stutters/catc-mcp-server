@@ -143,6 +143,8 @@ def parse_environment(text: str) -> dict[str, Any]:
             out["last_update"] = line.split("=", 1)[1].strip()
         elif m := _SERVER.match(raw):
             out["servers"].append({"ip": m["ip"], "port": int(m["port"]), "preferred": "*Server" in raw})
+        elif line.startswith("Status =") and out["servers"]:
+            out["servers"][-1]["status"] = line.split("=", 1)[1].strip()  # ALIVE / DEAD
         elif line.startswith("Security Group Name Table"):
             in_table = True
         elif in_table:

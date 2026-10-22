@@ -79,8 +79,8 @@ In ISE (ise-mcp-server): `ise_get_nad` with each RLOC finds its NAD; `ise_policy
 `flow='wired-mab'` (or `wired-dot1x`) must select the policy set and rule meant for the fabric's clients; a NAD
 left in All Locations when that set matches a location moves with `ise_update_nad` (`groups`). The clients
 need a rule that authorizes them (for MAB, their MACs in an endpoint group the rule permits). The prompt
-`catc_build_fabric_site` runs these checks before it sets the template. An AAA readiness check is planned
-(D110, #207).
+`catc_build_fabric_site` runs these checks before it sets the template. `catc_check_fabric_aaa` runs
+the same checks on every fabric device in one call (D110).
 
 **More of the fabric.** Layer 2 VNs and layer 2 handoffs (`catc_set_l2_virtual_network`, `catc_set_l2_handoff`),
 fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_channel`), multicast
@@ -94,7 +94,8 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
   and `catc_set_fabric_authentication_profile`. ISE's policy only works when it matches: Closed Authentication
   with MAB first gives each edge port `PMAP_DefaultWiredDot1xClosedAuth_MAB_1X`, and a client stays blocked
   until ISE authorizes its MAC (live: SGT and dACL from the ISE rule). The edges need RADIUS to ISE from their
-  Loopback0 first: check it before switching (section 2, *AAA before an authentication template*).
+  Loopback0 first: check it with `catc_check_fabric_aaa` before switching (section 2, *AAA before an
+  authentication template*).
 - A gateway or an edge port in place, instead of delete + re-add (which drops the clients):
   `catc_update_anycast_gateway`, `catc_update_port_assignment` (including a static security group).
 - A border's priority, prepends, BGP router id and layer 2 type: `catc_update_fabric_device`. Roles, the local
@@ -107,6 +108,13 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
 
 - `catc_fabric_health`: fabric sites, VNs and transits as Assurance scores them, the dimensions with fair or
   poor devices, a verdict; lags a change by minutes.
+- `catc_check_fabric_aaa`: can each fabric device do AAA with ISE, read live (one command-runner request): the
+  RLOC its RADIUS comes from, each RADIUS server's state (DEAD, dead count, automate-tester), TrustSec
+  environment data and the PAC. Pass ise-mcp-server's `ise_list_nads(response_format='json')` results as
+  `ise_nads`, and the location group your policy set matches as `expected_location`, to check the NAD covering
+  each RLOC /32, its location and TrustSec settings too; without them the result gives the `ise_audit_nads`
+  arguments. Every finding names its fix (ISE route back to the RLOCs, missing NAD, wrong location, dead server),
+  to preview. Run it after adding the fabric devices and before Closed Authentication.
 - `catc_list_pending_fabric_events` and `catc_apply_pending_fabric_events`: drift Catalyst Center wants to push
   again (after an RMA, a reload, a failed provision).
 - `catc_run_show_commands` on the edges: `show lisp session`, `show vlan brief`, `show running-config interface
@@ -159,7 +167,10 @@ first); `catc_delete_sda_object` removes a single object by id; `catc_delete_l3_
   `dnac-client-radius-group`), and the NADs Catalyst Center creates in ISE carry the RLOC /32, not the management
   IP. ISE needs a route back to the RLOCs (in a lab whose underlay isn't routed, the switch's RADIUS server stays
   DEAD and the edge's TrustSec environment data never completes). The NADs also land in `Location#All Locations`:
-  move them into the location your policy set matches.
+  move them into the location your policy set matches. `catc_check_fabric_aaa` finds all three (section 4).
+- On cat9000v 17.18 `show aaa servers` prints a spurious `%Failed to update configuration in the database ...`
+  line, and the command runner then reports the whole command as failed: add `| exclude Failed to update`
+  (`catc_check_fabric_aaa` does).
 - A border added without priority or prepends reads back `borderPriority: 10` and
   `prependAutonomousSystemCount: 0`, outside the 1–9 / 1–10 the API takes on a write; `catc_update_fabric_device`
   sets them (priority 2 shows as `priority 2` on the border's LISP locators). There is no way back to the unset
