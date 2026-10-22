@@ -869,3 +869,84 @@ first failure; never skip a check.
    the undo as a preview only (do not confirm unless the user asks): {tool_ref("catc_delete_fabric_site")}
    fabric_site "{building}", cascade true (ports, gateways, the site's VN membership, fabric devices, then the
    fabric site; the devices stay provisioned, the pool and the site stay)."""
+
+    @reg.prompt(title="Roll out and prove a group-based policy", uses=["catc", "ise"], tier=Tier.WRITE)
+    def catc_group_policy_rollout(
+        source_group: Annotated[
+            str, Field(description="Source security group (name or tag), e.g. Contractors")
+        ],
+        destination_group: Annotated[
+            str, Field(description="Destination security group (name or tag), e.g. Production_Servers")
+        ],
+        edge: Annotated[str, Field(description="The fabric edge (or TrustSec switch) that enforces it")],
+        policy: Annotated[
+            str, Field(description="'deny', 'permit' or the name of an SGACL that exists in ISE")
+        ] = "deny",
+        client_ips: Annotated[
+            str, Field(description="Optional: comma-separated IPs of a source and a destination client")
+        ] = "",
+    ) -> str:
+        """Change one cell of ISE's TrustSec matrix and prove a Catalyst Center-managed edge enforces it:
+        the groups, the current cell in ISE and on the edge, the change (previewed, applied only on the
+        user's approval), the push, the edge's downloaded cell, the clients' SGTs, a test flow and the
+        counters. ISE stays the policy owner; Catalyst Center verifies. It never starts Catalyst Center's
+        group-based policy migration."""
+        texts = (source_group, destination_group, edge, policy, client_ips)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        src, dst, sw = source_group.strip(), destination_group.strip(), edge.strip()
+        if not (src and dst and sw):
+            raise ValueError("Give source_group, destination_group and edge.")
+        pol = policy.strip()
+        sgacls = {"deny": "Deny IP", "permit": "Permit IP"}.get(pol.lower(), pol)
+        if not sgacls:
+            raise ValueError("policy must be 'deny', 'permit' or an SGACL name.")
+        ips = []
+        for part in client_ips.split(","):
+            if part.strip():
+                try:
+                    ips.append(str(ipaddress.ip_address(part.strip())))
+                except ValueError as exc:
+                    raise ValueError(f"client_ips: {exc}") from exc
+        ip_list = json.dumps(ips)
+        ip_arg = f", ips {ip_list}" if ips else ""
+        flow = (
+            f"from {ips[0]} to {ips[1]}"
+            if len(ips) >= 2
+            else "from a client in the source group to one in the destination group"
+        )
+        return f"""Roll out "{sgacls}" from {src} to {dst} and prove {sw} enforces it. ISE owns the policy;
+Catalyst Center only verifies. Every write below is a preview first: show it and apply it only when the user
+approves it. Never start Catalyst Center's group-based policy migration (Policy > Group-Based Access Control):
+it hands ISE's matrix to Catalyst Center and makes ISE's TrustSec objects read-only, which is the user's
+decision alone. If the ise tools are missing, stop after step 2 and say the change has to be made in ISE.
+
+1. Groups: {tool_ref("ise_list_sgts")}: {src} and {dst} exist (name and tag)? If one is missing, preview
+   {tool_ref("ise_set_sgt")} for it (in a lab, prefix new names with mcp-). {tool_ref("ise_list_sgacls")}:
+   "{sgacls}" exists (Deny IP and Permit IP are built in).
+2. Before: {tool_ref("ise_get_egress_matrix")} with source {src} and destination {dst} (ISE's cell, or the
+   default), then {tool_ref("catc_get_group_policy_enforcement")} with device {sw}, source {src},
+   destination {dst}{ip_arg}: the edge's environment data (COMPLETE? the ISE server listed?), whether
+   'cts role-based enforcement' is configured, the cell it has now, and the clients' SGTs. Environment data
+   not COMPLETE or no enforcement: fix that first (the switch is not a TrustSec device of ISE yet, or
+   Catalyst Center has not provisioned it into the fabric), no matrix change will show.
+3. Change: preview {tool_ref("ise_set_egress_policy")} with source {src}, destination {dst}, sgacls
+   ["{sgacls}"]; show the preview and apply it only on approval. Then preview
+   {tool_ref("ise_push_trustsec_matrix")} (sends a CoA so devices fetch the change now instead of at the
+   next refresh) and apply it on approval.
+4. Clients: each client's session must carry its group. {tool_ref("ise_find_session")} with each client's IP
+   or MAC shows the SGT ISE assigned. A client without the right SGT: the authorization rule it hits needs
+   that security group in its result (preview {tool_ref("ise_update_policy_rule")}), then re-authenticate it
+   (preview {tool_ref("ise_coa_reauth")}).
+5. Edge after: {tool_ref("catc_get_group_policy_enforcement")} again (same arguments). The pair's policy must
+   be "{sgacls}" with source_of_policy "cell downloaded from ISE", and each client IP bound to its SGT. Not
+   there yet: the push may still be running; wait a minute and read again (at most three times), then compare
+   the edge's group name table with ISE's.
+6. Test flow {flow}: run it from the client (ping or a TCP connect; on a CML lab, the cml server's command
+   tool runs it on the client node), then read the counters with
+   {tool_ref("catc_get_group_policy_enforcement")}: the pair's denied (deny) or permitted (permit) counters
+   must have moved. Simulated switches (cat9000v): an SGACL with 'log' can crash the dataplane, and routed
+   traffic out of the uplink is not counted; prove it between two clients on the same edge and subnet.
+7. Summary: the cell before and after in ISE and on the edge, the clients' SGTs, the flow result with the
+   counters, and the undo (preview only, not applied): {tool_ref("ise_set_egress_policy")} back to the step 2
+   cell, then {tool_ref("ise_push_trustsec_matrix")}."""
