@@ -62,10 +62,26 @@ _SECRET_PATTERNS = [
 ]
 
 
+# `show cts pacs`: the PAC-Opaque blob is the TrustSec PAC itself (a bearer credential for the device's
+# environment-data and policy downloads). It is one long hex line, sometimes wrapped onto hex-only lines.
+_PAC_OPAQUE = re.compile(r"^(?P<keep>\s*PAC-Opaque\s*:)\s*\S.*$", re.IGNORECASE)
+_HEX_ONLY = re.compile(r"^\s*[0-9A-Fa-f]{16,}\s*$")
+
+
 def redact_config(text: str) -> str:
-    """Mask passwords, secrets, keys and SNMP communities in IOS-style configuration text."""
+    """Mask passwords, secrets, keys and SNMP communities in IOS-style configuration text, and the
+    PAC-Opaque blob in `show cts pacs` output."""
     out = []
+    in_pac = False
     for line in text.splitlines():
+        if in_pac and _HEX_ONLY.match(line):
+            continue  # a wrapped continuation of the masked PAC-Opaque value
+        in_pac = False
+        m = _PAC_OPAQUE.match(line)
+        if m:
+            out.append(f"{m.group('keep')} ********")
+            in_pac = True
+            continue
         for pat in _SECRET_PATTERNS:
             m = pat.match(line)
             if m:

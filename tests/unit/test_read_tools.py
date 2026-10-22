@@ -530,6 +530,24 @@ async def test_spec_tools_use_bundled_spec(api: respx.MockRouter) -> None:
     assert status["server"]["spec_sources"] == ["intent"]
 
 
+def test_redact_cts_pac_opaque() -> None:
+    """`show cts pacs` returned the PAC-Opaque blob unmasked via catc_run_show_commands (live 2026-10-22)."""
+    blob = "000200B80003000100040010" + "7C4A1B2C3D4E5F60" * 8
+    out = redact_config(
+        "AID: 7C4A1B2C3D4E5F607C4A1B2C3D4E5F60\n"
+        "PAC-Info:\n"
+        "  PAC-type = Cisco Trustsec\n"
+        "  Credential Lifetime: 07:01:14 UTC Jan 20 2027\n"
+        f"PAC-Opaque: {blob}\n"
+        f"{'ABCDEF0123456789' * 4}\n"
+        "Refresh timer is set for 12w4d\n"
+    )
+    assert blob not in out and "ABCDEF0123456789" not in out
+    assert "PAC-Opaque: ********" in out
+    assert "Credential Lifetime: 07:01:14 UTC Jan 20 2027" in out and "Refresh timer is set for 12w4d" in out
+    assert "AID: 7C4A1B2C3D4E5F607C4A1B2C3D4E5F60" in out  # the authority id is not a secret
+
+
 def test_redact_more_forms() -> None:
     cfg = (
         "snmp-server host 10.1.1.1 version 2c c0mm\n"
