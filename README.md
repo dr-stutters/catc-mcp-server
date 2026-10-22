@@ -287,11 +287,13 @@ auth record and an undo list; by default it switches external authentication off
 `catc_client_troubleshoot` (read tier, uses **ise**) takes a client by MAC, IP or username through Catalyst
 Center (360, issues, live CLI, path trace), ISE (auth history, failure reason, NAD) and the switch's AAA health to a
 diagnosis and a previewed-only fix.
-`catc_build_fabric_site` (dangerous tier) builds an SD-Access fabric site from switches to a client in the fabric:
-SD-Access availability and the account's tier, devices onboarded and provisioned at the building, the client pool,
-the fabric site, border and control plane before the edges, the VN, the anycast gateway, the edge ports, then the
-checks (fabric read-back, CLI on the edges, pending fabric events, `catc_fabric_health`), and the teardown
-(`catc_delete_fabric_site` with cascade) as a preview.
+`catc_build_fabric_site` (dangerous tier, uses **ise** for the AAA check) builds an SD-Access fabric site from
+switches to a client in the fabric: SD-Access availability and the account's tier, devices onboarded and provisioned
+at the building, the client pool, the fabric site, border and control plane before the edges, the VN, the anycast
+gateway, the edge ports, then the checks (fabric read-back, CLI on the edges, pending fabric events,
+`catc_fabric_health`), and the teardown (`catc_delete_fabric_site` with cascade) as a preview. An authentication
+template other than No Authentication comes last, after an AAA check: RADIUS to ISE from every fabric device's
+RLOC, and the NADs and their location in ISE.
 
 `catc_group_policy_rollout` (write tier, uses **ise**) changes one cell of ISE's TrustSec matrix and proves a
 Catalyst Center-managed edge enforces it: the groups and the cell in ISE and on the edge, the previewed

@@ -75,6 +75,29 @@ async def test_read_back_defaults_outside_the_put_ranges_are_left_out(api: respx
 
 
 @pytest.mark.parametrize(
+    ("current", "warned"),
+    [
+        (None, True),  # added without a priority
+        (10, True),  # the unset default as Catalyst Center reads it back
+        (2, False),  # already set: 1-9 either way
+    ],
+)
+async def test_first_priority_is_one_way(api: respx.MockRouter, current: int | None, warned: bool) -> None:
+    """D111: 3.2.2 refuses borderPriority 10 (NCHS20769, live 2026-10-22): the preview says so."""
+    l3 = {**L3, **({"borderPriority": current} if current is not None else {})}
+    Lab(api, {**BORDER, "borderDeviceSettings": {"borderTypes": ["LAYER_3"], "layer3Settings": l3}})
+    preview, _ = await flow("catc_update_fabric_device", {"device": "edge-sw1", "border_priority": 3})
+    effects = " ".join(preview["side_effects"])
+    assert ("NCHS20769" in effects) is warned and "re-provisions" in effects
+
+
+async def test_one_way_warning_only_for_priority(api: respx.MockRouter) -> None:
+    Lab(api, BORDER)
+    preview, _ = await flow("catc_update_fabric_device", {"device": "edge-sw1", "prepend_as_count": 2})
+    assert "NCHS20769" not in " ".join(preview["side_effects"])
+
+
+@pytest.mark.parametrize(
     ("args", "needle"),
     [
         ({"border_priority": None}, "Nothing to change"),

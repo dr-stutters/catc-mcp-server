@@ -52,12 +52,17 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
    (`catc_resync_devices`) and provision again; restore anything that must stay (e.g.
    device-admin TACACS+) afterwards.
 5. Check the switch: `catc_run_show_commands` with
-   "show running-config | section aaa|radius" and "show running-config | include dot1x|device-tracking":
-   the radius server must be the ISE PSN and aaa authentication dot1x / authorization network must
-   use that group.
-6. NAD in ISE: `ise_get_nad` with "198.18.128.170". Catalyst Center normally creates it
-   during provisioning. Only if it's missing, offer `ise_create_nad` (name = the
-   switch hostname, ips ["198.18.128.170"], the same RADIUS shared secret as step 1).
+   "show running-config | section aaa|radius", "show running-config | include dot1x|device-tracking" and
+   "show aaa servers": the radius server must be the ISE PSN, aaa authentication dot1x / authorization
+   network must use that group, and the ISE server must not be DEAD. Note the RADIUS source ("ip radius
+   source-interface", if set): ISE sees that address, not necessarily 198.18.128.170. DEAD means ISE doesn't
+   answer: no NAD for the source address (step 6) or no route back to it from ISE. After the fix the switch
+   keeps the server DEAD until its automate-tester probe gets an answer (minutes): check again before
+   calling the fix failed.
+6. NAD in ISE: `ise_get_nad` with "198.18.128.170" (and with the RADIUS source address from step 5
+   when it differs). Catalyst Center normally creates it during provisioning. Only if it's missing, offer
+   `ise_create_nad` (name = the switch hostname, ips ["198.18.128.170"] plus the RADIUS source
+   address when it differs, the same RADIUS shared secret as step 1).
 7. Access-port template (IBNS 2.0 style: Catalyst Center's provisioning leaves the switch in the
    new-style identity mode, where legacy "authentication ..." interface commands are dropped):
    create it in a project of the user's choice with `catc_create_template`

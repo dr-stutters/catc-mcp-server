@@ -39,9 +39,11 @@ The prompt `catc_build_fabric_site` walks all of this with a check after each st
 
 1. Client pool: a global pool, then a reservation at the building (`catc_create_ip_pool`) with its gateway and
    DHCP server.
-2. `catc_create_fabric_site` (an area or building; the authentication template and pub/sub).
+2. `catc_create_fabric_site` (an area or building; the authentication template and pub/sub). Build on No
+   Authentication and set any other template last, after the AAA check below.
 3. `catc_add_fabric_device`: control plane and border first, then the edges. A border needs its BGP AS; its
    priority (1–9) and AS-path prepends (1–10) are optional (leaving them out keeps Catalyst Center's defaults).
+   A priority, once set, can't go back to the default (section 3).
 4. `catc_create_virtual_network` (a layer 3 VN at the fabric site).
 5. `catc_add_anycast_gateway`: the pool in the VN; Catalyst Center pushes the SVI to every edge. In INFRA_VN the
    pool is for extended nodes or fabric APs (`pool_type`).
@@ -57,6 +59,29 @@ eBGP to the fusion router or WAN) or an SD-Access transit between fabric sites. 
 outside the fabric fails; prove the gateway with a static address. Shared services between VNs:
 `catc_set_extranet_policy`.
 
+**AAA before an authentication template.** Prove a client in the VN on No Authentication first, then set
+Closed Authentication, Low Impact or Open Authentication with `catc_set_fabric_authentication_profile` (its
+preview names every edge it is pushed to). Closed Authentication blocks every client on the edge ports until ISE
+authorizes it, so a fabric that can't reach ISE blocks everyone. Fabric provisioning sends RADIUS from each
+fabric device's Loopback0 (its RLOC), and the NADs Catalyst Center creates in ISE carry the RLOC /32 in
+`Location#All Locations` (section 7). Before you switch, check every fabric device with `catc_run_show_commands`:
+
+- `show aaa servers`: the ISE server is `current UP`, not `DEAD`;
+- `show running-config | include radius source-interface` and `show ip interface brief | include Loopback0`:
+  the address ISE sees;
+- `show cts environment-data`: the download is COMPLETE and lists the ISE server.
+
+DEAD, or environment data that never completes, means ISE has no route back to the RLOC subnet or no NAD for
+the RLOC. The route is fixed on ISE or its gateway, not in Catalyst Center (the lab added one for
+10.255.255.0/24 on the ISE CLI); moving the RADIUS source by CLI drifts from Catalyst Center's intent. After the
+fix a switch keeps the server DEAD until its automate-tester probe gets an answer, minutes later (section 7).
+In ISE (ise-mcp-server): `ise_get_nad` with each RLOC finds its NAD; `ise_policy_explain` with `nad=<RLOC>` and
+`flow='wired-mab'` (or `wired-dot1x`) must select the policy set and rule meant for the fabric's clients; a NAD
+left in All Locations when that set matches a location moves with `ise_update_nad` (`groups`). The clients
+need a rule that authorizes them (for MAB, their MACs in an endpoint group the rule permits). The prompt
+`catc_build_fabric_site` runs these checks before it sets the template. An AAA readiness check is planned
+(D110, #207).
+
 **More of the fabric.** Layer 2 VNs and layer 2 handoffs (`catc_set_l2_virtual_network`, `catc_set_l2_handoff`),
 fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_channel`), multicast
 (`catc_get_fabric_multicast`, `catc_set_fabric_multicast`), anchored VNs across sites
@@ -69,11 +94,13 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
   and `catc_set_fabric_authentication_profile`. ISE's policy only works when it matches: Closed Authentication
   with MAB first gives each edge port `PMAP_DefaultWiredDot1xClosedAuth_MAB_1X`, and a client stays blocked
   until ISE authorizes its MAC (live: SGT and dACL from the ISE rule). The edges need RADIUS to ISE from their
-  Loopback0 first (section 7).
+  Loopback0 first: check it before switching (section 2, *AAA before an authentication template*).
 - A gateway or an edge port in place, instead of delete + re-add (which drops the clients):
   `catc_update_anycast_gateway`, `catc_update_port_assignment` (including a static security group).
 - A border's priority, prepends, BGP router id and layer 2 type: `catc_update_fabric_device`. Roles, the local
-  AS, default exit and route import can't be updated on 3.2.2: remove the device and add it back.
+  AS, default exit and route import can't be updated on 3.2.2: remove the device and add it back. A priority is
+  one way: a border added without one reads back as 10, but 3.2.2 refuses 10 on a write (`NCHS20769`), so once
+  set it only moves within 1–9 (9 is the closest to unset); the tool's preview warns when it sets the first one.
 - The site's control plane (LISP/BGP or pub/sub) and underlay transport: `catc_update_fabric_site`.
 
 ## 4. Check it
@@ -83,7 +110,11 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
 - `catc_list_pending_fabric_events` and `catc_apply_pending_fabric_events`: drift Catalyst Center wants to push
   again (after an RMA, a reload, a failed provision).
 - `catc_run_show_commands` on the edges: `show lisp session`, `show vlan brief`, `show running-config interface
-  <port>`, `show access-session`.
+  <port>`, `show access-session`, `show aaa servers`, and with SGTs `show cts role-based sgt-map vrf <VN> all`
+  (the clients' IP-to-SGT bindings; the global table only lists the switch's own addresses). It takes up to 10
+  commands per call. Catalyst Center 3.2.2's command runner takes at most 5 per request, so the tool sends
+  them 5 at a time, one request after another, and merges each device's output; a raw `catc_api_call` to
+  `network-device-poller/cli/read-request` has to split them itself.
 - `catc_get_ssi_readiness`: Security Service Insertion readiness (a firewall at the border, with fmc).
 - `catc_get_lan_automation`, `catc_get_fabric_wireless`: LAN automation sessions and fabric wireless, read-only.
 
@@ -92,7 +123,9 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
 ISE stays the policy owner: security groups, SGACLs and the egress matrix are written with ise-mcp-server
 (`ise_set_sgt`, `ise_set_egress_policy`, `ise_push_trustsec_matrix`), and Catalyst Center proves what the edge
 enforces: `catc_get_group_policy_enforcement` reads the downloaded environment data, cells, counters and IP-to-SGT
-bindings (an SD-Access edge keeps the clients' bindings in their VN's VRF; the tool reads every VRF), and the
+bindings (an SD-Access edge keeps the clients' bindings in their VN's VRF and the global table only has the
+switch's own addresses, section 7; the tool reads the switch's VRFs, the first 4 or the ones in `vrfs`, and each
+binding shows its `vrf`), and the
 prompt `catc_group_policy_rollout` pairs the ISE change with the edge check and a test flow. The clients get
 their SGT from ISE's authorization result (or a static one: `catc_update_port_assignment` `security_group`).
 Catalyst Center 3.2.2 has no public intent API for security
@@ -129,7 +162,18 @@ first); `catc_delete_sda_object` removes a single object by id; `catc_delete_l3_
   move them into the location your policy set matches.
 - A border added without priority or prepends reads back `borderPriority: 10` and
   `prependAutonomousSystemCount: 0`, outside the 1–9 / 1–10 the API takes on a write; `catc_update_fabric_device`
-  sets them (priority 2 shows as `priority 2` on the border's LISP locators), but has no way back to the
-  unset default yet.
+  sets them (priority 2 shows as `priority 2` on the border's LISP locators). There is no way back to the unset
+  default: a `PUT sda/fabricDevices` with `borderPriority: 10` answers 400 `NCHS20769` ("The borderPriority
+  entered is invalid. Please make sure it is a number between 1 and 9."), so the closest is 9. Prepends take
+  1–10 only as well, so 0 (none) can't be sent back either (by the spec; not tried live).
+- The command runner (`POST network-device-poller/cli/read-request`) refuses more than 5 commands per request:
+  400 "Maximum of 5 commands allowed per request". `catc_run_show_commands` and the tools built on it split
+  longer lists into requests of 5.
+- On the lab's cat9000v (17.18), a RADIUS server marked DEAD stays DEAD after the path to ISE is fixed, until
+  the automate-tester probe (Catalyst Center's AAA provisioning sets `automate-tester username dummy probe-on`
+  on the server) gets an answer, minutes later; `show aaa servers` and the TrustSec environment data catch up
+  then. Re-read before deciding a fix didn't work.
+- An SD-Access edge keeps the clients' IP-to-SGT bindings in their VN's VRF (`show cts role-based sgt-map vrf
+  <VN> all`); `show cts role-based sgt-map all` only has the switch's own addresses.
 - `securityServiceInsertion/*` answers 403 to custom roles even with Security.SSI Read (the permission's
   maximum); a SUPER-ADMIN-ROLE account reads it.
