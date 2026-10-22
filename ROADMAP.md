@@ -1,5 +1,5 @@
 # catc-mcp-server roadmap
-_Last updated 2026-10-22: **v0.13.0 released**: Wave 6 parts E, F and G, SD-Access on the lab appliance with the `aca` + `sda` packages (D13, D90-D107, D109; proven live in the `mcp-catc-fabric` lab, see #20). D108 (Catalyst Center-authored group-based policy) stays held: the owner kept ISE as the policy owner. Part H (D110-D114) is planned. Earlier: v0.12.0 on 2026-10-21 (Wave 6 part D, Catalyst Center ↔ ISE)._
+_Last updated 2026-10-22 (later): **v0.14.0 released**: the second SD-Access live run on two lab fabrics (D94-D99, D104, D105 multi-site, D110 AAA readiness, D112 EAP-TLS, D113 lab 0.4.x proven and closed; D114 backup tools), plus the fixes it found. Open: D97 zone delete, D100 apply, D101 prompt live run, D106 device onboarding (needs real extended-node hardware), D114 live backup (needs a target); D108 held. Earlier: v0.13.0 on 2026-10-22._
 
 ## Summary
 - v0.3.0 covers onboarding, day-N change, troubleshooting, on-demand activity lookups, network profiles and compliance policies against Catalyst Center 3.2.2: 95 tools and the `catc_onboard_device` prompt (v0.2.0 had 81 tools, 34 of 38 operator workflows curated; v0.3.0 adds template-to-profile attach), with live tests on real CML devices (r1/r2 cat8000v, sw1/sw2 cat9000v). Everything else is reachable through `catc_api_call`, except 12 multipart/binary operations.
