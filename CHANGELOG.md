@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `catc_set_fabric_multicast`: an RP given with `asm_ranges` is now a non-default RP for those ranges, and ranges given
+  without `rp` go only to the VN's non-default RP. Catalyst Center 3.2.2 refuses ASM ranges on the default RP ("Default
+  Rendezvous Point ... can't have ASM Group Ranges configured", seen live 2026-10-22); the tool marked every RP it built as
+  the default, so any call with ranges failed after the preview.
+
 ## 0.13.0 (2026-10-22)
 
 SD-Access (Wave 6 parts E, F and G), proven live on Catalyst Center 3.2.2 with the `aca` + `sda` packages deployed, ISE 3.5 and the CML `mcp-catc-fabric` lab: fabric teardown (D13), authentication templates (D90), group-based policy verified on the edge with ISE as the policy owner (D91), fabric health (D92), transits and layer 3 handoffs (D93), layer 2 VNs and handoffs (D94), extranet policies (D95), multicast (D96), fabric zones (D97), port channels (D98), in-place gateway and port edits (D99), pending fabric events (D100), the `catc_build_fabric_site` prompt (D101), LAN automation and fabric wireless reads (D102), border and fabric site changes (D103, D104), anchored VNs (D105), extended nodes (D106), SSI readiness (D107) and docs/sd-access.md (D109). Also: the NAC onboarding prompt ends with ISE NAD coverage (D9), least-privilege roles gain the permissions the SD-Access packages add (re-run the seed step after installing them), and the command runner sends at most 5 commands per request.
