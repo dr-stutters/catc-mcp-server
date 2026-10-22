@@ -86,7 +86,7 @@ CMDS = {
 def test_parsers_on_recorded_output() -> None:
     env = parse_environment(ENV)
     assert env["state"] == "COMPLETE" and env["device_sgt"] == "2-00:TrustSec_Devices"
-    assert env["servers"] == [{"ip": "198.18.134.35", "port": 1812, "preferred": True}]
+    assert env["servers"] == [{"ip": "198.18.134.35", "port": 1812, "preferred": True, "status": "ALIVE"}]
     assert env["groups"] == {
         0: "Unknown",
         2: "TrustSec_Devices",
