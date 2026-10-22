@@ -56,7 +56,7 @@ WRITE: dict[str, str] = {
     "Network Design.Wireless Maps": "Write",  # floors (POST/PUT/DELETE /v2/floors are map operations)
     "Network Management.Discovery": "Write",
     "Network Management.Hierarchy": "Write",  # sites, assign devices to sites
-    "Network Management.Inventory": "Write",  # resync, tags
+    "Network Management.Inventory": "Write",  # resync, device role (network-device/brief), tags
     "Network Operations.Compliance": "Write",  # compliance runs and policies
     "Network Operations.Device Replacement & Refresh": "Write",  # mark for replacement
     "Network Operations.SWIM": "Write",  # golden tagging (distribute/activate are MCP-dangerous)

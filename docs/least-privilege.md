@@ -82,7 +82,7 @@ Everything in `mcp-catc-ro`, plus Write on:
 | Network Design.Wireless Maps | creating, updating and deleting **floors** (`/v2/floors`) |
 | Network Management.Discovery | `catc_create_discovery` |
 | Network Management.Hierarchy | `catc_create_site`, `catc_update_site`, `catc_assign_devices_to_site` |
-| Network Management.Inventory | `catc_resync_devices`, tags and tag members |
+| Network Management.Inventory | `catc_resync_devices`, `catc_set_device_role` (`PUT network-device/brief`), tags and tag members |
 | Network Operations.Compliance | `catc_run_compliance`, compliance policies |
 | Network Operations.Device Replacement & Refresh | `catc_mark_device_for_replacement` |
 | Network Operations.SWIM | `catc_tag_golden_image` |

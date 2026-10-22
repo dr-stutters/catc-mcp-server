@@ -28,8 +28,8 @@ DEV2 = {
 TAG = {"id": "99999999-1111-2222-3333-444444444444", "name": "access"}
 
 
-def mock_inventory(api: respx.MockRouter) -> None:
-    devices = [DEVICE, DEV2]
+def mock_inventory(api: respx.MockRouter, devices: list[dict[str, Any]] | None = None) -> None:
+    devices = devices or [DEVICE, DEV2]
 
     def by_query(request: httpx.Request) -> httpx.Response:
         q = request.url.params

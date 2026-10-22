@@ -45,6 +45,30 @@ RESERVED_VLANS = {1, 1002, 1003, 1004, 1005, 2046, 4094}
 HANDOFFS = "fabricDevices/layer2Handoffs"
 
 
+def handoff_prerequisites(dev: dict[str, Any], fdev: dict[str, Any]) -> list[str]:
+    """What Catalyst Center 3.2.2 checks only when it applies a layer 2 handoff (both seen live 2026-10-22 on
+    bcp2, lab mcp-catc-fabric2): the border's fabric record must carry the LAYER_2 border type, and the
+    device's inventory role must not be ACCESS (auto-classified switches often are)."""
+    name = brief([dev])[0]
+    ref = dev.get("managementIpAddress") or dev.get("id")
+    out: list[str] = []
+    types = [str(t) for t in ensure_list((fdev.get("borderDeviceSettings") or {}).get("borderTypes"))]
+    if "LAYER_2" not in types:
+        out.append(
+            f"{name} is not a layer 2 border (border types: {', '.join(types) or 'LAYER_3'}). Catalyst "
+            "Center refuses the handoff with NCHS20177 '... is not a Layer 2 Border device in fabric ...'. "
+            f"Add the type first: catc_update_fabric_device(device='{ref}', layer2_border=true)."
+        )
+    if str(dev.get("role") or "").upper() == "ACCESS":
+        out.append(
+            f"{name} has the inventory role ACCESS. Catalyst Center fails the handoff task with 'Layer 2 "
+            "Handoff isn't supported on a device that is assigned an ACCESS role in the inventory. Assign a "
+            "Border role to the device in the inventory and retry.' Set it first: "
+            f"catc_set_device_role(devices=['{ref}'], role='BORDER ROUTER')."
+        )
+    return out
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.dangerous(title="Set layer 2 virtual network", task=True)
     async def catc_set_l2_virtual_network(
@@ -227,7 +251,10 @@ def register(reg: ToolRegistrar) -> None:
         """Set or remove a layer 2 handoff: a fabric VLAN extended out of a border port into a VLAN of a
         traditional network. The fabric VLAN is a layer 2 VN or an anycast gateway's VLAN (by name or id); the
         external VLAN defaults to the same id. Catalyst Center configures the border port as a trunk carrying
-        it. Preview-first: refuses a VLAN already handed off on that port."""
+        it. The border needs the layer 2 border type (catc_update_fabric_device layer2_border=true) and an
+        inventory role other than ACCESS (catc_set_device_role, e.g. BORDER ROUTER): Catalyst Center checks
+        both only when it applies the handoff. Preview-first: refuses a VLAN already handed off on that port
+        and a border missing either prerequisite."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, border)
         fdev = next(
@@ -275,6 +302,7 @@ def register(reg: ToolRegistrar) -> None:
                 if h not in mine
             ):
                 blockers.append(f"External VLAN {external} is already used on {interface}.")
+            blockers += handoff_prerequisites(dev, fdev)
             method, path = "POST", f"{SDA}/{HANDOFFS}"
             body = {
                 "networkDeviceId": dev["id"],
