@@ -139,7 +139,10 @@
   (`PUT sda/authenticationProfiles`, one request at a time as the API asks; unset settings keep their value).
   The preview shows current -> new per field, the edges Catalyst Center pushes to, and how many ports follow
   the default. BPDU guard is refused off Closed, the pre-auth ACL off Low Impact, settings on No
-  Authentication. `catc_assign_fabric_port` keeps its per-port template.
+  Authentication. `catc_assign_fabric_port` keeps its per-port template. Live-proven 2026-10-22 on the lab
+  fabric: Closed Authentication with MAB first (3 s fallback) moved both edge ports to
+  `PMAP_DefaultWiredDot1xClosedAuth_MAB_1X`, and both clients came up Authorized by MAB with their SGT and dACL
+  from ISE.
 
 ### Changed
 - Least-privilege roles after the SD-Access packages (Wave 6 part E): `mcp-catc-ro` gains Policy.Group-Based
