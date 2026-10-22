@@ -57,6 +57,8 @@ async def test_vn_and_devices(api: respx.MockRouter) -> None:
 
 async def test_403_names_the_permission(api: respx.MockRouter) -> None:
     api.get(BASE).respond(403, json={"message": "Role does not have valid permissions to access the API"})
-    with pytest.raises(ToolError, match="Security.SSI Read"):
+    with pytest.raises(ToolError, match="Security.SSI Read") as err:
         await call("catc_get_ssi_readiness")
+    # live 2026-10-21: a custom role with Security.SSI Read still gets 403; SUPER-ADMIN-ROLE reads it
+    assert "SUPER-ADMIN-ROLE" in str(err.value)
     assert rbac.READ["Security.SSI"] == "Read"

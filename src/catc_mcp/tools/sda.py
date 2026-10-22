@@ -57,6 +57,21 @@ async def fabric_devices(app: CatcApp, network_device_id: str | None = None) -> 
     return out
 
 
+async def edge_labels(app: CatcApp, devices: list[dict[str, Any]]) -> list[str]:
+    """'hostname (management IP)' of each fabric device record, for previews; the device id when the
+    inventory has none."""
+    ids = [str(d["networkDeviceId"]) for d in devices if d.get("networkDeviceId")]
+    if not ids:
+        return []
+    found: dict[str, dict[str, Any]] = {}
+    with contextlib.suppress(UpstreamError):
+        rows = ensure_list(
+            await app.get_response("/dna/intent/api/v1/network-device", {"id": ",".join(ids[:100])})
+        )
+        found = {str(r.get("id")): r for r in rows if isinstance(r, dict)}
+    return [brief([found[i]])[0] if i in found else i for i in ids]
+
+
 async def resolve_fabric(app: CatcApp, ref: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """(fabric site record, site) from a site name/id or a fabric id."""
     fabrics = await sda_list(app, "fabricSites")
@@ -509,7 +524,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Add an anycast gateway for {ip_pool} in {virtual_network} at {fsite.get('nameHierarchy')}",
             details={
-                "edges": [d.get("networkDeviceId") for d in edges],
+                "edges": await edge_labels(app, edges),
                 "method": "POST",
                 "path": f"{SDA}/anycastGateways",
                 "body": [item],

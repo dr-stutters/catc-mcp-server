@@ -3,7 +3,9 @@
 Security Service Insertion (SSI) sends a virtual network's traffic through a firewall at the fabric border
 (the Secure Firewall that fmc-mcp-server manages). Before configuring it, Catalyst Center rates each fabric
 site, each of its virtual networks and each fabric device as ready or not, with a message saying why. The
-reads need the Security.SSI permission (Read) on the account's role.
+reads need the Security.SSI permission (Read) on the account's role. On 3.2.2 that is not enough: a custom
+role with Security.SSI Read (the permission's maximum) still gets 403 on every SSI endpoint, while
+SUPER-ADMIN-ROLE reads them (live, 2026-10-21).
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
@@ -20,7 +22,8 @@ from catc_mcp.tools.sda import resolve_fabric
 BASE = "/dna/intent/api/v1/securityServiceInsertion/fabricSitesReadiness"
 DENIED = (
     "Catalyst Center refused the Security Service Insertion API (403): the account's role needs Security.SSI "
-    "Read (docs/least-privilege.md)."
+    "Read, and on Catalyst Center 3.2.2 custom roles get 403 even with it: read SSI readiness as a "
+    "SUPER-ADMIN-ROLE account (docs/least-privilege.md)."
 )
 
 

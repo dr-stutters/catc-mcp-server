@@ -115,9 +115,15 @@ async def test_add_border_cp(api: respx.MockRouter) -> None:
 
 async def test_anycast_gateway_counts_edges(api: respx.MockRouter) -> None:
     edges = [
-        {"id": f"fd{i}", "networkDeviceId": f"d{i}", "fabricId": FID, "deviceRoles": ["EDGE_NODE"]}
+        {
+            "id": f"fd{i}",
+            "networkDeviceId": DEV_ID if i == 0 else f"d{i}",
+            "fabricId": FID,
+            "deviceRoles": ["EDGE_NODE"],
+        }
         for i in range(3)
     ]
+    mock_inventory(api)
     mock_fabric(api, edges)
     api.get(f"{SDA}/layer3VirtualNetworks").respond(
         json={"response": [{"virtualNetworkName": "CORP", "fabricIds": [FID]}]}
@@ -129,6 +135,8 @@ async def test_anycast_gateway_counts_edges(api: respx.MockRouter) -> None:
     args = {"fabric_site": FID, "virtual_network": "CORP", "ip_pool": "corp-pool"}
     out, _ = await flow("catc_add_anycast_gateway", args)
     assert out["status"] == "preview" and out["blast_radius"] == 3
+    # edges by name where the inventory knows them, else the device id
+    assert out["preview"]["edges"] == ["edge-sw1.lab.local (10.0.0.11)", "d1", "d2"]
     assert out["preview"]["body"][0]["autoGenerateVlanName"] is True
     out, _ = await flow("catc_add_anycast_gateway", {**args, "ip_pool": "missing"})
     assert "No IP pool 'missing'" in " ".join(out["blockers"])

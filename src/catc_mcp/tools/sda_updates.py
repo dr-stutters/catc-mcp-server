@@ -26,7 +26,16 @@ from catc_mcp.client import CatcApp
 from catc_mcp.common import resolve_device
 from catc_mcp.safety import device_limit_blockers
 from catc_mcp.tools.ops_writes import brief
-from catc_mcp.tools.sda import SDA, AuthProfile, FabricRef, fabric_devices, resolve_fabric, sda_job, sda_list
+from catc_mcp.tools.sda import (
+    SDA,
+    AuthProfile,
+    FabricRef,
+    edge_labels,
+    fabric_devices,
+    resolve_fabric,
+    sda_job,
+    sda_list,
+)
 
 # Fields the PUT body carries for a gateway (the required ones plus the optional settings it keeps).
 GW_FIELDS = [
@@ -162,7 +171,7 @@ def register(reg: ToolRegistrar) -> None:
         plan = Plan(
             f"Update the anycast gateway {gw.get('ipPoolName')} ({gw.get('vlanName')}) in "
             f"{gw.get('virtualNetworkName')} at {fsite.get('nameHierarchy')}",
-            details={"changes": changed, "edges": [d.get("networkDeviceId") for d in edges], "body": [after]},
+            details={"changes": changed, "edges": await edge_labels(app, edges), "body": [after]},
             side_effects=[f"Catalyst Center pushes the SVI change to {len(edges)} edge device(s)."],
             fingerprint={"gateway": gw},
             blockers=blockers,
