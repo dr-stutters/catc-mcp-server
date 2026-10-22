@@ -35,6 +35,7 @@ from catc_mcp.tools import (
     prompts,
     reports,
     sda,
+    sda_aaa,
     sda_anchor,
     sda_auth,
     sda_device_update,
@@ -81,7 +82,8 @@ Workflows:
   catc_compare_device_configs.
 - SD-Access: provision the devices -> catc_create_fabric_site -> catc_add_fabric_device (control plane/
   border first, then edges) -> catc_create_virtual_network -> catc_create_ip_pool (reserve at the site) ->
-  catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric. Tear down:
+  catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric, and AAA to ISE from
+  the RLOCs (RADIUS state, ISE NAD, TrustSec environment data) with catc_check_fabric_aaa. Tear down:
   catc_delete_fabric_device / catc_delete_fabric_site (cascade=true removes everything in reverse order).
   Way out of the fabric: catc_create_transit_network -> catc_add_l3_handoff (border, per VN VLAN + eBGP).
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
@@ -163,6 +165,7 @@ REGISTER = [
     sda_extranet.register,
     sda_discovery.register,
     sda_health.register,
+    sda_aaa.register,
     sda_updates.register,
     sda_events.register,
     sda_zones.register,

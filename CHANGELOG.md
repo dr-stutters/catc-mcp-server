@@ -28,6 +28,27 @@
     - the command runner's 5-commands-per-request limit (#206);
     - client bindings in the VN's VRF (#162);
     - the DEAD-until-probe behaviour.
+### Added
+- **SD-Access fabric AAA readiness (D110, #207, Wave 6 part H).** `catc_check_fabric_aaa(fabric_site, ise_nads?,
+  expected_location?, devices?)` (read): whether every fabric device at a fabric site can do AAA with ISE. One
+  command-runner request (5 commands) for every fabric device (up to 20; control plane and border first) reads
+  `show aaa servers`, `show cts environment-data`, `show cts pacs`, the RADIUS config and the interface
+  addresses, and returns per device the address its RADIUS comes from (`ip radius source-interface`: Loopback0,
+  the RLOC, on a fabric device), each RADIUS server's state (UP/DEAD, for how long, dead count, timeouts,
+  automate-tester), the dead timer, TrustSec environment data (state, servers, groups) and the PAC (never its
+  opaque blob), with a verdict (ok, warning, fail) and findings that each carry the fix to preview:
+  `radius_dead` (a route from ISE back to the RLOC, the NAD, the shared secret; deadtime vs automate-tester),
+  `environment_data`, `no_pac` / `pac_expired`, `source_without_ip`, `no_radius_server`. The ISE half comes from
+  ise-mcp-server: `ise_nads` takes `ise_list_nads(response_format='json')` results (or `ise_get_nad` records) as
+  they are and adds the NAD covering each RLOC /32 (most specific match), its location and TrustSec settings
+  (`missing_nad`, also when a NAD covers only the management IP; `wrong_location` against `expected_location`;
+  `default_location` when the NAD is only in `Location#All Locations`; `nad_without_trustsec`); without it the
+  result's `ise_check` gives the `ise_audit_nads(expected=..., check_stale=false)` arguments and the
+  `ise_policy_explain` call for the location. Live-read on the lab fabric (bcp + edge1): both ok, and edge1's
+  earlier DEAD spell (3 times, 14502 s) shows as a note. cat9000v 17.18 prints a spurious "%Failed to update
+  configuration in the database" line in `show aaa servers`, which makes the command runner report the command
+  as failed, so the tool filters that line out. `catc_get_group_policy_enforcement`'s environment servers now
+  carry their status (ALIVE / DEAD) too.
 
 ## 0.13.0 (2026-10-22)
 

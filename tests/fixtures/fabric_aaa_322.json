@@ -1,0 +1,89 @@
+{
+  "_source": "catc_run_show_commands on the mcp-catc-fabric lab (Catalyst Center 3.2.2, cat9000v 17.18.2), fabric site Global/mcp-test-lab/mcp-test-fabric, 2026-10-22; ise_list_nads(response_format='json') from ISE 3.5 the same day. The PAC-Opaque blob is replaced.",
+  "fabric_devices": [
+    {
+      "id": "ae1284a0-c9c8-4937-97d5-cb78f2ee9235",
+      "networkDeviceId": "9994d71b-cb15-4454-baf2-e37e5a127d18",
+      "deviceRoles": [
+        "EDGE_NODE"
+      ]
+    },
+    {
+      "id": "2ae0679a-cb7b-4a0d-a014-bf57a49cc693",
+      "networkDeviceId": "f6d26222-8ae4-4019-990f-fdc31476efcc",
+      "deviceRoles": [
+        "BORDER_NODE",
+        "CONTROL_PLANE_NODE"
+      ]
+    }
+  ],
+  "inventory": [
+    {
+      "id": "9994d71b-cb15-4454-baf2-e37e5a127d18",
+      "hostname": "mcp-catc-fab-edge1.mcp.lab",
+      "managementIpAddress": "198.18.128.175"
+    },
+    {
+      "id": "f6d26222-8ae4-4019-990f-fdc31476efcc",
+      "hostname": "mcp-catc-fab-bcp.mcp.lab",
+      "managementIpAddress": "198.18.128.176"
+    }
+  ],
+  "outputs": {
+    "mcp-catc-fab-edge1.mcp.lab": {
+      "show aaa servers | exclude Failed to update": "RADIUS: id 1, priority 1, host 198.18.134.35, auth-port 1812, acct-port 1813, hostname dnac-radius_198.18.134.35\n     State: current UP, duration 22583s, previous duration 2s\n     Dead: total time 14502s, count 3\n     Platform State from SMD: current UP, duration 22619s, previous duration 14489s\n     SMD Platform Dead: total time 14489s, count 2\n     Platform State from WNCD (0) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (1) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (2) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (3) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (4) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (5) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (6) : current UP, duration 39743s, previous duration 0s\n     Platform State from WNCD (7) : current UP, duration 39743s, previous duration 0s\n     WNCD Platform Dead: total time 0s, count 0UPUP\n     Quarantined: No\n     Authen: request 676, timeouts 672, failover 0, retransmission 504\n             Response: accept 2, reject 2, challenge 0\n             Response: unexpected 0, server error 0, incorrect 0, time 81ms\n             Transaction: success 4, failure 168\n             Throttled: transaction 0, timeout 0, failure 0\n             Malformed responses: 0\n             Bad authenticators: 0\n             Dot1x transactions:\n             Response: total responses: 0, avg response time: 0ms\n             Transaction: timeouts 0, failover 0\n             Transaction: total 0, success 0, failure 0\n             MAC auth transactions:\n             Response: total responses: 2, avg response time: 145ms\n             Transaction: timeouts 0, failover 0\n             Transaction: total 2, success 2, failure 0\n     Author: request 8, timeouts 0, failover 0, retransmission 0\n             Response: accept 8, reject 0, challenge 0\n             Response: unexpected 0, server error 0, incorrect 0, time 82ms\n             Transaction: success 8, failure 0\n             Throttled: transaction 0, timeout 0, failure 0\n             Malformed responses: 0\n             Bad authenticators: 0\n             MAC author transactions:\n             Response: total responses: 0, avg response time: 0ms\n             Transaction: timeouts 0, failover 0\n             Transaction: total 0, success 0, failure 0\n     Account: request 2, timeouts 0, failover 0, retransmission 0\n             Request: start 2, interim 0, stop 0\n             Response: start 2, interim 0, stop 0\n             Response: unexpected 0, server error 0, incorrect 0, time 54ms\n             Transaction: success 2, failure 0\n             Throttled: transaction 0, timeout 0, failure 0\n             Malformed responses: 0\n             Bad authenticators: 0\n     Elapsed time since counters last cleared: 10h18m\n     Estimated Outstanding Access Transactions: 0\n     Estimated Outstanding Accounting Transactions: 0\n     Estimated Throttled Access Transactions: 0\n     Estimated Throttled Accounting Transactions: 0\n     Maximum Throttled Transactions: access 0, accounting 0\n     Consecutive Response Failures: total 166\n             SMD Platform : max 83, current 0 total 83\n             WNCD Platform: max 0, current 0 total 0\n             IOSD Platform : max 83, current 0 total 83\n     Consecutive Timeouts: total 670\n             SMD Platform : max 335, current 0 total 335\n             WNCD Platform: max 0, current 0 total 0\n             IOSD Platform : max 335, current 0 total 335\n     Requests per minute past 24 hours:\n             high - 10 hours, 16 minutes ago: 15\n             low  - 10 hours, 14 minutes ago: 0\n             average: 0",
+      "show cts environment-data": "CTS Environment Data\n====================\nCurrent state = COMPLETE\nLast status = Successful\nService Info Table:\nLocal Device SGT:\n  SGT tag = 2-00:TrustSec_Devices\nServer List Info:\nInstalled list: CTSServerList1-0001, 1 server(s):\n *Server: 198.18.134.35, port 1812, A-ID DDDC056F4339C0EA4D56FA3DB6FFE275\n          Status = ALIVE\n          auto-test = TRUE, keywrap-enable = FALSE, idle-time = 60 mins, deadtime = 20 secs\nSecurity Group Name Table:\n    0-00:Unknown\n    2-00:TrustSec_Devices\n    3-00:Network_Services\n    4-00:Employees\n    5-00:Contractors\n    6-00:Guests\n    7-00:Production_Users\n    8-00:Developers\n    9-00:Auditors\n    10-00:Point_of_Sale_Systems\n    11-06:Production_Servers\n    12-00:Development_Servers\n    13-00:Test_Servers\n    14-00:PCI_Servers\n    15-00:BYOD\n    40-00:mcp_fab_src\n    41-00:mcp_fab_dst\n    255-00:Quarantined_Systems\nEnvironment Data Lifetime = 86400 secs\nLast update time = 02:33:38 UTC Thu Oct 22 2026\nEnv-data expires in   0:17:43:32 (dd:hr:mm:sec)\nEnv-data refreshes in 0:17:43:32 (dd:hr:mm:sec)\nCache data applied           = NONE\nState Machine is running\nRetry_timer (60 secs) is not running",
+      "show cts pacs": "AID: DDDC056F4339C0EA4D56FA3DB6FFE275\nPAC-Info:\n  PAC-type = Cisco Trustsec\n  AID: DDDC056F4339C0EA4D56FA3DB6FFE275\n  I-ID: 9994d71bcb154454baf2e37e5a127d18\n  A-ID-Info: Identity Services Engine\n  Credential Lifetime: 02:33:38 UTC Wed Jan 20 2027\nPAC-Opaque: 000200CC00030001000400100000000000000000000000000000PACOPAQUEPLACEHOLDER\nRefresh timer is set for 12w4d",
+      "show running-config | section radius": "aaa group server radius dnac-client-radius-group\n server name dnac-radius_198.18.134.35\n ip radius source-interface Loopback0\naaa authentication login dnac-cts-list group dnac-client-radius-group local\naaa authentication dot1x default group dnac-client-radius-group\naaa authorization network default group dnac-client-radius-group\naaa authorization network dnac-cts-list group dnac-client-radius-group\naaa accounting identity default start-stop group dnac-client-radius-group\naaa server radius dynamic-author\n client 198.18.134.35 server-key 7 ********\nip radius source-interface Loopback0\nradius-server attribute 6 on-for-login-auth\nradius-server attribute 6 support-multiple\nradius-server attribute 8 include-in-access-req\nradius-server attribute 25 access-request include\nradius-server attribute 31 mac format ietf upper-case\nradius-server attribute 31 send nas-port-detail mac-only\nradius-server dead-criteria time 5 tries 3\nradius-server deadtime 3\nradius server dnac-radius_198.18.134.35\n address ipv4 198.18.134.35 auth-port 1812 acct-port 1813\n timeout 4\n retransmit 3\n automate-tester username dummy ignore-acct-port probe-on\n  pac key 7 ********",
+      "show ip interface brief | exclude unassigned": "Interface              IP-Address      OK? Method Status                Protocol\nVlan1040               10.10.40.1      YES manual up                    up\nGigabitEthernet1/0/1   198.18.128.175  YES TFTP   up                    up\nGigabitEthernet1/0/2   10.255.20.2     YES TFTP   up                    up\nL2LISP0                10.255.255.12   YES unset  up                    up\nL2LISP0.8188           10.255.255.12   YES unset  up                    up\nL2LISP0.8189           10.255.255.12   YES unset  up                    up\nLISP0.4099             10.10.40.1      YES unset  up                    up\nLoopback0              10.255.255.12   YES TFTP   up                    up      "
+    },
+    "mcp-catc-fab-bcp.mcp.lab": {
+      "show aaa servers | exclude Failed to update": "RADIUS: id 1, priority 1, host 198.18.134.35, auth-port 1812, acct-port 1813, hostname dnac-radius_198.18.134.35\n     State: current UP, duration 22572s, previous duration 14s\n     Dead: total time 14514s, count 3\n     Platform State from SMD: current UP, duration 22620s, previous duration 14489s\n     SMD Platform Dead: total time 14489s, count 2\n     Platform State from WNCD (0) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (1) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (2) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (3) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (4) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (5) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (6) : current UP, duration 39736s, previous duration 0s\n     Platform State from WNCD (7) : current UP, duration 39736s, previous duration 0s\n     WNCD Platform Dead: total time 0s, count 0UPUP\n     Quarantined: No\n     Authen: request 674, timeouts 672, failover 0, retransmission 504\n             Response: accept 0, reject 2, challenge 0\n             Response: unexpected 0, server error 0, incorrect 0, time 40ms\n             Transaction: success 2, failure 168\n             Throttled: transaction 0, timeout 0, failure 0\n             Malformed responses: 0\n             Bad authenticators: 0\n             Dot1x transactions:\n             Response: total responses: 0, avg response time: 0ms\n             Transaction: timeouts 0, failover 0\n             Transaction: total 0, success 0, failure 0\n             MAC auth transactions:\n             Response: total responses: 0, avg response time: 0ms\n             Transaction: timeouts 0, failover 0\n             Transaction: total 0, success 0, failure 0\n     Author: request 7, timeouts 0, failover 0, retransmission 0\n             Response: accept 7, reject 0, challenge 0\n             Response: unexpected 0, server error 0, incorrect 0, time 50ms\n             Transaction: success 7, failure 0\n             Throttled: transaction 0, timeout 0, failure 0\n             Malformed responses: 0\n             Bad authenticators: 0\n             MAC author transactions:\n             Response: total responses: 0, avg response time: 0ms\n             Transaction: timeouts 0, failover 0\n             Transaction: total 0, success 0, failure 0\n     Account: request 0, timeouts 0, failover 0, retransmission 0\n             Request: start 0, interim 0, stop 0\n             Response: start 0, interim 0, stop 0\n             Response: unexpected 0, server error 0, incorrect 0, time 0ms\n             Transaction: success 0, failure 0\n             Throttled: transaction 0, timeout 0, failure 0\n             Malformed responses: 0\n             Bad authenticators: 0\n     Elapsed time since counters last cleared: 10h18m\n     Estimated Outstanding Access Transactions: 0\n     Estimated Outstanding Accounting Transactions: 0\n     Estimated Throttled Access Transactions: 0\n     Estimated Throttled Accounting Transactions: 0\n     Maximum Throttled Transactions: access 0, accounting 0\n     Consecutive Response Failures: total 166\n             SMD Platform : max 83, current 0 total 83\n             WNCD Platform: max 0, current 0 total 0\n             IOSD Platform : max 83, current 0 total 83\n     Consecutive Timeouts: total 670\n             SMD Platform : max 335, current 0 total 335\n             WNCD Platform: max 0, current 0 total 0\n             IOSD Platform : max 335, current 0 total 335\n     Requests per minute past 24 hours:\n             high - 10 hours, 16 minutes ago: 15\n             low  - 10 hours, 14 minutes ago: 0\n             average: 0",
+      "show cts environment-data": "CTS Environment Data\n====================\nCurrent state = COMPLETE\nLast status = Successful\nService Info Table:\nLocal Device SGT:\n  SGT tag = 2-00:TrustSec_Devices\nServer List Info:\nInstalled list: CTSServerList1-0001, 1 server(s):\n *Server: 198.18.134.35, port 1812, A-ID DDDC056F4339C0EA4D56FA3DB6FFE275\n          Status = ALIVE\n          auto-test = TRUE, keywrap-enable = FALSE, idle-time = 60 mins, deadtime = 20 secs\nSecurity Group Name Table:\n    0-00:Unknown\n    2-00:TrustSec_Devices\n    3-00:Network_Services\n    4-00:Employees\n    5-00:Contractors\n    6-00:Guests\n    7-00:Production_Users\n    8-00:Developers\n    9-00:Auditors\n    10-00:Point_of_Sale_Systems\n    11-06:Production_Servers\n    12-00:Development_Servers\n    13-00:Test_Servers\n    14-00:PCI_Servers\n    15-00:BYOD\n    40-00:mcp_fab_src\n    41-00:mcp_fab_dst\n    255-00:Quarantined_Systems\nEnvironment Data Lifetime = 86400 secs\nLast update time = 02:33:38 UTC Thu Oct 22 2026\nEnv-data expires in   0:17:43:32 (dd:hr:mm:sec)\nEnv-data refreshes in 0:17:43:32 (dd:hr:mm:sec)\nCache data applied           = NONE\nState Machine is running\nRetry_timer (60 secs) is not running",
+      "show cts pacs": "AID: DDDC056F4339C0EA4D56FA3DB6FFE275\nPAC-Info:\n  PAC-type = Cisco Trustsec\n  AID: DDDC056F4339C0EA4D56FA3DB6FFE275\n  I-ID: f6d262228ae44019990ffdc31476efcc\n  A-ID-Info: Identity Services Engine\n  Credential Lifetime: 02:33:38 UTC Wed Jan 20 2027\nPAC-Opaque: 000200CC00030001000400100000000000000000000000000000PACOPAQUEPLACEHOLDER\nRefresh timer is set for 12w4d",
+      "show running-config | section radius": "aaa group server radius dnac-client-radius-group\n server name dnac-radius_198.18.134.35\n ip radius source-interface Loopback0\naaa authentication login dnac-cts-list group dnac-client-radius-group local\naaa authentication dot1x default group dnac-client-radius-group\naaa authorization network default group dnac-client-radius-group\naaa authorization network dnac-cts-list group dnac-client-radius-group\naaa accounting identity default start-stop group dnac-client-radius-group\naaa server radius dynamic-author\n client 198.18.134.35 server-key 7 ********\nip radius source-interface Loopback0\nradius-server attribute 6 on-for-login-auth\nradius-server attribute 6 support-multiple\nradius-server attribute 8 include-in-access-req\nradius-server attribute 25 access-request include\nradius-server attribute 31 mac format ietf upper-case\nradius-server attribute 31 send nas-port-detail mac-only\nradius-server dead-criteria time 5 tries 3\nradius-server deadtime 3\nradius server dnac-radius_198.18.134.35\n address ipv4 198.18.134.35 auth-port 1812 acct-port 1813\n timeout 4\n retransmit 3\n automate-tester username dummy ignore-acct-port probe-on\n  pac key 7 ********",
+      "show ip interface brief | exclude unassigned": "Interface              IP-Address      OK? Method Status                Protocol\nVlan3001               10.255.30.1     YES manual up                    up\nGigabitEthernet1/0/1   198.18.128.176  YES TFTP   up                    up\nGigabitEthernet1/0/2   10.255.20.1     YES TFTP   up                    up\nGigabitEthernet1/0/3   10.255.20.5     YES TFTP   up                    up\nGigabitEthernet1/0/4   10.255.20.9     YES TFTP   up                    up\nLISP0.4099             10.255.30.1     YES unset  up                    up\nLISP0.4100             10.10.40.1      YES unset  up                    up\nLoopback0              10.255.255.11   YES TFTP   up                    up\nLoopback1040           10.10.40.1      YES manual up                    up\nLoopback7520           10.10.40.1      YES manual up                    up      "
+    }
+  },
+  "aaa_servers_unfiltered_failure": "Error occurred while running the 'show aaa servers' command.\n%Failed to update configuration in the database. Please revert the configuration manually and error is Invalid argument ",
+  "ise_nads": [
+    {
+      "name": "mcp-catc-fab-bcp.mcp.lab",
+      "id": "58cdea20-cd9f-11f1-b4ef-aecc499b6f77",
+      "ips": [
+        "10.255.255.11/32",
+        "198.18.128.176/32"
+      ],
+      "groups": [
+        "Location#All Locations#mcp-test-lab",
+        "Device Type#All Device Types",
+        "IPSEC#Is IPSEC Device#No"
+      ],
+      "radius": "secret set",
+      "tacacs": "no",
+      "snmp": "TWO_C",
+      "trustsec": "yes",
+      "profile": "Cisco",
+      "coa_port": 1700
+    },
+    {
+      "name": "mcp-catc-fab-edge1.mcp.lab",
+      "id": "5c3753e0-cd9f-11f1-b4ef-aecc499b6f77",
+      "ips": [
+        "10.255.255.12/32",
+        "198.18.128.175/32"
+      ],
+      "groups": [
+        "Location#All Locations#mcp-test-lab",
+        "Device Type#All Device Types",
+        "IPSEC#Is IPSEC Device#No"
+      ],
+      "radius": "secret set",
+      "tacacs": "no",
+      "snmp": "TWO_C",
+      "trustsec": "yes",
+      "profile": "Cisco",
+      "coa_port": 1700
+    }
+  ]
+}
