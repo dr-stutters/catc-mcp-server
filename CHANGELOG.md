@@ -6,6 +6,22 @@
 - `catc_anchor_virtual_network`: a new anchor is now two PUTs, the anchor site alone and then the extension to the other
   sites, and a VN already on other sites is refused in the preview. Catalyst Center 3.2.2 answers an anchoring request
   with several sites with NCHS20464 "each VN could only be anchored to one site only" (live 2026-10-22, lab mcp-catc-fabric2).
+- `catc_update_fabric_site` (D104, #189): the preview blocks a pub/sub change while the fabric site has fabric
+  devices and lists them in removal order (edges before the control plane / border). Catalyst Center 3.2.2 refuses
+  it ("NCHS20420: ... isPubSubEnabled cannot be updated while there are devices in the fabric.", seen live
+  2026-10-22) after a clean preview. The way through, proven live: remove the devices with
+  `catc_delete_fabric_device`, change the mode, add them back with `catc_add_fabric_device` (they come back in
+  the new mode). An underlay transport change was not tried live and is not blocked; the docstring says so.
+- `catc_add_l3_handoff` onto an SD-Access transit (D93, #164): the preview blocks while the border's fabric site
+  has extranet policies and names them. Catalyst Center 3.2.2 refuses the handoff ("Failed to add SD-Access
+  Transit ... due to existing Extranet Policies. Remove these policies from the Fabric Site before connecting to
+  the SD-Access Transit.", seen live 2026-10-22); take the site out of them with `catc_set_extranet_policy`, hand
+  off, then apply them again.
+- `catc_list_pending_fabric_events` (D100, #171) and docs/sd-access.md no longer say a device-side change queues
+  a pending fabric event. Live on 3.2.2 (2026-10-22), removing a pushed `ip pim vrf ... rp-address` line on a
+  fabric edge by CLI got a resync ('Config Change Event') but no pending event in 25 minutes. Pending events are
+  intent Catalyst Center still has to push (after an RMA, a failed provision, or a fabric setting saved without a
+  push); device-side drift is `catc_config_drift` / `catc_compare_device_configs`.
 - `catc_run_show_commands` (and every tool that redacts device text): the `PAC-Opaque` blob in `show cts pacs` is masked,
   including hex-only continuation lines. It is the device's TrustSec PAC, a bearer credential, and was returned in clear
   (seen live 2026-10-22 during D110).

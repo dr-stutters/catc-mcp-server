@@ -44,6 +44,7 @@ class Lab:
         transits: list[dict[str, Any]],
         ip: list[dict[str, Any]] | None = None,
         border: bool = True,
+        extranet: list[dict[str, Any]] | None = None,
     ) -> None:
         self.ip = list(ip or [])
         self.sent: list[tuple[str, str, Any]] = []
@@ -68,6 +69,7 @@ class Lab:
         api.get(f"{SDA}/transitNetworks").mock(side_effect=by_name)
         api.get(IPT).mock(side_effect=lambda r: httpx.Response(200, json={"response": self.ip}))
         api.get(SDAT).respond(json={"response": []})
+        api.get(f"{SDA}/extranetPolicies").respond(json={"response": extranet or []})
         api.get(f"{SDA}/layer3VirtualNetworks").respond(
             json={
                 "response": [
@@ -230,6 +232,49 @@ async def test_sda_handoff(api: respx.MockRouter) -> None:
     assert out["preview"]["path"] == f"{SDAT}" and out["preview"]["body"] == [
         {"networkDeviceId": DEV_ID, "fabricId": FID, "transitNetworkId": "t-sda", "connectedToInternet": True}
     ]
+
+
+async def test_sda_handoff_blocked_by_extranet_policies(api: respx.MockRouter) -> None:
+    """Live on 3.2.2 (2026-10-22, lab mcp-catc-fabric), the handoff passed its preview and then failed: 'add
+    layer 3 handoff failed: Failed to add SD-Access Transit mcp-sda-transit to Fabric Site
+    Global/mcp-test-lab/mcp-test-fabric due to existing Extranet Policies. Remove these policies from the
+    Fabric Site before connecting to the SD-Access Transit. You can apply the appropriate Extranet Policy to
+    multisite afterwards, given the transit is not a Hybrid Transit.' The preview now blocks and names the
+    policies."""
+    lab = Lab(
+        api,
+        transits=[T_SDA],
+        extranet=[
+            {"id": "e1", "extranetPolicyName": "MCP_SHARED", "fabricIds": [FID, "other"]},
+            {"id": "e2", "extranetPolicyName": "ELSEWHERE", "fabricIds": ["other"]},
+        ],
+    )
+    out, done = await flow("catc_add_l3_handoff", {"border": "edge-sw1", "transit": "mcp-sda-transit"})
+    assert out["status"] == "blocked" and done is None and not lab.sent
+    (blocker,) = out["blockers"]
+    assert "extranet policies (MCP_SHARED)" in blocker and "ELSEWHERE" not in blocker
+    assert "catc_set_extranet_policy(name, delete=true)" in blocker and "apply the policies again" in blocker
+
+
+async def test_ip_handoff_ignores_extranet_policies(api: respx.MockRouter) -> None:
+    Lab(api, transits=[T_IP], extranet=[{"id": "e1", "extranetPolicyName": "MCP_SHARED", "fabricIds": [FID]}])
+    out, _ = await flow(
+        "catc_add_l3_handoff",
+        {
+            "border": "edge-sw1",
+            "transit": "mcp-ip-transit",
+            "interface": "Gi1/0/4",
+            "virtual_networks": [
+                {
+                    "virtual_network": "MCP_VN",
+                    "vlan_id": 3001,
+                    "local_ip": "10.0.0.1/30",
+                    "remote_ip": "10.0.0.2/30",
+                }
+            ],
+        },
+    )
+    assert out["status"] == "preview"
 
 
 async def test_delete_handoff_and_transit(api: respx.MockRouter) -> None:
