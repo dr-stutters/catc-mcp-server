@@ -98,6 +98,10 @@ class Fabric:
                 ]
             }
         )
+        # the preview names the edges ('hostname (IP)'); d2/d3 aren't in the inventory, so they stay ids
+        api.get("/dna/intent/api/v1/network-device").respond(
+            json={"response": [{"id": "d2", "hostname": "edge-a", "managementIpAddress": "10.0.0.2"}]}
+        )
         api.put(f"{SDA}/fabricSites").mock(side_effect=self.put_site)
         api.put(f"{SDA}/authenticationProfiles").mock(side_effect=self.put_profile)
         task_ok(api, "ta")
@@ -144,6 +148,7 @@ async def test_change_default_template(api: respx.MockRouter) -> None:
     assert preview["status"] == "preview" and preview["blast_radius"] == 2
     assert preview["action"].endswith("default template Closed Authentication -> Low Impact")
     assert preview["preview"]["ports_following_the_default"] == 1
+    assert preview["preview"]["edges"] == ["edge-a (10.0.0.2)", "d3"]  # names, live finding 2026-10-22
     assert done and done["status"] == "applied"
     assert fab.puts == [
         (

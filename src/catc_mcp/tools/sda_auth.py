@@ -27,7 +27,7 @@ from catc_mcp._core import (
 from catc_mcp.client import CatcApp
 from catc_mcp.common import pick
 from catc_mcp.safety import device_limit_blockers
-from catc_mcp.tools.sda import SDA, AuthProfile, FabricRef, resolve_fabric, sda_job, sda_list
+from catc_mcp.tools.sda import SDA, AuthProfile, FabricRef, edge_labels, resolve_fabric, sda_job, sda_list
 
 PROFILE_FIELDS = [
     "authenticationProfileName",
@@ -258,7 +258,7 @@ def register(reg: ToolRegistrar) -> None:
             f"Authentication at fabric site {site_name}: " + ("; ".join(parts) or "no change"),
             details={
                 "changes": changes,
-                "edges": [d.get("networkDeviceId") for d in edges],
+                "edges": await edge_labels(app, edges),
                 "ports_following_the_default": follow,
                 "ports_with_their_own_template": len(st["ports_overriding"]),
                 "requests": [{"method": "PUT", "path": p, "body": b} for _, p, b in steps],
