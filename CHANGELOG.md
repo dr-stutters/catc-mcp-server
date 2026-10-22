@@ -129,6 +129,20 @@
   3.2.2 lab appliance. `catc_apply_pending_fabric_events(fabric_site, event_ids?)` (dangerous) applies them
   (`POST sda/pendingFabricEvents/apply`, one event per request as the API asks), stopping at the first
   failure with what was applied and returning what is still pending.
+- **SD-Access authentication templates (D90, #146, Wave 6 part E).** `catc_get_fabric_authentication_profile(
+  fabric_site, include_global?)` (read): the fabric site's default template (Closed Authentication, Open
+  Authentication, Low Impact, No Authentication), each template profile's settings at the site (802.1X/MAB
+  order, fallback timer, hosts, wake on LAN, BPDU guard, voice VLAN, the Low Impact pre-auth ACL), the edge
+  count, and the edge ports that follow the default vs carry their own template.
+  `catc_set_fabric_authentication_profile(fabric_site, template, make_default=true, ...)` (dangerous):
+  makes `template` the default (`PUT sda/fabricSites`) and/or edits that template's profile at the site
+  (`PUT sda/authenticationProfiles`, one request at a time as the API asks; unset settings keep their value).
+  The preview shows current -> new per field, the edges Catalyst Center pushes to, and how many ports follow
+  the default. BPDU guard is refused off Closed, the pre-auth ACL off Low Impact, settings on No
+  Authentication. `catc_assign_fabric_port` keeps its per-port template. Live-proven 2026-10-22 on the lab
+  fabric: Closed Authentication with MAB first (3 s fallback) moved both edge ports to
+  `PMAP_DefaultWiredDot1xClosedAuth_MAB_1X`, and both clients came up Authorized by MAB with their SGT and dACL
+  from ISE.
 
 ### Changed
 - Least-privilege roles after the SD-Access packages (Wave 6 part E): `mcp-catc-ro` gains Policy.Group-Based
