@@ -204,3 +204,76 @@ async def test_tool_reports_pending_download(api: respx.MockRouter) -> None:
     mock_cli(api, {**CMDS, "show cts environment-data": ENV.replace("= COMPLETE", "= WAITING_RESPONSE")})
     out = await call("catc_get_group_policy_enforcement", {"device": "mcp-sw1"})
     assert "WAITING_RESPONSE" in out["notes"][0]
+
+
+# Recorded on the SD-Access edge mcp-catc-fab-edge1 (cat9000v 17.18.2, Catalyst Center 3.2.2, 2026-10-22):
+# the clients' bindings are in their VN's VRF, not in the global table.
+SHOW_VRF = """  Name                             Default RD            Protocols   Interfaces
+  MCP_VN                           <not set>             ipv4        Vl1040
+                                                                     LI0.4099
+  Mgmt-vrf                         <not set>             ipv4,ipv6   Gi0/0
+"""
+EDGE_GLOBAL = """Active IPv4-SGT Bindings Information
+
+IP Address              SGT     Source
+============================================
+10.255.20.2             2       INTERNAL
+10.255.255.12           2       INTERNAL
+198.18.128.175          2       INTERNAL
+"""
+EDGE_VRF = """%IPv6 protocol is not enabled in VRF MCP_VN
+Active IPv4-SGT Bindings Information
+
+IP Address              SGT     Source
+============================================
+10.10.40.1              2       INTERNAL
+10.10.40.100            40      LOCAL
+10.10.40.101            41      LOCAL
+
+IP-SGT Active Bindings Summary
+============================================
+Total number of LOCAL    bindings = 2
+Total number of INTERNAL bindings = 1
+Total number of active   bindings = 3
+"""
+
+
+def test_parse_vrfs_skips_header_and_mgmt() -> None:
+    from catc_mcp.tools.group_policy import parse_vrfs
+
+    assert parse_vrfs(SHOW_VRF) == ["MCP_VN"]
+    assert parse_vrfs("") == []
+
+
+async def test_tool_reads_vn_vrf_bindings(api: respx.MockRouter) -> None:
+    mock_sw1(api)
+    route = mock_cli(
+        api,
+        {
+            **CMDS,
+            "show cts role-based sgt-map all": EDGE_GLOBAL,
+            "show vrf": SHOW_VRF,
+            "show cts role-based sgt-map vrf MCP_VN all": EDGE_VRF,
+        },
+    )
+    out: dict[str, Any] = await call(
+        "catc_get_group_policy_enforcement", {"device": "mcp-sw1", "ips": ["10.10.40.100", "10.10.40.101"]}
+    )
+    first, second = (json.loads(c.request.content)["commands"] for c in route.calls)
+    assert "show vrf" in first and second == ["show cts role-based sgt-map vrf MCP_VN all"]
+    assert {"ip": "10.10.40.100", "sgt": 40, "source": "LOCAL", "vrf": "MCP_VN"} in out["bindings"]
+    assert [(c["ip"], c.get("sgt"), c.get("vrf")) for c in out["clients"]] == [
+        ("10.10.40.100", 40, "MCP_VN"),
+        ("10.10.40.101", 41, "MCP_VN"),
+    ]
+
+
+async def test_tool_given_vrfs_needs_one_runner_call(api: respx.MockRouter) -> None:
+    mock_sw1(api)
+    route = mock_cli(api, {**CMDS, "show cts role-based sgt-map vrf MCP_VN all": EDGE_VRF})
+    out = await call("catc_get_group_policy_enforcement", {"device": "mcp-sw1", "vrfs": ["MCP_VN"]})
+    sent = json.loads(route.calls[0].request.content)["commands"]
+    assert route.call_count == 1 and "show vrf" not in sent
+    assert any(b.get("vrf") == "MCP_VN" and b["sgt"] == 41 for b in out["bindings"])
+    with pytest.raises(ToolError, match="Not a VRF name"):
+        await call("catc_get_group_policy_enforcement", {"device": "mcp-sw1", "vrfs": ["X; reload"]})

@@ -35,6 +35,11 @@ _GROUP = re.compile(r"^(?P<tag>\d+|Unknown)(?::(?P<name>.+))?$")
 _COUNTER = re.compile(r"^(?P<src>\*|\d+)\s+(?P<dst>\*|\d+)((?:\s+\d+){6})\s*$")
 _BINDING = re.compile(r"^(?P<ip>[0-9a-fA-F:.]+(?:/\d+)?)\s+(?P<sgt>\d+)\s+(?P<source>[A-Z_-]+)\s*$")
 _NAME_ROW = re.compile(r"^\s*(?P<tag>\d+)-[0-9A-Fa-f]+:(?P<name>\S.*?)\s*$")
+# `show vrf`: "  MCP_VN   <not set>   ipv4   Vl1040" (the header's second column has no colon or <not set>)
+_VRF = re.compile(r"^\s{1,4}(?P<name>[A-Za-z0-9_.:-]+)\s+(?:<not set>|\S+:\S+)\s+\S")
+VRF_NAME = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
+MGMT_VRFS = frozenset({"Mgmt-vrf", "Mgmt-intf"})
+MAX_VRFS = 8
 _SERVER = re.compile(r"^\s*\*?Server:\s*(?P<ip>[0-9a-fA-F:.]+), port (?P<port>\d+)")
 COUNTER_COLS = ["sw_denied", "hw_denied", "sw_permitted", "hw_permitted", "sw_monitored", "hw_monitored"]
 
@@ -109,6 +114,17 @@ def parse_bindings(text: str) -> list[dict[str, Any]]:
         for line in text.splitlines()
         if (m := _BINDING.match(line.strip()))
     ]
+
+
+def parse_vrfs(text: str) -> list[str]:
+    """`show vrf`: the VRF names, without the management VRF. SD-Access puts each layer 3 VN in a VRF of
+    its name, and the clients' IP-to-SGT bindings live there, not in the global table."""
+    names: list[str] = []
+    for line in text.splitlines():
+        m = _VRF.match(line)
+        if m and m["name"] not in MGMT_VRFS and m["name"] not in names:
+            names.append(m["name"])
+    return names
 
 
 def parse_environment(text: str) -> dict[str, Any]:
@@ -193,16 +209,28 @@ def register(reg: ToolRegistrar) -> None:
             list[str] | None,
             Field(max_length=20, description="Client IPs to look up in the switch's IP-to-SGT bindings"),
         ] = None,
+        vrfs: Annotated[
+            list[str] | None,
+            Field(
+                max_length=MAX_VRFS,
+                description="VRFs (SD-Access virtual networks) whose IP-to-SGT bindings to read as well; "
+                "default: every VRF on the switch except the management VRF",
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """What a switch actually enforces for group-based access control (TrustSec / SD-Access), read live
         through the command runner: the environment data it downloaded from ISE (state, servers, the
         security group name table), every source -> destination cell with its SGACLs and the default
-        policy, the enforcement counters (SW/HW denied and permitted per cell) and the IP-to-SGT bindings.
+        policy, the enforcement counters (SW/HW denied and permitted per cell) and the IP-to-SGT bindings,
+        global and per VRF (on an SD-Access edge the clients' bindings are in their VN's VRF).
         With source and destination (tag or name) it answers for that pair: the SGACLs that apply (the cell,
         or the default when the switch has none) and that cell's counters; with ips, each client's SGT.
         Use it after an ISE matrix change (ise_set_egress_policy) to prove the edge has the new cell, and
         after a test flow to see the counters move. Read-only; clear counters on the switch to start fresh."""
         app: CatcApp = get_client(ctx)
+        for v in vrfs or []:
+            if not VRF_NAME.fullmatch(v):
+                raise InvalidRequest(f"Not a VRF name: {v!r}")
         dev = await resolve_device(app, device)
         cmds = [
             "show cts environment-data",
@@ -211,8 +239,22 @@ def register(reg: ToolRegistrar) -> None:
             "show cts role-based sgt-map all",
             "show running-config | include cts role-based enforcement",
         ]
+        vrf_cmd = "show cts role-based sgt-map vrf {} all"
+        if vrfs is None:
+            cmds.append("show vrf")
+        else:
+            cmds += [vrf_cmd.format(v) for v in vrfs]
         result = (await run_show(app, ctx, [dev], cmds))[0]
-        out_by_cmd: dict[str, str] = result.get("output") or {}
+        out_by_cmd: dict[str, str] = dict(result.get("output") or {})
+        if vrfs is None:
+            # Second command-runner call: the bindings of each VRF the switch has (SD-Access VNs).
+            vrfs = parse_vrfs(out_by_cmd.get("show vrf", ""))[:MAX_VRFS]
+            if vrfs:
+                more = (await run_show(app, ctx, [dev], [vrf_cmd.format(v) for v in vrfs]))[0]
+                out_by_cmd.update(more.get("output") or {})
+                for key in ("failed", "blocked_by_catalyst_center"):
+                    if more.get(key):
+                        result[key] = [*(result.get(key) or []), *more[key]]
 
         def text(cmd: str) -> str:
             t = out_by_cmd.get(cmd, "")
@@ -222,6 +264,8 @@ def register(reg: ToolRegistrar) -> None:
         perms = parse_permissions(text(cmds[1]))
         counters = parse_counters(text(cmds[2]))
         bindings = parse_bindings(text(cmds[3]))
+        for v in vrfs:
+            bindings += [{**b, "vrf": v} for b in parse_bindings(text(vrf_cmd.format(v)))]
         enforcement = [ln.strip() for ln in text(cmds[4]).splitlines() if ln.strip().startswith("cts ")]
         out: dict[str, Any] = {
             "device": result.get("device"),
@@ -257,19 +301,18 @@ def register(reg: ToolRegistrar) -> None:
                 tag = out["pair"][side]
                 out["pair"][f"{side}_name"] = env["groups"].get(tag) if tag is not None else None
         if ips:
-            by_ip = {b["ip"].split("/")[0]: b for b in bindings}
-            out["clients"] = [
-                {
-                    "ip": ip,
-                    **({"sgt": by_ip[ip]["sgt"], "source": by_ip[ip]["source"]} if ip in by_ip else {}),
-                }
-                | (
-                    {"sgt_name": env["groups"].get(by_ip[ip]["sgt"])}
-                    if ip in by_ip
-                    else {"note": "no binding"}
-                )
-                for ip in ips
-            ]
+            # A client's binding is in its VN's VRF on a fabric edge; the global table also holds the SVIs.
+            by_ip = {b["ip"].split("/")[0]: b for b in sorted(bindings, key=lambda b: "vrf" in b)}
+            clients: list[dict[str, Any]] = []
+            for ip in ips:
+                b = by_ip.get(ip)
+                if b is None:
+                    clients.append({"ip": ip, "note": "no binding"})
+                    continue
+                row: dict[str, Any] = {"ip": ip, **{k: b[k] for k in ("sgt", "source", "vrf") if k in b}}
+                row["sgt_name"] = env["groups"].get(b["sgt"])
+                clients.append(row)
+            out["clients"] = clients
         for key, cmd in (("failed", "failed"), ("blocked", "blocked_by_catalyst_center")):
             if result.get(cmd):
                 out[key] = result[cmd]

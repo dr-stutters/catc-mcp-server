@@ -91,8 +91,11 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
 
 ISE stays the policy owner: security groups, SGACLs and the egress matrix are written with ise-mcp-server
 (`ise_set_sgt`, `ise_set_egress_policy`, `ise_push_trustsec_matrix`), and Catalyst Center proves what the edge
-enforces (the downloaded cells, counters, IP-to-SGT bindings, environment data; a rollout prompt pairing the ISE
-change with the edge check): D91, in PR #162 until its live proof. Catalyst Center 3.2.2 has no public intent API for security
+enforces: `catc_get_group_policy_enforcement` reads the downloaded environment data, cells, counters and IP-to-SGT
+bindings (an SD-Access edge keeps the clients' bindings in their VN's VRF; the tool reads every VRF), and the
+prompt `catc_group_policy_rollout` pairs the ISE change with the edge check and a test flow. The clients get
+their SGT from ISE's authorization result (or a static one: `catc_update_port_assignment` `security_group`).
+Catalyst Center 3.2.2 has no public intent API for security
 groups, contracts or group-based policy; its internal UI API holds seeded defaults, not ISE's matrix, until its
 *policy migration*, which hands the matrix to Catalyst Center and makes ISE's TrustSec objects read-only. Don't
 start the migration on a shared lab: ise-mcp-server's TrustSec writes stop working.
