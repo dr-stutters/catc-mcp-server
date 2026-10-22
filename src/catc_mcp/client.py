@@ -22,6 +22,7 @@ from fastmcp import Context
 
 from catc_mcp._core import (
     InvalidRequest,
+    NotFound,
     TaskFailed,
     UpstreamError,
     UpstreamTimeout,
@@ -36,6 +37,7 @@ from catc_mcp._core.http import (
     Token,
     basic_header,
 )
+from catc_mcp._core.secrets import scrub_text
 from catc_mcp.config import Settings
 from catc_mcp.rbac import BUILTIN_TIERS, account_check, enabled_tier, permissions_tier
 
@@ -92,6 +94,28 @@ def catc_error_detail(body: Any) -> str | None:
     return ": ".join(parts)[:500] or None
 
 
+class CatcApiClient(ApiClient):
+    """ApiClient that keeps Catalyst Center's error body on a 404 too. Core's 404 message names only the
+    request, but SD-Access answers 404 with an errorCode and a detail that say what is missing (live
+    2026-10-22, #191: NCHS20216 "... has no virtual network with the name INFRA_VN" on POST
+    sda/anycastGateways). Other statuses already carry the detail (`error_detail`)."""
+
+    def error_from_response(self, resp: httpx.Response) -> UpstreamError:
+        err = super().error_from_response(resp)
+        if resp.status_code != 404:
+            return err
+        try:
+            body = resp.json()
+        except ValueError:
+            return err
+        detail = catc_error_detail(body) if isinstance(body, dict | list) else None
+        if not detail:
+            return err
+        return NotFound(
+            f"Not found (404): {resp.request.method} {resp.request.url.path}: {scrub_text(detail)}", 404
+        )
+
+
 def job_ref(result: Any) -> tuple[str, str] | None:
     """("task", id) or ("execution", id) if a write response points at an asynchronous job."""
     if not isinstance(result, dict):
@@ -143,7 +167,7 @@ class CatcApp:
             auth: Any = StaticHeaderAuth("X-Auth-Token", settings.token_value())
         else:
             auth = LoginTokenAuth(self._login)
-        self.api = ApiClient(
+        self.api = CatcApiClient(
             settings.url,
             product=PRODUCT,
             env_prefix="CATC_",

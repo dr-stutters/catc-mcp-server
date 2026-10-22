@@ -16,16 +16,13 @@ SDA = "/dna/intent/api/v1/sda"
 EDGE = {"id": "fd", "networkDeviceId": DEV_ID, "fabricId": FID, "deviceRoles": ["EDGE_NODE"]}
 
 
-def gateway_lab(api: respx.MockRouter) -> None:
+def gateway_lab(api: respx.MockRouter, infra_fabrics: list[str] | None = None) -> None:
+    """INFRA_VN is attached to the fabric site unless `infra_fabrics` says otherwise."""
     mock_inventory(api)  # the preview names the edges
     mock_fabric(api, [EDGE])
+    infra = {"virtualNetworkName": "INFRA_VN", "fabricIds": [FID] if infra_fabrics is None else infra_fabrics}
     api.get(f"{SDA}/layer3VirtualNetworks").respond(
-        json={
-            "response": [
-                {"virtualNetworkName": "INFRA_VN"},
-                {"virtualNetworkName": "CORP", "fabricIds": [FID]},
-            ]
-        }
+        json={"response": [infra, {"virtualNetworkName": "CORP", "fabricIds": [FID]}]}
     )
     api.get("/dna/intent/api/v1/ipam/siteIpAddressPools").respond(
         json={"response": [{"name": "mcp-extnodes"}]}
@@ -50,6 +47,23 @@ async def test_infra_vn_extended_node_pool(api: respx.MockRouter) -> None:
     assert (
         body["isSupplicantBasedExtendedNodeOnboarding"] is True and body["virtualNetworkName"] == "INFRA_VN"
     )
+
+
+async def test_infra_vn_must_be_attached(api: respx.MockRouter) -> None:
+    """Live 2026-10-22 (#191): INFRA_VN's record had no fabricIds, and the gateway failed with 404 NCHS20216
+    'The fabric site/zone ... has no virtual network with the name INFRA_VN'; attaching it with
+    catc_create_virtual_network fixed it."""
+    gateway_lab(api, infra_fabrics=[])
+    args = {
+        "fabric_site": FID,
+        "virtual_network": "INFRA_VN",
+        "ip_pool": "mcp-extnodes",
+        "pool_type": "EXTENDED_NODE",
+    }
+    out, _ = await flow("catc_add_anycast_gateway", args)
+    text = " ".join(out["blockers"])
+    assert out["status"] == "blocked" and "NCHS20216" in text
+    assert "catc_create_virtual_network(name='INFRA_VN', fabric_sites=['Global/AU/SYD-1'])" in text
 
 
 @pytest.mark.parametrize(

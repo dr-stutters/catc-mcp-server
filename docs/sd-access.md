@@ -46,7 +46,10 @@ The prompt `catc_build_fabric_site` walks all of this with a check after each st
    A priority, once set, can't go back to the default (section 3).
 4. `catc_create_virtual_network` (a layer 3 VN at the fabric site).
 5. `catc_add_anycast_gateway`: the pool in the VN; Catalyst Center pushes the SVI to every edge. In INFRA_VN the
-   pool is for extended nodes or fabric APs (`pool_type`).
+   pool is for extended nodes or fabric APs (`pool_type`). 3.2.2 doesn't attach INFRA_VN to a fabric site by
+   itself: attach it first with `catc_create_virtual_network(name='INFRA_VN', fabric_sites=[site])`, or the
+   gateway fails with 404 `NCHS20216` ("... has no virtual network with the name INFRA_VN"). For a VN anchored
+   at another site, use the anchor's pool (*Anchored VNs* below).
 6. `catc_assign_fabric_port`: edge ports to a gateway's VLAN (by VLAN or pool name). A port on Closed
    Authentication needs no VLAN: ISE assigns it. Extended nodes: `AUTHENTICATOR_SWITCH` /
    `SUPPLICANT_BASED_EXTENDED_NODE` ports.
@@ -88,6 +91,28 @@ the same checks on every fabric device in one call (D110).
 fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_channel`), multicast
 (`catc_get_fabric_multicast`, `catc_set_fabric_multicast`), anchored VNs across sites
 (`catc_anchor_virtual_network`, needs an SD-Access transit).
+
+**Layer 2 handoff prerequisites.** Catalyst Center checks two things only when it applies a layer 2 handoff;
+`catc_set_l2_handoff` refuses in the preview when either is missing:
+- The border has the layer 2 border type: `catc_update_fabric_device(device, layer2_border=true)`. Without it
+  the handoff fails with `NCHS20177` ("... is not a Layer 2 Border device in fabric ...").
+- The device's inventory role isn't ACCESS. Switches are often auto-classified ACCESS, and the handoff task then
+  fails with "Layer 2 Handoff isn't supported on a device that is assigned an ACCESS role in the inventory".
+  Set the role with `catc_set_device_role(devices, role='BORDER ROUTER')` (write tier, inventory only, pinned as
+  MANUAL so the automatic classification doesn't change it back).
+
+**Anchored VNs.** 3.2.2 anchors a VN only in the request that creates it. So `catc_anchor_virtual_network`
+creates the VN anchored at the anchor site alone (`POST sda/layer3VirtualNetworks` with `anchoredSiteId`), then
+extends it to the other sites (`PUT`). It refuses an existing VN that isn't anchored: anchor a new VN instead.
+Each site's devices get the VN only with an anycast gateway at that site:
+1. `catc_add_anycast_gateway` at the anchor site, with a pool reserved there.
+2. At each remote site, `catc_add_anycast_gateway` for the same VN with the anchor's pool. The pool stays
+   reserved at the anchor site only, and the tool looks it up there.
+
+The remote edges register with the anchor site's control plane, so they need underlay reachability to it. Live
+(#190): a gateway at the anchor alone left the remote site's devices without the VRF. After a gateway at the
+remote site, its edge had the VRF, the SVI, the anchor's LISP instance id and a LISP session to the anchor's
+control plane.
 
 ## 3. Change it
 
@@ -190,8 +215,9 @@ start the migration on a shared lab: ise-mcp-server's TrustSec writes stop worki
 ## 6. Tear it down
 
 `catc_delete_fabric_site` with `cascade=true` removes, in reverse order, edge ports, port channels, multicast
-VNs, gateways, layer 2 VNs, border handoffs, the site's VN memberships (INFRA_VN goes with the site), zones and
-fabric devices (edges first), then the fabric site; the devices stay provisioned and the pool and site stay.
+VNs, gateways, layer 2 VNs, border handoffs, the site's VN memberships, zones and fabric devices (edges first),
+then the fabric site; the devices stay provisioned and the pool and site stay. An INFRA_VN membership is left to
+go with the fabric site (not proven live: 3.2.2 attaches INFRA_VN only on request, section 2).
 `catc_delete_fabric_device` takes one device out (with `cascade=true`, its ports, port channels and handoffs
 first); `catc_delete_sda_object` removes a single object by id; `catc_delete_l3_handoff` and
 `catc_delete_transit_network` remove the way out.
@@ -207,6 +233,15 @@ first); `catc_delete_sda_object` removes a single object by id; `catc_delete_l3_
 - A USER_DEVICE port needs a VLAN unless its template is Closed Authentication.
 - `PUT sda/layer3VirtualNetworks` assigns sites and anchors in two steps; if anchoring fails the site assignment
   still applies (read the VN back).
+- A VN is anchored only when it is created (`POST` with one fabric site and `anchoredSiteId`). A `PUT` that
+  anchors an existing VN fails task validation with `NCSO20386` (untranslated). A `PUT` that anchors and names
+  several sites at once fails with `NCHS20464` ("each VN could only be anchored to one site only"). Once anchored,
+  a `PUT` that keeps `anchoredSiteId` extends the VN to more sites.
+- INFRA_VN is not attached to a fabric site automatically (its record can have no `fabricIds`). A gateway in it
+  then fails with 404 `NCHS20216`; `catc_create_virtual_network(name='INFRA_VN', fabric_sites=[site])` attaches
+  it. Catalyst Center's 404 bodies carry an `errorCode` and a `detail`, which the tools now show.
+- A layer 2 handoff needs the border's LAYER_2 border type (`NCHS20177` without it) and an inventory role other
+  than ACCESS. Catalyst Center checks both only when it applies the handoff (section 2).
 - The group-based policy objects under `/api/v2/data/customer-facing-service/` answer only once the package
   install job has finished (502 before), and hold seeded defaults until the policy migration.
 - Fabric provisioning sends RADIUS from Loopback0 (`ip radius source-interface Loopback0`, global and in
