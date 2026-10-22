@@ -154,6 +154,10 @@
   403 says that on 3.2.2 custom roles get 403 even with Security.SSI Read (SUPER-ADMIN-ROLE reads it).
   docs/sd-access.md gains the quirks found live (RADIUS from the RLOC loopback, border defaults read back out of
   range, the SSI 403).
+- **Command runner: at most 5 commands per request.** Catalyst Center 3.2.2 answers 400 "Maximum of 5 commands
+  allowed per request" to a longer list (live, 2026-10-22); `catc_run_show_commands` takes up to 10. The command
+  runner helper now sends 5 at a time, one request after another, and merges each device's output, failures and
+  blocked commands.
 - `catc_add_fabric_device` sent `borderPriority: 10` and `prependAutonomousSystemCount: 0` for every border;
   the 3.2.2 spec allows 1-9 and 1-10 (unset = Catalyst Center's defaults), so the request could be refused.
   Both are now left out unless the new optional `border_priority` (1-9) or `prepend_as_count` (1-10) is

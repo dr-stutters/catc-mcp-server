@@ -409,6 +409,46 @@ async def test_run_show_commands(api: respx.MockRouter) -> None:
     assert body["commands"] == ["show run | i secret"] and body["deviceUuids"] == [DEV_ID]
 
 
+async def test_run_show_commands_batches_by_five(api: respx.MockRouter) -> None:
+    """Catalyst Center 3.2.2 refuses more than 5 commands per runner request (live, 2026-10-22): 7 commands
+    go out as 5 + 2 and come back as one result per device."""
+    mock_device_lookup(api)
+    cmds = [f"show cmd{i}" for i in range(7)]
+    sent: list[list[str]] = []
+
+    def start(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body["commands"])
+        return httpx.Response(202, json={"response": {"taskId": f"t-{len(sent)}"}})
+
+    api.post("/dna/intent/api/v1/network-device-poller/cli/read-request").mock(side_effect=start)
+    for n in (1, 2):
+        api.get(f"/dna/intent/api/v1/task/t-{n}").respond(
+            json={"response": {"progress": f'{{"fileId":"f-{n}"}}', "endTime": 1}}
+        )
+
+    def file_for(n: int, part: list[str]) -> None:
+        api.get(f"/dna/intent/api/v1/file/f-{n}").respond(
+            json=[
+                {
+                    "deviceUuid": DEV_ID,
+                    "commandResponses": {
+                        "SUCCESS": {c: f"out {c}" for c in part if c != "show cmd6"},
+                        "FAILURE": {"show cmd6": "% Invalid input"} if "show cmd6" in part else {},
+                        "BLACKLISTED": {},
+                    },
+                }
+            ]
+        )
+
+    file_for(1, cmds[:5])
+    file_for(2, cmds[5:])
+    out = await call("catc_run_show_commands", {"devices": ["edge-sw1"], "commands": cmds})
+    assert sent == [cmds[:5], cmds[5:]]
+    (res,) = out["results"]
+    assert set(res["output"]) == set(cmds[:6]) and res["failed"] == {"show cmd6": "% Invalid input"}
+
+
 async def test_run_show_commands_refuses_config(api: respx.MockRouter) -> None:
     route = api.post("/dna/intent/api/v1/network-device-poller/cli/read-request")
     with pytest.raises(ToolError, match="only 'show"):
