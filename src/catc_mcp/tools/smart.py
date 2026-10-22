@@ -278,11 +278,30 @@ async def clients_by(app: CatcApp, key: str, value: str, hours: float) -> list[d
     return [c for c in ensure_list(items) if isinstance(c, dict)][:FIND_MAX]
 
 
+# Catalyst Center 3.2.2 answers 400 "Maximum of 5 commands allowed per request" to a longer command list.
+RUNNER_MAX_COMMANDS = 5
+
+
 async def run_show(
     app: CatcApp, ctx: Context, devs: list[dict[str, Any]], cmds: list[str]
 ) -> list[dict[str, Any]]:
     """Run checked `show` commands on resolved devices through the command runner: one entry per
-    device with its output (secrets masked), failures and commands Catalyst Center blocked."""
+    device with its output (secrets masked), failures and commands Catalyst Center blocked. More than
+    RUNNER_MAX_COMMANDS commands go in several runner requests, one after another, merged per device."""
+    merged: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(cmds), RUNNER_MAX_COMMANDS):
+        for entry in await _run_show_once(app, ctx, devs, cmds[i : i + RUNNER_MAX_COMMANDS]):
+            into = merged.setdefault(str(entry["device"]), {"device": entry["device"], "output": {}})
+            into["output"].update(entry.get("output") or {})
+            for key in ("failed", "blocked_by_catalyst_center"):
+                if entry.get(key):
+                    into.setdefault(key, {}).update(entry[key])
+    return list(merged.values())
+
+
+async def _run_show_once(
+    app: CatcApp, ctx: Context, devs: list[dict[str, Any]], cmds: list[str]
+) -> list[dict[str, Any]]:
     names = {str(d["id"]): str(d.get("hostname") or d.get("managementIpAddress")) for d in devs}
     timeout = app.settings.command_runner_timeout
     started = await app.api.post(
