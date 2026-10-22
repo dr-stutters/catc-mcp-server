@@ -76,7 +76,10 @@ async def test_anchor_and_extend(api: respx.MockRouter) -> None:
         preview["action"] == "Anchor MCP_GUEST at Global/AU/SYD-1 across 2 fabric site(s)"
         and preview["blast_radius"] == 2
     )
+    # Two PUTs: the anchor site alone (3.2.2 refuses an anchoring request with more sites, NCHS20464), then
+    # the extension to the other sites with the anchor kept.
     assert done and lab.puts == [
+        [{"id": "vn1", "virtualNetworkName": "MCP_GUEST", "fabricIds": [FID], "anchoredSiteId": FID}],
         [
             {
                 "id": "vn1",
@@ -84,9 +87,17 @@ async def test_anchor_and_extend(api: respx.MockRouter) -> None:
                 "fabricIds": sorted([FID, FID2]),
                 "anchoredSiteId": FID,
             }
-        ]
+        ],
     ]
+    assert len(preview["preview"]["requests"]) == 2
     assert done["result"]["virtual_network"]["anchoredSiteId"] == FID
+
+
+async def test_anchor_refused_for_a_vn_already_on_other_sites(api: respx.MockRouter) -> None:
+    """Live 2026-10-22: 'NCHS20464 ... each VN could only be anchored to one site only.'"""
+    lab = Lab(api, {"id": "vn1", "virtualNetworkName": "MCP_GUEST", "fabricIds": [FID, FID2]}, [TRANSIT])
+    out, _ = await flow("catc_anchor_virtual_network", {"virtual_network": "MCP_GUEST", "anchor_site": FID})
+    assert out["status"] == "blocked" and "NCHS20464" in " ".join(out["blockers"]) and not lab.puts
 
 
 ANCHORED = {"id": "vn1", "virtualNetworkName": "MCP_GUEST", "fabricIds": [FID, FID2], "anchoredSiteId": FID}
