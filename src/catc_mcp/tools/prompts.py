@@ -342,12 +342,17 @@ wait for approval, then repeat the call with the confirm token. Stop and report 
    ({tool_ref("catc_resync_devices")}) and provision again; restore anything that must stay (e.g.
    device-admin TACACS+) afterwards.
 5. Check the switch: {tool_ref("catc_run_show_commands")} with
-   "show running-config | section aaa|radius" and "show running-config | include dot1x|device-tracking":
-   the radius server must be the ISE PSN and aaa authentication dot1x / authorization network must
-   use that group.
-6. NAD in ISE: {tool_ref("ise_get_nad")} with "{switch_ip}". Catalyst Center normally creates it
-   during provisioning. Only if it's missing, offer {tool_ref("ise_create_nad")} (name = the
-   switch hostname, ips ["{switch_ip}"], the same RADIUS shared secret as step 1).
+   "show running-config | section aaa|radius", "show running-config | include dot1x|device-tracking" and
+   "show aaa servers": the radius server must be the ISE PSN, aaa authentication dot1x / authorization
+   network must use that group, and the ISE server must not be DEAD. Note the RADIUS source ("ip radius
+   source-interface", if set): ISE sees that address, not necessarily {switch_ip}. DEAD means ISE doesn't
+   answer: no NAD for the source address (step 6) or no route back to it from ISE. After the fix the switch
+   keeps the server DEAD until its automate-tester probe gets an answer (minutes): check again before
+   calling the fix failed.
+6. NAD in ISE: {tool_ref("ise_get_nad")} with "{switch_ip}" (and with the RADIUS source address from step 5
+   when it differs). Catalyst Center normally creates it during provisioning. Only if it's missing, offer
+   {tool_ref("ise_create_nad")} (name = the switch hostname, ips ["{switch_ip}"] plus the RADIUS source
+   address when it differs, the same RADIUS shared secret as step 1).
 7. Access-port template (IBNS 2.0 style: Catalyst Center's provisioning leaves the switch in the
    new-style identity mode, where legacy "authentication ..." interface commands are dropped):
    create it in a project of the user's choice with {tool_ref("catc_create_template")}
@@ -747,7 +752,7 @@ missing, skip steps 5 and say ISE could not be checked.
 9. Summary: the client, the diagnosis in one line, the evidence (one line per step), and the fix (proposed,
    or applied and verified)."""
 
-    @reg.prompt(title="Build an SD-Access fabric site", uses=["catc"], tier=Tier.DANGEROUS)
+    @reg.prompt(title="Build an SD-Access fabric site", uses=["catc", "ise"], tier=Tier.DANGEROUS)
     def catc_build_fabric_site(
         building: Annotated[
             str, Field(description="Building to make a fabric site, e.g. 'Global/Area/Building'")
@@ -770,7 +775,9 @@ missing, skip steps 5 and say ISE could not be checked.
         the devices onboarded and provisioned at the building, the client IP pool, the fabric site, border
         and control plane before the edges, the virtual network, the anycast gateway, the edge ports, and
         the checks between the steps (fabric read-back, CLI on the edges, pending fabric events, fabric
-        health). Ends with the teardown as a preview (catc_delete_fabric_site with cascade). Every write is
+        health). An authentication template other than No Authentication is set last, after an AAA check:
+        RADIUS to ISE from every fabric device's RLOC, and (with the ise tools) the NADs and their location.
+        Ends with the teardown as a preview (catc_delete_fabric_site with cascade). Every write is
         preview-first."""
         texts = (building, border, edges, client_pool, dhcp_server, client_ports, virtual_network, border_asn)
         if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
@@ -818,6 +825,54 @@ missing, skip steps 5 and say ISE could not be checked.
    ({tool_ref("catc_update_site_aaa_settings")} client server_type ISE). Leave network (device admin) AAA
    alone."""
         )
+        # D111: the live run built on No Authentication and set the template once RADIUS to ISE was proven.
+        staged = authentication != "No Authentication"
+        without_ise = {
+            "Closed Authentication": "blocks every client on the edge ports until ISE authorizes it",
+            "Low Impact": "lets a client through only its pre-authentication ACL until ISE authorizes it",
+            "Open Authentication": "lets clients on without ISE's authorization (no SGT, no dACL)",
+        }.get(authentication, "")
+        site_auth = (
+            f'"No Authentication" (step 13 sets "{authentication}" once step 12 has proven AAA)'
+            if staged
+            else '"No Authentication"'
+        )
+        aaa_steps = (
+            f"""
+12. AAA before "{authentication}": fabric provisioning sends RADIUS from each fabric device's Loopback0 (its
+   RLOC), and Catalyst Center creates the ISE NADs on the RLOC /32 in Location#All Locations, not on the
+   management IP. "{authentication}" {without_ise},
+   so prove every fabric device reaches ISE first:
+   - {tool_ref("catc_run_show_commands")} on {", ".join(all_ips)}: "show aaa servers" (the ISE server's state
+     must be current UP, not DEAD), "show running-config | include radius source-interface", "show ip
+     interface brief | include Loopback0" (the RLOC: the address ISE sees) and "show cts environment-data"
+     (download COMPLETE, the ISE server listed).
+   - DEAD, or the environment data not COMPLETE: ISE has no route back to the RLOC subnet, or no NAD for the
+     RLOC. The route is fixed on ISE or its gateway, outside Catalyst Center: tell the user and wait. Don't
+     move the switches' RADIUS source by CLI (Catalyst Center's intent is Loopback0; the change would drift).
+     After the fix a switch keeps the server DEAD until its automate-tester probe gets an answer (minutes):
+     read "show aaa servers" again before calling the fix failed.
+   - ISE (with the ise tools; without them, ask the user to check this in ISE): {tool_ref("ise_get_nad")} with
+     each RLOC finds its NAD. {tool_ref("ise_policy_explain")} nad "<RLOC>", flow "wired-mab" ("wired-dot1x"
+     for 802.1X clients) must select the policy set and the rule meant for the fabric's clients. A NAD left in
+     Location#All Locations when that set matches a location: preview {tool_ref("ise_update_nad")} with groups
+     = the NAD's groups with the location replaced, and apply it on approval. The test clients need a rule
+     that authorizes them (for MAB, their MACs in an endpoint group the rule permits).
+   Go on only when every fabric device shows the ISE server UP.
+13. Authentication template: {tool_ref("catc_set_fabric_authentication_profile")} fabric_site "{building}",
+   template "{authentication}", make_default true (authentication_order "mac" for MAB-first clients). The
+   preview names every edge Catalyst Center pushes it to and counts the ports that follow the default. Then
+   on the edges with {tool_ref("catc_run_show_commands")}: "show access-session" (each client port
+   Authorized), "show running-config interface <port>" (its source template), and with SGTs from ISE "show
+   cts role-based sgt-map vrf {vn} all" (an edge keeps the clients' IP-to-SGT bindings in the VN's VRF; the
+   global table only has the switch's own addresses). {tool_ref("ise_find_session")} with a client's MAC
+   shows its authorization; a client that stays unauthorized: {tool_ref("ise_why_auth_failed")} with its
+   MAC."""
+            if staged
+            else ""
+        )
+        summary_step = 14 if staged else 12
+        aaa_summary = ", the AAA check per fabric device,\n   the authentication template" if staged else ""
         return f"""Build the SD-Access fabric site {building}: border + control plane {border_ip}, edges
 {", ".join(edge_ips)}, clients in {vn} on {net} (gateway {gateway}, DHCP {dhcp}),
 authentication "{authentication}". Every write is preview-first: show the preview, wait for
@@ -843,11 +898,14 @@ first failure; never skip a check.
    {building} (or a floor under it), then {tool_ref("catc_provision_devices")}. Fabric roles need provisioned
    devices.
 6. Fabric site: {tool_ref("catc_create_fabric_site")} site "{building}", authentication_profile
-   "{authentication}". Read back with {tool_ref("catc_get_sda_fabric")}.
+   {site_auth}.
+   Read back with {tool_ref("catc_get_sda_fabric")}.
 7. Border and control plane first: {tool_ref("catc_add_fabric_device")} device "{border_ip}", fabric_site
-   "{building}", roles ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "{border_asn.strip()}". Then each
-   edge: {tool_ref("catc_add_fabric_device")} with fabric_site "{building}" and roles ["EDGE_NODE"]. After
-   each, {tool_ref("catc_get_sda_fabric")} shows the device with its roles.
+   "{building}", roles ["CONTROL_PLANE_NODE", "BORDER_NODE"], border_asn "{border_asn.strip()}". Leave the
+   border priority and AS-path prepends unset unless the design needs them: once set, a priority can't go
+   back to the unset default (3.2.2 refuses 10 with NCHS20769; {tool_ref("catc_update_fabric_device")} moves
+   it within 1-9 only). Then each edge: {tool_ref("catc_add_fabric_device")} with fabric_site "{building}" and
+   roles ["EDGE_NODE"]. After each, {tool_ref("catc_get_sda_fabric")} shows the device with its roles.
 8. Virtual network: {tool_ref("catc_create_virtual_network")} name "{vn}", fabric_sites ["{building}"].
 9. Anycast gateway: {tool_ref("catc_add_anycast_gateway")} fabric_site "{building}", virtual_network "{vn}",
    ip_pool "<pool name from step 4>". The preview names every edge that gets the SVI.
@@ -864,11 +922,12 @@ first failure; never skip a check.
      outside the fabric needs a border layer 3 handoff for {vn} (an IP transit to a fusion router); until then
      prove the gateway with a static address.
    - {tool_ref("catc_fabric_health")} for {building} (scores lag provisioning by minutes; empty right after is
-     not a failure).
-12. Summary: what was created (site, pool, fabric site, roles, {vn}, gateway, ports), each check's result, and
-   the undo as a preview only (do not confirm unless the user asks): {tool_ref("catc_delete_fabric_site")}
-   fabric_site "{building}", cascade true (ports, gateways, the site's VN membership, fabric devices, then the
-   fabric site; the devices stay provisioned, the pool and the site stay)."""
+     not a failure).{aaa_steps}
+{summary_step}. Summary: what was created (site, pool, fabric site, roles, {vn}, gateway, ports), each check's
+   result{aaa_summary}, and the undo as a preview only (do not confirm unless the user
+   asks): {tool_ref("catc_delete_fabric_site")} fabric_site "{building}", cascade true (ports, gateways, the
+   site's VN membership, fabric devices, then the fabric site; the devices stay provisioned, the pool and the
+   site stay)."""
 
     @reg.prompt(title="Roll out and prove a group-based policy", uses=["catc", "ise"], tier=Tier.WRITE)
     def catc_group_policy_rollout(
@@ -929,7 +988,11 @@ decision alone. If the ise tools are missing, stop after step 2 and say the chan
    destination {dst}{ip_arg}: the edge's environment data (COMPLETE? the ISE server listed?), whether
    'cts role-based enforcement' is configured, the cell it has now, and the clients' SGTs. Environment data
    not COMPLETE or no enforcement: fix that first (the switch is not a TrustSec device of ISE yet, or
-   Catalyst Center has not provisioned it into the fabric), no matrix change will show.
+   Catalyst Center has not provisioned it into the fabric), no matrix change will show. On a fabric edge the
+   usual cause is RADIUS: {tool_ref("catc_run_show_commands")} "show aaa servers" shows the ISE server DEAD
+   when ISE has no route back to the edge's Loopback0 (the RLOC, which fabric provisioning makes the RADIUS
+   source and the NAD's address). After that route is fixed the switch keeps the server DEAD until its
+   automate-tester probe gets an answer (minutes); the environment data downloads after that.
 3. Change: preview {tool_ref("ise_set_egress_policy")} with source {src}, destination {dst}, sgacls
    ["{sgacls}"]; show the preview and apply it only on approval. Then preview
    {tool_ref("ise_push_trustsec_matrix")} (sends a CoA so devices fetch the change now instead of at the
@@ -939,9 +1002,12 @@ decision alone. If the ise tools are missing, stop after step 2 and say the chan
    that security group in its result (preview {tool_ref("ise_update_policy_rule")}), then re-authenticate it
    (preview {tool_ref("ise_coa_reauth")}).
 5. Edge after: {tool_ref("catc_get_group_policy_enforcement")} again (same arguments). The pair's policy must
-   be "{sgacls}" with source_of_policy "cell downloaded from ISE", and each client IP bound to its SGT. Not
-   there yet: the push may still be running; wait a minute and read again (at most three times), then compare
-   the edge's group name table with ISE's.
+   be "{sgacls}" with source_of_policy "cell downloaded from ISE", and each client IP bound to its SGT. An
+   SD-Access edge keeps the clients' bindings in their VN's VRF ("show cts role-based sgt-map vrf <VN> all";
+   the global table only has the switch's own addresses): the tool reads the VRFs too (the first 4; pass
+   vrfs ["<VN>"] on a switch with more) and each binding shows its vrf. Not there yet: the push may still be
+   running; wait a minute and read again (at most three times), then compare the edge's group name table
+   with ISE's.
 6. Test flow {flow}: run it from the client (ping or a TCP connect; on a CML lab, the cml server's command
    tool runs it on the client node), then read the counters with
    {tool_ref("catc_get_group_policy_enforcement")}: the pair's denied (deny) or permitted (permit) counters

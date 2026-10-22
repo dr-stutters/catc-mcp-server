@@ -230,6 +230,53 @@ async def test_nac_prompt_rejects_bad_arguments(bad: dict[str, str]) -> None:
             await c.get_prompt("catc_onboard_switch_with_nac", args)
 
 
+async def test_build_fabric_site_checks_aaa_before_the_template() -> None:
+    """D111: the site is built on No Authentication; the template is set after the AAA check."""
+    args = SAMPLES["catc_build_fabric_site"]
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        closed = (await c.get_prompt("catc_build_fabric_site", args)).messages[0].content.text  # type: ignore[union-attr]
+        none = (
+            (await c.get_prompt("catc_build_fabric_site", {**args, "authentication": "No Authentication"}))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+    site = closed[closed.index("6. Fabric site") : closed.index("7. Border")]
+    assert '"No Authentication" (step 13 sets "Closed Authentication"' in site
+    aaa = closed[closed.index("12. AAA before") : closed.index("13. Authentication template")]
+    for word in ("show aaa servers", "radius source-interface", "Loopback0", "show cts environment-data"):
+        assert word in aaa, word
+    assert "automate-tester" in aaa and "Location#All Locations" in aaa and "blocks every client" in aaa
+    for tool in ("ise_get_nad", "ise_policy_explain", "ise_update_nad"):
+        assert f"`{tool}`" in aaa, tool
+    template = closed[closed.index("13. Authentication template") : closed.index("14. Summary")]
+    assert "`catc_set_fabric_authentication_profile`" in template
+    assert 'template "Closed Authentication"' in template
+    assert "sgt-map vrf MCP_VN all" in template
+    assert "NCHS20769" in closed and "`catc_update_fabric_device`" in closed
+    # No Authentication: nothing to prove, no template step.
+    assert "12. Summary" in none and "AAA before" not in none
+    assert "catc_set_fabric_authentication_profile" not in none and "step 13" not in none
+
+
+async def test_rollout_and_nac_prompts_name_the_live_run_findings() -> None:
+    """D111: DEAD RADIUS until the automate-tester probe; client bindings in the VN's VRF."""
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        rollout = (
+            (await c.get_prompt("catc_group_policy_rollout", SAMPLES["catc_group_policy_rollout"]))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+        nac = (
+            (await c.get_prompt("catc_onboard_switch_with_nac", SAMPLES["catc_onboard_switch_with_nac"]))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+    assert "show aaa servers" in rollout and "automate-tester" in rollout and "Loopback0" in rollout
+    assert "sgt-map vrf <VN> all" in rollout and 'vrfs ["<VN>"]' in rollout
+    check = nac[nac.index("5. Check the switch") : nac.index("7. Access-port template")]
+    assert "show aaa servers" in check and "automate-tester" in check and "ip radius" in check
+
+
 async def test_prompt_snapshots() -> None:
     """Rendered prompts match tests/snapshots (UPDATE_PROMPT_SNAPSHOTS=1 accepts a change)."""
     server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))

@@ -7,6 +7,27 @@
   without `rp` go only to the VN's non-default RP. Catalyst Center 3.2.2 refuses ASM ranges on the default RP ("Default
   Rendezvous Point ... can't have ASM Group Ranges configured", seen live 2026-10-22); the tool marked every RP it built as
   the default, so any call with ranges failed after the preview.
+### Changed
+- **SD-Access prompts and guide hardened from the live run (D111, #208, Wave 6 part H).** What the 2026-10-21/22
+  run had to find by hand:
+  - `catc_build_fabric_site` builds the fabric site on No Authentication. For any other template it runs an AAA
+    check before setting it with `catc_set_fabric_authentication_profile`: RADIUS to ISE from every fabric
+    device's Loopback0 (the RLOC), TrustSec environment data, and, with the ise tools, the NAD on each RLOC, its
+    location and the policy set it hits. It also warns that a border priority is one way. The prompt now
+    `uses` ise.
+  - `catc_group_policy_rollout` names RADIUS to ISE (a DEAD server) as the usual cause of incomplete
+    environment data on a fabric edge, and the clients' IP-to-SGT bindings in the VN's VRF.
+  - `catc_onboard_switch_with_nac` checks `show aaa servers` and the RADIUS source address against the NAD.
+  - All three say that a RADIUS server marked DEAD stays DEAD until the automate-tester probe after the fix
+    (minutes).
+  - `catc_update_fabric_device` says a border priority is one way: 3.2.2 refuses 10, the unset default, with
+    `NCHS20769`. Its preview warns when a border gets its first priority.
+  - docs/sd-access.md covers:
+    - AAA before an authentication template;
+    - the one-way border priority;
+    - the command runner's 5-commands-per-request limit (#206);
+    - client bindings in the VN's VRF (#162);
+    - the DEAD-until-probe behaviour.
 
 ## 0.13.0 (2026-10-22)
 
