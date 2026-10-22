@@ -260,7 +260,8 @@ async def test_tool_reads_vn_vrf_bindings(api: respx.MockRouter) -> None:
         "catc_get_group_policy_enforcement", {"device": "mcp-sw1", "ips": ["10.10.40.100", "10.10.40.101"]}
     )
     first, second = (json.loads(c.request.content)["commands"] for c in route.calls)
-    assert "show vrf" in first and second == ["show cts role-based sgt-map vrf MCP_VN all"]
+    assert first[-1] == "show vrf" and len(first) == 5  # the 3.2.2 command runner takes at most 5 (#206)
+    assert second == ["show cts role-based sgt-map all", "show cts role-based sgt-map vrf MCP_VN all"]
     assert {"ip": "10.10.40.100", "sgt": 40, "source": "LOCAL", "vrf": "MCP_VN"} in out["bindings"]
     assert [(c["ip"], c.get("sgt"), c.get("vrf")) for c in out["clients"]] == [
         ("10.10.40.100", 40, "MCP_VN"),
@@ -268,12 +269,12 @@ async def test_tool_reads_vn_vrf_bindings(api: respx.MockRouter) -> None:
     ]
 
 
-async def test_tool_given_vrfs_needs_one_runner_call(api: respx.MockRouter) -> None:
+async def test_tool_given_vrfs_skips_show_vrf(api: respx.MockRouter) -> None:
     mock_sw1(api)
     route = mock_cli(api, {**CMDS, "show cts role-based sgt-map vrf MCP_VN all": EDGE_VRF})
     out = await call("catc_get_group_policy_enforcement", {"device": "mcp-sw1", "vrfs": ["MCP_VN"]})
-    sent = json.loads(route.calls[0].request.content)["commands"]
-    assert route.call_count == 1 and "show vrf" not in sent
+    first, second = (json.loads(c.request.content)["commands"] for c in route.calls)
+    assert "show vrf" not in first + second and second == ["show cts role-based sgt-map vrf MCP_VN all"]
     assert any(b.get("vrf") == "MCP_VN" and b["sgt"] == 41 for b in out["bindings"])
     with pytest.raises(ToolError, match="Not a VRF name"):
         await call("catc_get_group_policy_enforcement", {"device": "mcp-sw1", "vrfs": ["X; reload"]})

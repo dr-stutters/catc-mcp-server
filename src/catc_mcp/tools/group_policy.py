@@ -39,7 +39,7 @@ _NAME_ROW = re.compile(r"^\s*(?P<tag>\d+)-[0-9A-Fa-f]+:(?P<name>\S.*?)\s*$")
 _VRF = re.compile(r"^\s{1,4}(?P<name>[A-Za-z0-9_.:-]+)\s+(?:<not set>|\S+:\S+)\s+\S")
 VRF_NAME = re.compile(r"^[A-Za-z0-9_.:-]{1,32}$")
 MGMT_VRFS = frozenset({"Mgmt-vrf", "Mgmt-intf"})
-MAX_VRFS = 8
+MAX_VRFS = 4  # with the global table: one 5-command runner request
 _SERVER = re.compile(r"^\s*\*?Server:\s*(?P<ip>[0-9a-fA-F:.]+), port (?P<port>\d+)")
 COUNTER_COLS = ["sw_denied", "hw_denied", "sw_permitted", "hw_permitted", "sw_monitored", "hw_monitored"]
 
@@ -232,41 +232,47 @@ def register(reg: ToolRegistrar) -> None:
             if not VRF_NAME.fullmatch(v):
                 raise InvalidRequest(f"Not a VRF name: {v!r}")
         dev = await resolve_device(app, device)
-        cmds = [
+        env_cmd, perms_cmd, counters_cmd, enforce_cmd = (
             "show cts environment-data",
             "show cts role-based permissions",
             "show cts role-based counters",
-            "show cts role-based sgt-map all",
             "show running-config | include cts role-based enforcement",
+        )
+        global_cmd, vrf_cmd = "show cts role-based sgt-map all", "show cts role-based sgt-map vrf {} all"
+        # Two command-runner calls of at most 5 commands each (the 3.2.2 runner's limit): the TrustSec state
+        # and the VRF list, then the bindings (global and per VRF: SD-Access clients are in their VN's VRF).
+        first = [
+            env_cmd,
+            perms_cmd,
+            counters_cmd,
+            enforce_cmd,
+            global_cmd if vrfs is not None else "show vrf",
         ]
-        vrf_cmd = "show cts role-based sgt-map vrf {} all"
-        if vrfs is None:
-            cmds.append("show vrf")
-        else:
-            cmds += [vrf_cmd.format(v) for v in vrfs]
-        result = (await run_show(app, ctx, [dev], cmds))[0]
+        result = (await run_show(app, ctx, [dev], first))[0]
         out_by_cmd: dict[str, str] = dict(result.get("output") or {})
         if vrfs is None:
-            # Second command-runner call: the bindings of each VRF the switch has (SD-Access VNs).
             vrfs = parse_vrfs(out_by_cmd.get("show vrf", ""))[:MAX_VRFS]
-            if vrfs:
-                more = (await run_show(app, ctx, [dev], [vrf_cmd.format(v) for v in vrfs]))[0]
-                out_by_cmd.update(more.get("output") or {})
-                for key in ("failed", "blocked_by_catalyst_center"):
-                    if more.get(key):
-                        result[key] = [*(result.get(key) or []), *more[key]]
+            second = [global_cmd, *(vrf_cmd.format(v) for v in vrfs)]
+        else:
+            second = [vrf_cmd.format(v) for v in vrfs]
+        if second:
+            more = (await run_show(app, ctx, [dev], second))[0]
+            out_by_cmd.update(more.get("output") or {})
+            for key in ("failed", "blocked_by_catalyst_center"):
+                if more.get(key):  # {command: message}
+                    result[key] = {**(result.get(key) or {}), **more[key]}
 
         def text(cmd: str) -> str:
             t = out_by_cmd.get(cmd, "")
             return "" if t == "(no output)" else t
 
-        env = parse_environment(text(cmds[0]))
-        perms = parse_permissions(text(cmds[1]))
-        counters = parse_counters(text(cmds[2]))
-        bindings = parse_bindings(text(cmds[3]))
+        env = parse_environment(text(env_cmd))
+        perms = parse_permissions(text(perms_cmd))
+        counters = parse_counters(text(counters_cmd))
+        bindings = parse_bindings(text(global_cmd))
         for v in vrfs:
             bindings += [{**b, "vrf": v} for b in parse_bindings(text(vrf_cmd.format(v)))]
-        enforcement = [ln.strip() for ln in text(cmds[4]).splitlines() if ln.strip().startswith("cts ")]
+        enforcement = [ln.strip() for ln in text(enforce_cmd).splitlines() if ln.strip().startswith("cts ")]
         out: dict[str, Any] = {
             "device": result.get("device"),
             "environment": {
