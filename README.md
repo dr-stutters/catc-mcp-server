@@ -311,6 +311,12 @@ preview. ISE stays the policy owner; the prompt never starts Catalyst Center's g
 un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
 removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 
+`suite_change_check` (read tier, from the stutters-mcp-core suite pack) is the pre/post change check across
+SD-WAN, ISE, Catalyst Center and FMC. The Catalyst Center leg is `catc_snapshot(site)` before the change and
+`catc_compare_snapshot(before)` after it. The snapshot covers device reachability, health score and version, health per site,
+compliance per device and type, and open P1/P2 issues. The blob stays in the conversation, and the compare names what
+got unhealthy.
+
 - **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
   `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
   NAD in ISE; deleting the device later does **not** remove that NAD). `catc_get_policy_servers`
@@ -343,7 +349,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (97)
+### Read (99)
 
 | Tool | What it does |
 |---|---|
@@ -351,6 +357,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_check_fabric_aaa` | Whether every fabric device at an SD-Access fabric site can do AAA with ISE, with a verdict and the fix per device. |
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
 | `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
+| `catc_compare_snapshot` | Compare a catc_snapshot blob from before a change with one from after it (or, when `after` is empty, a fresh snapshot of the same scope taken now) and name what changed, most severe first: major = got unhealthy (session down, metric past its limit, healthy item gone), minor = changed but not clearly bad, info = recovered or improved. |
 | `catc_compliance_report` | Which devices are out of standard: compliance at a site (and below) from the last compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX, network settings, your compliance policies as NETWORK_RULES...) and severity, with the non-compliant devices and their failing categories and policy rule violations (worst first). |
 | `catc_config_drift` | Config drift across sites: which devices' running configuration differs from a golden device (lines missing compared with it, and extra lines) or no longer contains what a template renders to (lines missing; a 'no X' template line counts as present when X is absent). |
 | `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
@@ -439,6 +446,7 @@ removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
 | `catc_run_show_commands` | Run read-only `show` commands live on managed devices through Catalyst Center's command runner and return each device's output. |
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_site_health_report` | One report on a site over a window: health now, the device and client trends with their dips and direction, when issues were raised, the worst devices and clients with the issue behind each, issues that keep coming back, AI-driven insights where available, and a one-line verdict. |
+| `catc_snapshot` | Take a compact, versioned snapshot of Cisco Catalyst Center health for a pre/post change check: device reachability, health score and software version, health per site, compliance per device and type, open P1/P2 Assurance issues. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 | `catc_template_drift` | Template drift per device: for every device a template was deployed to, the version it last received against the template's latest committed version. |
 | `catc_template_usage` | Where a template is used: the network profiles it is attached to, the sites those profiles are assigned to, and the devices it was deployed to with the version each one runs against the latest committed version (current / behind / failed). |
