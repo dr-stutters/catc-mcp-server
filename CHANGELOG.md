@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0 (2026-10-24)
+
+Wave 7 (SD-WAN cross-architecture): pre/post change snapshots on the suite's snapshot contract. Core 0.15.0 with the suite
+prompt pack. 191 tools (99 read, 49 write, 43 dangerous) and nine prompts.
+
+### Added
+- `catc_snapshot` / `catc_compare_snapshot` (D118, #232): C53 snapshot contract with device and site health, compliance and open
+  P1/P2 issues; suite prompt pack (`suite_change_check`); core 0.15.0.
+
 ## 0.14.1 (2026-10-24)
 
 ### Security
