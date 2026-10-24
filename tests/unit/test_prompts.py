@@ -10,6 +10,7 @@ from catc_mcp._core.testing import (
     assert_inbound_references,
     assert_prompt_contract,
     assert_prompt_snapshots,
+    assert_suite_pack,
     load_tool_manifests,
 )
 from catc_mcp.server import create_server
@@ -68,6 +69,13 @@ SAMPLES = {
         "policy": "deny",
         "client_ips": "10.10.40.100, 10.10.40.101",
     },
+    "suite_change_check": {
+        "site": "Global/mcp-test-lab/mcp-test-bldg",
+        "phase": "pre",
+        "change": "shut an access port on mcp-sw1",
+        "before": "",
+        "servers": "catc,ise",
+    },
     "catc_onboard_switch_with_nac": {
         "switch_ip": "198.18.128.170",
         "site_path": "Global/mcp-test-lab/mcp-test-nac",
@@ -91,6 +99,12 @@ async def test_prompt_contract_all_tiers() -> None:
         known_prefixes={"cml", "ise", "fmc", "catc", "win"},
         external_tools={k: v for k, v in manifests.items() if k != "catc"},
     )
+
+
+async def test_suite_pack() -> None:
+    server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    # Peer snapshot tools not shipped yet (ise I82); peers without a committed manifest are not checked.
+    await assert_suite_pack(server, "catc", MANIFESTS, pending=["ise_snapshot", "ise_compare_snapshot"])
 
 
 async def test_onboard_prompt_renders() -> None:

@@ -6,7 +6,7 @@ import httpx
 from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
 
-from catc_mcp._core import ServerSpec, build_server
+from catc_mcp._core import ServerSpec, build_server, suite
 from catc_mcp._core.spec import SpecSource, bundled
 from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
@@ -56,6 +56,7 @@ from catc_mcp.tools import (
     site_writes,
     sites,
     smart,
+    snapshot,
     swim,
     system,
     tags,
@@ -105,6 +106,9 @@ Workflows:
 - What changed / who did it: catc_recent_activity (device or site, merged issues, syslog, notifications,
   audit), catc_list_audit_logs(changes_only=true), catc_compare_device_configs (config diff; the
   archive lags a few minutes behind a change).
+- Pre/post change check: catc_snapshot(site) before the change (keep the blob), catc_compare_snapshot(before)
+  after it: what got unhealthy (device reachability/health, site health, compliance, new P1/P2 issues).
+  Across products: prompt suite_change_check.
 - Roll back a template deploy: catc_get_template_deployment shows the CLI pushed per device; write a
   negation template ('no ...' lines), commit, preview and deploy it (prompt catc_change_window).
 - Clients: catc_list_clients (by switch/WLC/AP, site, SSID, VLAN), then catc_client_360 for one.
@@ -140,6 +144,7 @@ REGISTER = [
     assurance_analytics.register,
     network_services.register,
     smart.register,
+    snapshot.register,
     topology.register,
     compliance.register,
     compliance_policies.register,
@@ -186,6 +191,7 @@ REGISTER = [
     config_io.register,
     config_import.register,
     dangerous.register,
+    suite.register,
 ]
 
 # The appliance doesn't serve its OpenAPI document over the API, so a copy ships in the wheel
