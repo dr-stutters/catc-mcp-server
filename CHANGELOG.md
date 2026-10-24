@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1 (2026-10-24)
+
+### Security
+- fastmcp, fastmcp-slim and fastmcp-tasks 4.1.0 -> 4.1.3 (GHSA-7xgj-8392-5q4r, GHSA-vqqp-x5qm-5qp4). No tool changes.
+
 ## 0.14.0 (2026-10-22)
 
 SD-Access, second live run (Wave 6 parts E-H on two lab fabrics, multi-site over an SD-Access transit): `catc_check_fabric_aaa` (D110, can every fabric device do AAA with ISE), Catalyst Center system backups and the policy-migration rehearsal plan (D114), `catc_set_device_role`, and the fixes the live run found: multicast ASM ranges on a non-default RP, anchored VNs created anchored and extended per site (with the remote gateway on the anchor's pool), layer 2 handoff and INFRA_VN prerequisites, pub/sub changes only on an empty fabric, extranet policies before an SD-Access transit, the PAC-Opaque blob masked in device output, 404 errors carrying Catalyst Center's detail, and the prompts and docs/sd-access.md hardened from the run (D111).
