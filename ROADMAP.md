@@ -516,3 +516,12 @@ Run steps (L1–L11) are those of subsection D's live run script.
 - Part D: ~~D88 live: enable external authentication on the shared lab appliance for the proof (then disable), or unit-only until a dedicated appliance exists?~~ Decided 2026-10-20: live on the shared appliance, then disabled (owner: "Yes i agree with the Live option"), with the saved-token guard, ISE mirror users for the local accounts and a quiet window (L5b).
 - Part D: ~~L7 site~~ Decided 2026-10-20: a new building `mcp-test-nac` (owner: "unsure, new labs are fine"; the agent chose the isolated building, no new CML lab is needed for part D).
 - Part D: ~~L8 NAD~~ Decided 2026-10-20: snapshot, keep and record; delete and re-apply only if CatC refuses (owner: "do what gets the best outcome").
+
+## Waves 7–10 (planned 2026-10-23): Catalyst SD-WAN cross-architecture
+Suite plan: four waves of cross-architecture scenarios led by Catalyst SD-WAN, filed 2026-10-23 (draft `stutters-mcp-lab/planning/WAVE7-SDWAN-XARCH-DRAFT.md`). Waves: **7** foundation, identity and triage (Now) · **8** security and change safety · **9** topology and lifecycle (Next) · **10** reporting and reach (Later). Scenario epics in core: [C44](https://github.com/dr-stutters/stutters-mcp-core/issues/102), [C54](https://github.com/dr-stutters/stutters-mcp-core/issues/103), [C55](https://github.com/dr-stutters/stutters-mcp-core/issues/104), [C59](https://github.com/dr-stutters/stutters-mcp-core/issues/105), [C45](https://github.com/dr-stutters/stutters-mcp-core/issues/106), [C56](https://github.com/dr-stutters/stutters-mcp-core/issues/107), [C57](https://github.com/dr-stutters/stutters-mcp-core/issues/108), [C58](https://github.com/dr-stutters/stutters-mcp-core/issues/109), [C61](https://github.com/dr-stutters/stutters-mcp-core/issues/110), [C60](https://github.com/dr-stutters/stutters-mcp-core/issues/111).
+
+| # | Item | Wave | Milestone | Size | Scenario |
+|---|---|---|---|---|---|
+| [D118](https://github.com/dr-stutters/catc-mcp-server/issues/226) | **`catc_snapshot` for C53 pre/post checks** | 7 | Now | S | [C54](https://github.com/dr-stutters/stutters-mcp-core/issues/103) |
+| [D116](https://github.com/dr-stutters/catc-mcp-server/issues/227) | **Handoff and transit reads for the SD-Access over SD-WAN check** | 9 | Next | S | [C45](https://github.com/dr-stutters/stutters-mcp-core/issues/106) |
+| [D117](https://github.com/dr-stutters/catc-mcp-server/issues/228) | **System certificate read for `suite_cert_expiry`** | 10 | Later | S | — |
