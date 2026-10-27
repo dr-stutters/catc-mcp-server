@@ -279,7 +279,9 @@ assign → provision → template deploy → verification, preview-first at ever
 `catc_change_window` (write tier) runs a Day-N template change: baseline (issues, compliance, config
 archive) → per-device preview → rails (≤ 10 devices, window end) → deploy → deployment status → CLI
 check → config diff → compliance → issue diff → a written rollback plan (negation template or the
-pre-change archive). Without the dangerous tier it stops after the rails with a reviewed change plan.
+pre-change archive). It offers a maintenance window (`catc_schedule_maintenance`) so the change's own
+alerts stay quiet, and ends it after verification. Without the dangerous tier it stops after the rails with a
+reviewed change plan.
 `catc_onboard_switch_with_nac` (write tier, uses the **ise** server too) checks the ISE integration
 (`catc_get_policy_servers`), sets the site's client AAA to ISE, onboards and provisions the switch,
 confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
@@ -349,7 +351,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (99)
+### Read (100)
 
 | Tool | What it does |
 |---|---|
@@ -427,6 +429,7 @@ got unhealthy.
 | `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, the device they are about, summary, status, site and how long ago each last occurred, newest first. |
 | `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
+| `catc_list_maintenance_windows` | Catalyst Center device maintenance windows: description, status (UPCOMING, IN_PROGRESS, COMPLETED, FAILED), start and end in ISO 8601 UTC, duration, recurrence (every N days until a date), and the devices by hostname. |
 | `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
 | `catc_list_pending_fabric_events` | SD-Access fabric intent still to push: the pending fabric events Catalyst Center has queued, per fabric site. |
 | `catc_list_pnp_devices` | Plug and Play (PnP) devices waiting for or going through zero-touch onboarding: serial, platform, state, the site and workflow they're claimed to, first/last contact, and any error. |
@@ -453,7 +456,7 @@ got unhealthy.
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (49)
+### Write (52)
 
 | Tool | What it does |
 |---|---|
@@ -462,6 +465,7 @@ got unhealthy.
 | `catc_assign_profile_to_sites` | Assign a network profile to sites (areas, buildings or floors; child sites inherit it). |
 | `catc_assign_site_credentials` | Set which global credentials (CLI, SNMPv2c read/write, SNMPv3, HTTP read/write) a site uses (Design > Network Settings > Device Credentials). |
 | `catc_attach_template_to_profile` | Attach a Day-N CLI template to switching or wireless network profiles, so it belongs to the profiles' sites (the UI's provisioning flow offers it there). |
+| `catc_cancel_maintenance` | Delete a maintenance window (and every future occurrence of a recurring one). |
 | `catc_clone_template` | Copy a template under a new name, in the same or another project. |
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
 | `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http server']. |
@@ -493,6 +497,7 @@ got unhealthy.
 | `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
+| `catc_schedule_maintenance` | Schedule a Catalyst Center maintenance window for devices (a list, every device under a site, or a tag), optionally repeating every N days, so a planned change doesn't raise an alert storm. |
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
@@ -501,6 +506,7 @@ got unhealthy.
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
+| `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset). |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |
 | `catc_update_site_aaa_settings` | Set a site's AAA network settings (Design > Network Settings > AAA): which server devices use for administrator login (network) and for 802.1X/MAB endpoints (client), as ISE or plain AAA, RADIUS or TACACS. |
 | `catc_update_site_settings` | Change a site's network settings (Design > Network Settings): DNS servers and domain, NTP, DHCP servers, banner, time zone, and telemetry (external syslog/SNMP trap servers, Catalyst Center as collector, wired client data collection). |

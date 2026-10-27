@@ -28,6 +28,7 @@ from catc_mcp.tools import (
     group_policy,
     inventory,
     ipam,
+    maintenance,
     network_services,
     ops_writes,
     platform,
@@ -121,6 +122,10 @@ Workflows:
 - Backups (before the group-based policy migration or an upgrade): catc_get_backup_status (target configured?,
   ready?, last backup, running jobs) -> catc_create_backup (dangerous, SUPER-ADMIN-ROLE) ->
   catc_get_backup_status(execution=...) -> catc_list_backups. Restores are GUI-only.
+- Maintenance windows (silence a planned change's alerts):
+  catc_schedule_maintenance(devices|site|tag, start, end) -> catc_list_maintenance_windows ->
+  catc_update_maintenance_window / catc_cancel_maintenance. Devices in a running window raise no issues
+  and get no health, real problems included.
 Asynchronous operations return a task id; check it with catc_get_task.
 Anything not covered: catc_search_spec -> catc_get_definition -> catc_api_call.
 """.strip()
@@ -167,6 +172,7 @@ REGISTER = [
     pnp.register,
     template_writes.register,
     ops_writes.register,
+    maintenance.register,
     sda.register,
     sda_site_update.register,
     sda_ssi.register,
