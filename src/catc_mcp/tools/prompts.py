@@ -713,7 +713,9 @@ missing, skip steps 5 and say ISE could not be checked.
    authentication, so Assurance never saw it).
 2. Issues: {tool_ref("catc_list_issues")} for the client's switch/WLC and site in the window, and
    {tool_ref("catc_get_issue")} for the relevant ones (suggested commands, root cause). Issues stay active
-   for hours after they clear: compare last_seen with now.
+   for hours after they clear: compare last_seen with now. The client's own history:
+   {tool_ref("catc_client_timeline")} for {mac_ref} with hours {window:g} (onboarding steps, authentications,
+   roams, failures and issues by time); merge it by time with ISE's attempts from step 5.
 3. The device, live: {tool_ref("catc_run_show_commands")} on the switch with
    "show access-session mac <MAC> details" (status, method, policy, dACL, SGT, VLAN),
    "show interfaces <port> status", "show running-config interface <port>",

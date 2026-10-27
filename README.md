@@ -232,6 +232,8 @@ Typical flows:
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
   called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
+- **What happened to this client?** `catc_client_timeline(mac=..., hours=... or since=...)` merges its
+  onboarding steps, assurance events (ISE authentications, roams, failures) and issues by time.
 - **Template versions:** `catc_list_template_versions` → `catc_diff_template_versions`;
   `catc_template_usage` / `catc_template_drift` show which devices run an older version (roll back with
   `catc_deploy_template(version=...)`); move templates with their history between projects or Catalyst
@@ -349,13 +351,14 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (99)
+### Read (100)
 
 | Tool | What it does |
 |---|---|
 | `catc_ai_insights` | AI-driven issues from Cisco AI Network Analytics (baseline deviations Catalyst Center learns in the cloud) for the network or a site. |
 | `catc_check_fabric_aaa` | Whether every fabric device at an SD-Access fabric site can do AAA with ISE, with a verdict and the fix per device. |
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
+| `catc_client_timeline` | What happened to this client? One timeline, newest first, for one MAC: the onboarding steps Catalyst Center timestamps for it (association, authentication, DHCP, onboarded), its assurance events (ISE authentications, onboarding attempts with each step, roams, disconnects, with the result and failure reason) and its issues, merged by time with a `source` column. |
 | `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
 | `catc_compare_snapshot` | Compare a catc_snapshot blob from before a change with one from after it (or, when `after` is empty, a fresh snapshot of the same scope taken now) and name what changed, most severe first: major = got unhealthy (session down, metric past its limit, healthy item gone), minor = changed but not clearly bad, info = recovered or improved. |
 | `catc_compliance_report` | Which devices are out of standard: compliance at a site (and below) from the last compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX, network settings, your compliance policies as NETWORK_RULES...) and severity, with the non-compliant devices and their failing categories and policy rule violations (worst first). |

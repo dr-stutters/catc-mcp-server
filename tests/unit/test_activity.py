@@ -1,6 +1,9 @@
 """D2: catc_list_event_notifications, catc_recent_activity and the audit-log device filter."""
 
+import json
 import time
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -312,3 +315,161 @@ def test_audit_kind(text: str, kind: str) -> None:
     from catc_mcp.tools.activity import audit_kind
 
     assert audit_kind({"description": text}) == kind
+
+
+# --- D49 catc_client_timeline ------------------------------------------------------------------
+
+TIMELINE = json.loads((Path(__file__).parent.parent / "fixtures" / "client_timeline_322.json").read_text())
+WIRED_MAC = "52:54:00:13:42:10"
+WIFI_MAC = "02:00:00:00:aa:01"
+
+
+def shifted(obj: Any) -> Any:
+    """The fixture with its epoch-ms times moved so that recorded_at_ms is now."""
+    delta = NOW - TIMELINE["recorded_at_ms"]
+    if isinstance(obj, dict):
+        return {
+            k: (
+                v + delta
+                if isinstance(v, int) and v > 0 and (k == "timestamp" or k.endswith("Time"))
+                else shifted(v)
+            )
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [shifted(x) for x in obj]
+    return obj
+
+
+def mock_timeline(
+    api: respx.MockRouter, detail: str, events: str | None, *, issues: bool = False
+) -> dict[str, respx.Route]:
+    routes = {
+        "detail": api.get("/dna/intent/api/v1/client-detail").respond(json=shifted(TIMELINE[detail])),
+        "events": api.get("/dna/data/api/v1/assuranceEvents").mock(
+            side_effect=lambda r: httpx.Response(
+                200,
+                json=shifted(TIMELINE[events])
+                if events
+                and r.url.params["deviceFamily"].startswith(TIMELINE[events]["response"][0]["deviceFamily"])
+                else {"response": [], "page": {"count": 0}},
+            )
+        ),
+        "issues": api.get("/dna/data/api/v1/assuranceIssues").respond(
+            json=shifted(TIMELINE["issues"]) if issues else {"response": [], "page": {"count": 0}}
+        ),
+    }
+    return routes
+
+
+async def test_client_timeline_wired_ise_events(api: respx.MockRouter) -> None:
+    routes = mock_timeline(api, "wired_detail", "wired_events")
+    out = await call("catc_client_timeline", {"mac": "5254.0013.4210", "response_format": "json"})
+    assert [r["id"] for r in out["results"]] == ["evt-wired-2", "evt-wired-1"]
+    row = out["results"][0]
+    assert row["source"] == "event" and row["type"] == "ISE"
+    assert row["what"] == "Authentication Started: Client Authenticated - DOT1X"
+    assert row["device"] == "198.51.100.41" and row["time"].startswith("20")
+    # wired clients report 0 for every onboarding step time: no onboarding rows, no SUCCESS noise
+    assert out["counts"] == {"onboarding": 0, "event": 2, "issue": 0}
+    client = out["client"]
+    assert client["userId"] == "jdoe" and client["port"] == "GigabitEthernet1/0/6"
+    assert client["securityGroup"] == "Sales" and client["selectedAuthzProfiles"] == "PermitAccess"
+    assert "onboarding_root_causes" not in client
+    # hostType WIRED: only the Wired Client family is asked
+    ev = routes["events"].calls
+    assert len(ev) == 1 and ev.last.request.url.params["deviceFamily"] == "Wired Client"
+    assert ev.last.request.url.params["clientMac"] == WIRED_MAC
+    assert routes["issues"].calls.last.request.url.params["macAddress"] == WIRED_MAC
+    q = routes["detail"].calls.last.request.url.params
+    assert q["macAddress"] == WIRED_MAC and int(q["timestamp"]) <= int(time.time() * 1000)
+
+
+async def test_client_timeline_wireless_steps_roam_issue_merged(api: respx.MockRouter) -> None:
+    mock_timeline(api, "wireless_detail", "wireless_events", issues=True)
+    out = await call("catc_client_timeline", {"mac": WIFI_MAC, "hours": 2, "response_format": "json"})
+    rows = out["results"]
+    times = [r["time"] for r in rows]
+    assert times == sorted(times, reverse=True)
+    roam = rows[0]
+    assert roam["id"] == "evt-roam" and roam["type"] == "roam" and "802.11r" in roam["details"]
+    by_id = {r.get("id"): r for r in rows}
+    assert by_id["c3"]["source"] == "step" and by_id["c3"]["what"] == "Onboarding > DHCP"
+    assert by_id["c3"]["failure"] == "DHCP server timeout"
+    assert by_id["evt-onb"]["failure"] == "DHCP" and by_id["evt-onb"]["result"] == "Failure"
+    issue = by_id["iss-dhcp"]
+    assert issue["source"] == "issue" and issue["severity"] == "P3" and "first seen" in issue["details"]
+    onb = [r for r in rows if r["source"] == "onboarding"]
+    assert [r["what"] for r in onb] == ["Onboarded", "DHCP done", "Authentication done", "Association done"]
+    assert onb[0]["result"] == "DHCP_TIMEOUT" and onb[1]["details"] == "server 203.0.113.53"
+    assert out["counts"] == {"onboarding": 4, "event": 2, "step": 3, "issue": 1}
+    assert out["client"]["onboarding_root_causes"] == {
+        "latestRootCauseList": ["DHCP_TIMEOUT"],
+        "dhcpRootcauseList": ["DHCP_TIMEOUT"],
+    }
+
+
+async def test_client_timeline_window_drops_old_onboarding(api: respx.MockRouter) -> None:
+    mock_timeline(api, "wireless_detail", None)
+    # the onboarding steps are ~25 min old: a 10 minute window leaves them out
+    out = await call(
+        "catc_client_timeline",
+        {"mac": WIFI_MAC, "hours": 0.1, "sources": ["onboarding"], "response_format": "json"},
+    )
+    assert out["results"] == [] and out["counts"] == {"onboarding": 0}
+    assert "client" in out and "note" not in out
+
+
+async def test_client_timeline_since_and_unknown_type(api: respx.MockRouter) -> None:
+    api.get("/dna/intent/api/v1/client-detail").respond(500, json={"message": "boom"})
+    events = api.get("/dna/data/api/v1/assuranceEvents").respond(json={"response": [], "page": {"count": 0}})
+    issues = api.get("/dna/data/api/v1/assuranceIssues").respond(json={"response": [], "page": {"count": 0}})
+    since = datetime.fromtimestamp(NOW / 1000 - 3 * 3600, tz=UTC).isoformat()
+    out = await call("catc_client_timeline", {"mac": WIFI_MAC, "since": since, "response_format": "json"})
+    assert "client" in out["errors"] and "onboarding" in out["errors"]
+    # no hostType from client-detail: both client families are asked
+    assert sorted(c.request.url.params["deviceFamily"] for c in events.calls) == [
+        "Wired Client",
+        "Wireless Client",
+    ]
+    q = issues.calls.last.request.url.params
+    assert abs(int(q["endTime"]) - int(q["startTime"]) - 3 * 3600 * 1000) < 60_000
+    assert 2.9 < out["scope"]["hours"] < 3.1 and "no data" in out["note"]
+
+
+async def test_client_timeline_limit(api: respx.MockRouter) -> None:
+    mock_timeline(api, "wireless_detail", "wireless_events", issues=True)
+    out = await call(
+        "catc_client_timeline", {"mac": WIFI_MAC, "hours": 2, "limit": 3, "response_format": "json"}
+    )
+    assert out["returned"] == 3 and "10 rows found" in out["note"]
+
+
+async def test_client_timeline_every_source_fails(api: respx.MockRouter) -> None:
+    api.get("/dna/intent/api/v1/client-detail").respond(500, json={})
+    api.get("/dna/data/api/v1/assuranceEvents").respond(500, json={})
+    api.get("/dna/data/api/v1/assuranceIssues").respond(500, json={})
+    async with Client(create_server(make_settings())) as c:
+        with pytest.raises(ToolError, match="Every timeline source failed"):
+            await c.call_tool("catc_client_timeline", {"mac": WIFI_MAC})
+
+
+@pytest.mark.parametrize(
+    ("since", "match"),
+    [("yesterday", "not an ISO-8601"), ("2999-01-01T00:00", "future"), ("2000-01-01T00:00Z", "7 days")],
+)
+def test_since_hours_rejects(since: str, match: str) -> None:
+    from catc_mcp._core import InvalidRequest
+    from catc_mcp.tools.activity import since_hours
+
+    with pytest.raises(InvalidRequest, match=match):
+        since_hours(since)
+
+
+def test_since_hours_offsets() -> None:
+    from catc_mcp.tools.activity import since_hours
+
+    now = datetime(2026, 10, 27, 12, 0, tzinfo=UTC).timestamp() * 1000
+    assert since_hours("2026-10-27T09:00", now) == 3
+    assert since_hours("2026-10-27T19:00+10:00", now) == 3
+    assert since_hours("2026-10-27T09:00:00Z", now) == 3

@@ -277,6 +277,10 @@
       "tier": "read",
       "title": "Client 360"
     },
+    "catc_client_timeline": {
+      "tier": "read",
+      "title": "Client timeline"
+    },
     "catc_clone_template": {
       "tier": "write",
       "title": "Clone template"
