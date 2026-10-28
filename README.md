@@ -365,7 +365,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (106)
+### Read (107)
 
 | Tool | What it does |
 |---|---|
@@ -425,6 +425,7 @@ got unhealthy.
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
 | `catc_lifecycle_signals` | Every lifecycle and security signal Catalyst Center has for one device or the devices under a site, in one read: EoX alerts, Cisco security advisories (PSIRT), field notices, network bugs and insecure configurations (deprecated or weak CLI such as telnet, SNMPv1/v2c communities, HTTP), with one verdict line per signal and a row per device. |
+| `catc_link_mismatch` | Links whose two ends disagree, from Catalyst Center's Inventory Insight: speed/duplex mismatches and native VLAN / allowed VLAN mismatches at a site (and the sites below it). |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
 | `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
