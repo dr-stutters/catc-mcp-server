@@ -765,6 +765,93 @@ missing, skip steps 5 and say ISE could not be checked.
 9. Summary: the client, the diagnosis in one line, the evidence (one line per step), and the fix (proposed,
    or applied and verified)."""
 
+    @reg.prompt(title="Weekly site health review", uses=["catc"], tier=Tier.READ)
+    def catc_site_health_review(
+        site: Annotated[
+            str,
+            Field(
+                description="Site to review (name hierarchy), e.g. 'Global/Area/Building'; child sites too"
+            ),
+        ],
+        hours: Annotated[str, Field(description="Look-back window in hours (default 168, a week)")] = "168",
+    ) -> str:
+        """A weekly review of one site as a single ranked report: network, device and client health with
+        their trends and dips, open issues and the ones that keep coming back, compliance, software image
+        currency against the golden image, and template drift, with devices under a maintenance window
+        kept out of the findings, ending with next steps. Read tier: nothing changes; the next steps only
+        name the tools (writes among them are previewed when the user runs them)."""
+        texts = (site, hours)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        path = site.strip().rstrip("/")
+        if not path:
+            raise ValueError("Give the site to review, e.g. 'Global/Area/Building'.")
+        try:
+            window = float(hours)
+        except ValueError as exc:
+            raise ValueError(f"hours must be a number, not {hours!r}.") from exc
+        if not 0 < window <= 720:
+            raise ValueError("hours must be between 0 and 720 (30 days).")
+        w = f"{window:g}"
+        return f"""Review site {path} over the last {w} h and write one ranked report with next steps.
+Read only: no tool below changes anything. Where a step's tool fails or Catalyst Center has no data for it,
+say so in that section of the report ("not available: <reason>") and carry on; a missing section is not a
+healthy one.
+
+1. Scope. {tool_ref("catc_get_site")} for "{path}" (it must exist; stop and say so if it doesn't), then
+   {tool_ref("catc_list_devices")} with site "{path}" (all pages): hostname, IP, role, platform, software
+   version, reachability. This device list is the scope of every later step.
+2. Maintenance first. {tool_ref("catc_list_maintenance_windows")} with site "{path}": note each window that is
+   IN_PROGRESS now or overlapped the last {w} h (start, end, devices). Devices in maintenance mode raise no
+   issues and get no health, and a change inside a window is expected: a device's health dip, issue or
+   unreachability that falls inside its window is NOT a finding. List those devices in the report under
+   "Under maintenance" with the window, and keep them out of the ranking. A device still unreachable or
+   unhealthy after its window ended is a finding again.
+3. Health now and over time. {tool_ref("catc_site_health_report")} with site "{path}" and hours {w} (health
+   now, device and client trends with dips and direction, worst devices and clients with the issue behind
+   each, recurring issues, AI insights, verdict). Then {tool_ref("catc_health_trend")} with scope "site",
+   target "{path}" and hours {w} for the dips (when, how long, how low) and whether it is getting worse; for
+   the network context {tool_ref("catc_get_network_health")} (this site's row against the rest) and
+   {tool_ref("catc_get_client_health")}. Per device: {tool_ref("catc_list_device_health")} with site "{path}"
+   (POOR and FAIR devices, CPU/memory, link errors, reachability); trend a POOR device with
+   {tool_ref("catc_health_trend")} scope "device" to see whether it is new or chronic.
+4. Issues. {tool_ref("catc_list_issues")} with site "{path}", status "active" and hours {w}; for each P1/P2
+   {tool_ref("catc_get_issue")} (root cause, suggested actions). Issues stay active for hours after they
+   clear: compare last_seen with now and with the device's live reachability before calling one current.
+   What keeps coming back: {tool_ref("catc_issue_recurrence")} with site "{path}" and hours {w}.
+5. Compliance. {tool_ref("catc_compliance_report")} with site "{path}" (non-compliant devices, failing
+   categories and severity, policy rule violations; trend.since_previous_report says what is new and what was
+   fixed) and {tool_ref("catc_list_compliance_violations")} with site "{path}" for the rule detail. Note
+   when the last compliance run is older than the window: the result is stale, and the next steps recommend
+   {tool_ref("catc_run_compliance")} for the site's devices.
+6. Image currency. {tool_ref("catc_list_device_images")} with site "{path}": NON_COMPLIANT devices do not run
+   the golden image for their site and role (name the version they run); UNKNOWN means no golden image is
+   tagged for that platform, which is itself a finding (low). {tool_ref("catc_list_images")} with golden true
+   and site "{path}" shows which golden images apply.
+7. Template drift. {tool_ref("catc_template_drift")} with drifted_only true (deployments of the last 30
+   days): keep only the rows whose device is in the step 1 list. state behind = an older template version
+   is deployed; failed = the last deployment never succeeded.
+8. Rank the findings, most severe first, one line each: the device (or the site), what is wrong, the
+   evidence (value and time), and the step that found it. Order:
+   1. unreachable devices and P1 issues that are still current;
+   2. POOR health (device or site) and P2 issues; a site or device trend that is getting worse;
+   3. compliance failures (security advisories and your compliance policies before startup vs running);
+   4. devices not on the golden image;
+   5. template drift (failed before behind);
+   6. FAIR health, P3/P4 issues, recurring issues that are cleared now, no golden image tagged.
+   Merge duplicates (a down link raising an issue and a POOR score is one finding). Devices under
+   maintenance (step 2) never appear in the ranking.
+9. Report: a one-line verdict for {path} (healthy, watch, or act now) with the counts per rank; the ranked
+   findings; "Under maintenance"; "Not available" (sections Catalyst Center could not answer); and next steps,
+   each naming the tool: {tool_ref("catc_get_issue")} suggested commands with
+   {tool_ref("catc_run_show_commands")} for a current issue; {tool_ref("catc_run_compliance")} for stale
+   compliance (write tier, previewed); {tool_ref("catc_tag_golden_image")} where no golden image is tagged and
+   {tool_ref("catc_distribute_image")} / {tool_ref("catc_activate_image")} for devices off the golden
+   image, inside a change window (prompt catc_change_window); {tool_ref("catc_preview_template")} then
+   {tool_ref("catc_deploy_template")} to bring a drifted device to the latest committed version;
+   {tool_ref("catc_device_360")} for a POOR device.
+   Run nothing from the next steps here: the user picks them."""
+
     @reg.prompt(title="Build an SD-Access fabric site", uses=["catc", "ise"], tier=Tier.DANGEROUS)
     def catc_build_fabric_site(
         building: Annotated[

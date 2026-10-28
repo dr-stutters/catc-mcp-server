@@ -51,6 +51,7 @@ SAMPLES = {
         "expected_vlan": "10",
         "hours": "4",
     },
+    "catc_site_health_review": {"site": "Global/mcp-test-lab/mcp-test-bldg", "hours": "168"},
     "catc_build_fabric_site": {
         "building": "Global/mcp-test-lab/mcp-test-fabric",
         "border": "198.18.128.176",
@@ -401,3 +402,57 @@ async def test_client_troubleshoot_validates() -> None:
             )
         with pytest.raises(Exception, match="destination_ip"):
             await c.get_prompt("catc_client_troubleshoot", {"client": "x", "destination_ip": "nope"})
+
+
+async def test_site_health_review_renders_every_section() -> None:
+    args = SAMPLES["catc_site_health_review"]
+    async with Client(create_server(make_settings())) as c:  # read tier: no writes needed
+        assert "catc_site_health_review" in {p.name for p in await c.list_prompts()}
+        text = (await c.get_prompt("catc_site_health_review", args)).messages[0].content.text  # type: ignore[union-attr]
+        default = (
+            (await c.get_prompt("catc_site_health_review", {"site": "Global/mcp-test-lab/"}))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+    for tool in (
+        "catc_list_devices",
+        "catc_list_maintenance_windows",
+        "catc_site_health_report",
+        "catc_health_trend",
+        "catc_get_network_health",
+        "catc_get_client_health",
+        "catc_list_device_health",
+        "catc_list_issues",
+        "catc_issue_recurrence",
+        "catc_compliance_report",
+        "catc_list_compliance_violations",
+        "catc_list_device_images",
+        "catc_template_drift",
+    ):
+        assert f"`{tool}`" in text, tool
+    assert 'site "Global/mcp-test-lab/mcp-test-bldg"' in text and "hours 168" in text
+    # D73: maintenance comes before any finding and its devices stay out of the ranking.
+    assert text.index("catc_list_maintenance_windows") < text.index("catc_site_health_report")
+    assert "is NOT a finding" in text and "never appear in the ranking" in text
+    ranking = text[text.index("8. Rank") : text.index("9. Report")]
+    assert ranking.index("unreachable") < ranking.index("golden image") < ranking.index("template drift")
+    assert "next steps" in text[text.index("9. Report") :]
+    # Read tier: the next steps name write tools without running them.
+    assert "Run nothing from the next steps here" in text
+    assert 'site "Global/mcp-test-lab"' in default and "hours 168" in default
+
+
+@pytest.mark.parametrize(
+    ("bad", "match"),
+    [
+        ({"site": "  "}, "Give the site"),
+        ({"site": "Global/x", "hours": "0"}, "hours"),
+        ({"site": "Global/x", "hours": "900"}, "hours"),
+        ({"site": "Global/x", "hours": "week"}, "hours"),
+        ({"site": 'Global/"x'}, "quotes"),
+    ],
+)
+async def test_site_health_review_validates(bad: dict[str, str], match: str) -> None:
+    async with Client(create_server(make_settings())) as c:
+        with pytest.raises(Exception, match=match):
+            await c.get_prompt("catc_site_health_review", bad)
