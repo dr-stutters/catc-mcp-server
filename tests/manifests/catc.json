@@ -885,6 +885,10 @@
       "tier": "dangerous",
       "title": "Set fabric port channel"
     },
+    "catc_set_interface": {
+      "tier": "dangerous",
+      "title": "Set interface"
+    },
     "catc_set_l2_handoff": {
       "tier": "dangerous",
       "title": "Set layer 2 handoff"

@@ -33,6 +33,7 @@ from catc_mcp.tools import (
     ops_writes,
     platform,
     pnp,
+    ports,
     profiles,
     prompts,
     reports,
@@ -106,6 +107,9 @@ Workflows:
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
   commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Issues stay 'active' for
   hours after the problem clears: check last_seen and the live state before calling one current.
+- One port (contain or fix a client port; dangerous tier): catc_set_interface(device, interface,
+  shut|no_shut|access_vlan|voice_vlan|description); uplinks and trunks refused unless allow_uplink; the
+  preview carries Catalyst Center's dry run and the undo call.
 - What changed / who did it: catc_recent_activity (device or site, merged issues, syslog, notifications,
   audit), catc_list_audit_logs(changes_only=true), catc_compare_device_configs (config diff; the
   archive lags a few minutes behind a change).
@@ -201,6 +205,7 @@ REGISTER = [
     config_io.register,
     config_import.register,
     dangerous.register,
+    ports.register,
     suite.register,
 ]
 
