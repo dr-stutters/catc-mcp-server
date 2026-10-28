@@ -60,6 +60,103 @@ AKM = {
     "WPA2_WPA3_PERSONAL": {"isAuthKeyPSK": True, "isAuthKeySae": True},
     "WPA3_ENTERPRISE": {"isAuthKey8021x_SHA256": True},
 }
+L3Auth = Literal["open", "web_auth"]
+AuthServer = Literal["auth_ise", "auth_internal", "auth_external"]
+NasOption = Literal[
+    "AP ETH Mac Address",
+    "AP IP Address",
+    "AP Location",
+    "AP MAC Address",
+    "AP Name",
+    "AP Policy Tag",
+    "AP Site Tag",
+    "SSID",
+    "System IP Address",
+    "System MAC Address",
+    "System Name",
+]
+
+
+def web_auth_fields(
+    *,
+    guest: bool,
+    l3_auth: str | None,
+    auth_server: str | None,
+    external_auth_url: str | None,
+    web_passthrough: bool | None,
+    mac_filtering: bool | None,
+    aaa_override: bool | None,
+    pre_auth_acl: str | None,
+    radius_profiling: bool | None,
+    posturing: bool | None,
+    nas_options: list[str] | None,
+) -> tuple[dict[str, Any], list[str]]:
+    """The L3 (web) authentication and AAA fields of a site SSID (D126), checked against the 3.2.2 spec's
+    own rules for POST .../wirelessSettings/ssids: a Guest SSID needs l3AuthType; Guest + web_auth needs
+    authServer; auth_external needs externalAuthIpAddress; posturing applies only to Enterprise SSIDs,
+    and an Enterprise SSID maps an ACL only with posturing on. Returns (body fields, preview notes)."""
+    l3 = l3_auth or ("open" if guest else None)
+    if l3 != "web_auth":
+        for arg, val in (
+            ("auth_server", auth_server),
+            ("external_auth_url", external_auth_url),
+            ("web_passthrough", web_passthrough),
+        ):
+            if val is not None:
+                raise InvalidRequest(f"{arg} applies only with l3_auth='web_auth'.")
+    if l3 == "web_auth" and guest and auth_server is None:
+        raise InvalidRequest(
+            "A Guest SSID with l3_auth='web_auth' needs auth_server: auth_ise (ISE central web auth), "
+            "auth_internal (the WLC's own portal) or auth_external (external_auth_url)."
+        )
+    if auth_server == "auth_external" and not (external_auth_url or "").strip():
+        raise InvalidRequest("auth_server='auth_external' needs external_auth_url (the external portal).")
+    if external_auth_url is not None and auth_server != "auth_external":
+        raise InvalidRequest("external_auth_url applies only with auth_server='auth_external'.")
+    if web_passthrough and auth_server == "auth_ise":
+        raise InvalidRequest(
+            "web_passthrough is a WLC portal option; ISE central web auth has its own portal."
+        )
+    if posturing is not None and guest:
+        raise InvalidRequest("posturing applies only to Enterprise SSIDs (guest=false).")
+    if pre_auth_acl and not guest and not posturing:
+        raise InvalidRequest("An Enterprise SSID maps a pre-auth ACL only with posturing=true.")
+    if nas_options is not None and len(set(nas_options)) != len(nas_options):
+        raise InvalidRequest("nas_options must not repeat an option.")
+    fields: dict[str, Any] = {
+        "l3AuthType": l3,
+        "authServer": auth_server,
+        "externalAuthIpAddress": external_auth_url.strip() if external_auth_url else None,
+        "webPassthrough": web_passthrough,
+        "isMacFilteringEnabled": mac_filtering,
+        "aaaOverride": aaa_override,
+        "aclName": pre_auth_acl.strip() if pre_auth_acl else None,
+        "isRadiusProfilingEnabled": radius_profiling,
+        "isPosturingEnabled": posturing,
+        "nasOptions": nas_options or None,
+    }
+    notes: list[str] = []
+    if auth_server == "auth_ise":
+        if not mac_filtering:
+            notes.append(
+                "ISE central web auth starts with MAC filtering (MAB): without mac_filtering=true ISE never "
+                "sees the client and can't return the redirect."
+            )
+        if not aaa_override:
+            notes.append(
+                "Without aaa_override=true the WLC ignores the redirect URL/ACL and VLAN ISE returns "
+                "(the CoA after the portal login included)."
+            )
+    if pre_auth_acl:
+        notes.append(
+            f"The pre-auth ACL {pre_auth_acl.strip()!r} must exist on the WLC (Catalyst Center sends only "
+            "the name); for ISE CWA it is the redirect ACL the ISE authorization profile names."
+        )
+    if radius_profiling:
+        notes.append(
+            "RADIUS profiling needs at least one AAA/PSN server on the SSID or the site's AAA settings."
+        )
+    return {k: v for k, v in fields.items() if v is not None}, notes
 
 
 def ssids_path(site_id: str) -> str:
@@ -168,12 +265,69 @@ def register(reg: ToolRegistrar) -> None:
         enabled: Annotated[bool, Field(description="Admin state on the WLC")] = True,
         auth_servers: Annotated[
             list[str] | None,
-            Field(description="ENTERPRISE: AAA server IPs (default: the site's AAA settings, e.g. ISE)"),
+            Field(
+                description="AAA server IPs for 802.1X or MAC filtering (default: the site's AAA settings, "
+                "e.g. ISE)"
+            ),
+        ] = None,
+        l3_auth: Annotated[
+            L3Auth | None,
+            Field(
+                description="L3 authentication: 'web_auth' (a web portal: ISE CWA, the WLC's portal or an "
+                "external one) or 'open'. Guest SSIDs default to 'open'"
+            ),
+        ] = None,
+        auth_server: Annotated[
+            AuthServer | None,
+            Field(
+                description="web_auth: who serves the portal. auth_ise = ISE central web auth (guest CWA, "
+                "with mac_filtering + aaa_override), auth_internal = the WLC, auth_external = "
+                "external_auth_url"
+            ),
+        ] = None,
+        external_auth_url: Annotated[
+            str | None,
+            Field(max_length=256, description="auth_external: the external web portal URL or IP"),
+        ] = None,
+        web_passthrough: Annotated[
+            bool | None,
+            Field(
+                description="web_auth on the WLC/external portal: web passthrough (accept terms, no login)"
+            ),
+        ] = None,
+        mac_filtering: Annotated[
+            bool | None, Field(description="MAC filtering (MAB to the AAA server; ISE CWA needs it)")
+        ] = None,
+        aaa_override: Annotated[
+            bool | None,
+            Field(description="AAA override: apply the VLAN, ACL and redirect the AAA server returns"),
+        ] = None,
+        pre_auth_acl: Annotated[
+            str | None,
+            Field(
+                max_length=128,
+                description="Pre-auth ACL name on the WLC (for ISE CWA: the redirect ACL, e.g. "
+                "ACL_WEBAUTH_REDIRECT); an Enterprise SSID needs posturing=true for it",
+            ),
+        ] = None,
+        radius_profiling: Annotated[
+            bool | None,
+            Field(description="RADIUS profiling (device sensor attributes to ISE; needs an AAA/PSN server)"),
+        ] = None,
+        posturing: Annotated[
+            bool | None, Field(description="Enterprise SSIDs: posture (ISE posture redirect)")
+        ] = None,
+        nas_options: Annotated[
+            list[NasOption] | None,
+            Field(min_length=1, max_length=3, description="NAS-ID options sent to the AAA server (up to 3)"),
         ] = None,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Define an SSID (WLAN) in network design. Nothing reaches a WLC until a wireless profile with this
-        SSID is assigned to AP locations and the WLC is provisioned. Preview-first; passphrases are masked."""
+        SSID is assigned to AP locations and the WLC is provisioned. Preview-first; passphrases are masked.
+        Guest with ISE central web auth (CWA): guest=true, security='OPEN', l3_auth='web_auth',
+        auth_server='auth_ise', mac_filtering=true, aaa_override=true, pre_auth_acl=<the redirect ACL>
+        (prompt catc_guest_wireless_with_ise joins it to the ISE side)."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         personal = security.endswith("PERSONAL")
@@ -181,6 +335,19 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest("PERSONAL security needs a passphrase of 8-63 characters.")
         if not personal and passphrase is not None:
             raise InvalidRequest("A passphrase only applies to PERSONAL security.")
+        l3_body, notes = web_auth_fields(
+            guest=guest,
+            l3_auth=l3_auth,
+            auth_server=auth_server,
+            external_auth_url=external_auth_url,
+            web_passthrough=web_passthrough,
+            mac_filtering=mac_filtering,
+            aaa_override=aaa_override,
+            pre_auth_acl=pre_auth_acl,
+            radius_profiling=radius_profiling,
+            posturing=posturing,
+            nas_options=list(nas_options) if nas_options else None,
+        )
         existing = [x for x in await site_ssids(app, str(s["id"])) if x.get("ssid") == ssid]
         blockers = [f"SSID {ssid} already exists at {s.get('nameHierarchy')}."] if existing else []
         body: dict[str, Any] = {
@@ -196,6 +363,7 @@ def register(reg: ToolRegistrar) -> None:
             body |= AKM[security] | {"rsnCipherSuiteCcmp128": True}
         if auth_servers:
             body["authServers"] = auth_servers
+        body |= l3_body
         shown = dict(body)
         if passphrase is not None:
             shown["passphrase"] = MASK
@@ -205,6 +373,7 @@ def register(reg: ToolRegistrar) -> None:
             details={"method": "POST", "path": path, "body": shown},
             fingerprint={"site": s["id"], "existing": existing},
             blockers=blockers,
+            side_effects=notes,
         )
 
         async def apply() -> Any:
@@ -236,6 +405,16 @@ def register(reg: ToolRegistrar) -> None:
                 "broadcast": broadcast,
                 "enabled": enabled,
                 "auth_servers": auth_servers,
+                "l3_auth": l3_auth,
+                "auth_server": auth_server,
+                "external_auth_url": external_auth_url,
+                "web_passthrough": web_passthrough,
+                "mac_filtering": mac_filtering,
+                "aaa_override": aaa_override,
+                "pre_auth_acl": pre_auth_acl,
+                "radius_profiling": radius_profiling,
+                "posturing": posturing,
+                "nas_options": nas_options,
             },
             confirm=confirm,
             plan=plan,
