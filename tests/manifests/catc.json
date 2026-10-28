@@ -693,6 +693,10 @@
       "tier": "read",
       "title": "Lifecycle and security signals"
     },
+    "catc_link_mismatch": {
+      "tier": "read",
+      "title": "Link mismatches (speed/duplex, VLAN)"
+    },
     "catc_list_activities": {
       "tier": "read",
       "title": "List activities"
