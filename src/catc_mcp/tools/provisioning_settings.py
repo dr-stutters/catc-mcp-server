@@ -83,6 +83,36 @@ def explain(s: dict[str, bool | None]) -> str:
     return "Catalyst Center did not report the setting."
 
 
+def gate_effect(s: dict[str, bool | None], what: str) -> str | None:
+    """The side-effect line for a provision/deploy preview while the settings gate it, else None."""
+    if s["require_itsm_approval"]:
+        return (
+            f"Catalyst Center requires ITSM approval (Visibility and Control of Configurations): the {what} "
+            "creates a configuration preview that must be approved in the ITSM (ServiceNow) integration "
+            "before it runs, or is refused with 422 'config preview mandated' "
+            "(catc_get_provisioning_settings / catc_set_provisioning_settings)."
+        )
+    if s["require_preview"]:
+        return (
+            f"Catalyst Center requires a configuration preview (Visibility and Control of Configurations): "
+            f"the {what} creates a preview/Work Item that must be approved in Catalyst Center, or is "
+            "refused with 422 'config preview mandated' (catc_set_provisioning_settings)."
+        )
+    return None
+
+
+async def preview_gate(app: CatcApp, what: str) -> tuple[list[str], dict[str, Any]]:
+    """For a gated tool's preview (GATED_TOOLS): ([side-effect line] when requirePreview or
+    requireItsmApproval is on, else [], the settings for the plan's details and fingerprint). One read of
+    provisioningSettings per call; a failed read never breaks the preview: it says so in the settings."""
+    try:
+        s = await read_settings(app)
+    except UpstreamError as e:
+        return [], {"unavailable": f"{PATH}: {str(e)[:150]}"}
+    line = gate_effect(s, what)
+    return ([line] if line else []), dict(s)
+
+
 def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Provisioning settings (Visibility and Control of Configurations)")
     async def catc_get_provisioning_settings(ctx: Context) -> dict[str, Any]:
