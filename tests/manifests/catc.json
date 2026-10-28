@@ -521,6 +521,10 @@
       "tier": "read",
       "title": "Find a host"
     },
+    "catc_get_activity": {
+      "tier": "read",
+      "title": "Get activity"
+    },
     "catc_get_backup_status": {
       "tier": "read",
       "title": "Backup status"
@@ -688,6 +692,10 @@
     "catc_lifecycle_signals": {
       "tier": "read",
       "title": "Lifecycle and security signals"
+    },
+    "catc_list_activities": {
+      "tier": "read",
+      "title": "List activities"
     },
     "catc_list_audit_logs": {
       "tier": "read",

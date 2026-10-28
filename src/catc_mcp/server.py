@@ -12,6 +12,7 @@ from catc_mcp.client import CatcApp
 from catc_mcp.config import Settings
 from catc_mcp.tools import (
     aaa,
+    activities,
     activity,
     archive,
     assurance,
@@ -139,6 +140,9 @@ Workflows:
 - Issue settings ("stop paging me about X", "alert when this syslog appears"): catc_list_issue_definitions
   (enabled, priority vs default, threshold) -> catc_update_issue_definition (enable/disable, priority,
   threshold); syslog-pattern issues: catc_create_custom_issue / catc_delete_custom_issue.
+- Scheduled jobs ("what will Catalyst Center run tonight?", "what ran on its own overnight?"):
+  catc_list_activities (upcoming / in progress / recurring / finished, failed first) -> catc_get_activity(id)
+  (triggered jobs, failure reason, task id).
 - Maintenance windows (silence a planned change's alerts):
   catc_schedule_maintenance(devices|site|tag, start, end) -> catc_list_maintenance_windows ->
   catc_update_maintenance_window / catc_cancel_maintenance. Devices in a running window raise no issues
@@ -160,6 +164,7 @@ SPEC = ServerSpec(
 REGISTER = [
     system.register,
     activity.register,
+    activities.register,
     sites.register,
     inventory.register,
     assurance.register,

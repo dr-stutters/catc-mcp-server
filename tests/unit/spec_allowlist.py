@@ -61,4 +61,12 @@ ALLOWLIST: tuple[Allowed, ...] = (
         reason="test_api_call_masking sends a synthetic body through catc_api_call (caller-supplied, "
         "not a curated tool's request) to prove secrets are masked; the curated tools send wlanProfiles.",
     ),
+    Allowed(
+        "path",
+        "GET",
+        r"/dna/intent/api/v1/activities/[0-9a-fA-F-]{36}",
+        reason="catc_get_activity: the spec lists GET one activity only at the doubled prefix "
+        "/dna/intent/api/v1/intent/api/v1/activities/{id}, which is a 404 on 3.2.2; the single prefix "
+        "answers (read live on the lab appliance, 2026-10-28). The doubled path stays as the fallback.",
+    ),
 )
