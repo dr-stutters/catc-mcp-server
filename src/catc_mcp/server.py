@@ -110,8 +110,9 @@ Workflows:
   catc_set_wlan_vlan / catc_set_rf_profile stage the change -> catc_get_wlc_config(diff=true) ->
   catc_deploy_wlc_config -> catc_get_wlc_deployments.
 - Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
-  settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then
-  re-provision (catc_provision_devices). Use templates for everything else.
+  settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then apply
+  telemetry (syslog/SNMP trap/NetFlow collectors) with catc_apply_telemetry_settings, or re-provision
+  (catc_provision_devices) for other settings. Use templates for everything else.
 - Change control ("why was my deploy refused with 'config preview mandated'?"): catc_get_provisioning_settings
   (require_preview, require_itsm_approval: global) -> catc_set_provisioning_settings (dangerous; ITSM approval
   refused without an ITSM integration).

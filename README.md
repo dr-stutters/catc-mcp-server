@@ -194,8 +194,8 @@ token (`catc-mcp-server token alice`).
 Every write is preview-first. On top of that (core G7, `docs/PRODUCTION.md` in stutters-mcp-core):
 
 - **`CATC_MAX_DEVICES_PER_CHANGE`** (default **10**, `0` = off): template deploys, provisioning, SWIM
-  distribute/activate, PnP claims, device replacement, device deletion and `catc_write_memory` that touch more
-  devices are blocked in the preview. `catc_deploy_template` targets an explicit device list, every device under
+  distribute/activate, PnP claims, device replacement, device deletion, `catc_write_memory` and
+  `catc_apply_telemetry_settings` that touch more devices are blocked in the preview. `catc_deploy_template` targets an explicit device list, every device under
   a `site` (child sites included; `Global` = the whole inventory) or a `tag`; the limit applies after expansion.
 - **Blast radius**: those tools plus `catc_resync_devices` and `catc_run_compliance` report `blast_radius`
   (devices touched), limited by `MCP_MAX_BLAST_RADIUS` / `MCP_BLAST_RADIUS_OVERRIDES` (e.g.
@@ -507,10 +507,11 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (61)
+### Write (62)
 
 | Tool | What it does |
 |---|---|
+| `catc_apply_telemetry_settings` | Push the site telemetry settings (external syslog and SNMP trap servers, NetFlow / application visibility collector, wired and wireless data collection) to devices without a full re-provision: Catalyst Center's 'Update Telemetry Settings' device action. |
 | `catc_assign_compliance_policy` | Change which sites a compliance policy applies to (each site includes the sites below it). |
 | `catc_assign_devices_to_site` | Assign (or move) unprovisioned network devices to a building or floor. |
 | `catc_assign_profile_to_sites` | Assign a network profile to sites (areas, buildings or floors; child sites inherit it). |

@@ -1,7 +1,9 @@
 """Network settings writes (Design > Network Settings): DNS, NTP, DHCP, banner, time zone and
-telemetry (syslog / SNMP trap collectors, wired client data collection) for a site."""
+telemetry (syslog / SNMP trap collectors, wired client data collection) for a site, and pushing a
+site's telemetry settings to its devices without a full re-provision (D122)."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import asyncio
 import ipaddress
 from typing import Annotated, Any
 from zoneinfo import available_timezones
@@ -12,15 +14,19 @@ from pydantic import Field
 from catc_mcp._core import (
     Confirm,
     InvalidRequest,
+    NotFound,
     Plan,
+    TaskFailed,
     ToolRegistrar,
     UpstreamError,
+    UpstreamTimeout,
     field_changes,
     get_client,
     preview_or_apply,
 )
-from catc_mcp.client import CatcApp
+from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import resolve_site
+from catc_mcp.safety import device_limit_blockers, limit_policy, resolve_targets
 from catc_mcp.tools.sites import SETTINGS
 
 Servers = Annotated[
@@ -47,6 +53,45 @@ def _strip_inherited(v: Any) -> Any:
             k: _strip_inherited(x) for k, x in v.items() if k not in ("inheritedSiteId", "inheritedSiteName")
         }
     return v
+
+
+# D122: POST telemetrySettings/apply {deviceIds} makes devices conform to their own site's telemetry settings
+# (3.2.2 spec: one task tracks the whole request; "for more granular status tracking, split your devices
+# into multiple requests", so the tool sends one request per device).
+TELEMETRY_APPLY_PATH = "/dna/intent/api/v1/telemetrySettings/apply"
+TELEMETRY_VERIFY_COMMANDS = [
+    "show logging | include Logging to",
+    "show running-config | include snmp-server host",
+    "show flow exporter",
+]
+_APPLY_CONCURRENCY = 5
+
+
+def _brief(d: dict[str, Any]) -> str:
+    return f"{d.get('hostname') or '(not collected yet)'} ({d.get('managementIpAddress')})"
+
+
+def effective_telemetry(raw: Any, site_name: str | None) -> dict[str, Any]:
+    """GET sites/{id}/telemetrySettings?_inherited=true -> each part with `source`: 'local' or
+    'inherited from <site>'."""
+    out: dict[str, Any] = {}
+    for key, v in (raw if isinstance(raw, dict) else {}).items():
+        if not isinstance(v, dict):
+            out[key] = v
+            continue
+        part = _strip_inherited(v)
+        name = v.get("inheritedSiteName")
+        part["source"] = f"inherited from {name}" if name and name != site_name else "local"
+        out[key] = part
+    return out
+
+
+async def _assigned_site(app: CatcApp, device_id: str) -> dict[str, Any] | None:
+    try:
+        a = await app.get_response(f"/dna/intent/api/v1/networkDevices/{safe_id(device_id)}/assignedToSite")
+    except NotFound:
+        return None
+    return a if isinstance(a, dict) and a.get("siteId") else None
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -87,7 +132,8 @@ def register(reg: ToolRegistrar) -> None:
         Center as collector, wired client data collection). Only the settings you pass change; child
         sites inherit them unless they override. Preview-first: shows each setting's current
         (effective, possibly inherited) and new value. Nothing reaches the devices until they are
-        provisioned (catc_provision_devices). Read settings with catc_get_site_settings."""
+        updated: telemetry (syslog, SNMP traps, NetFlow) with catc_apply_telemetry_settings, the other
+        settings by re-provisioning (catc_provision_devices). Read settings with catc_get_site_settings."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         sid = str(s["id"])
@@ -167,7 +213,11 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append("Nothing to change: the site already has these settings.")
         plan = Plan(
             f"Update network settings of {s.get('nameHierarchy')}: {', '.join(changes) or 'nothing'}",
-            details={"changes": changes, "note": "Devices get the new settings when (re)provisioned."},
+            details={
+                "changes": changes,
+                "note": "Devices get the new settings when updated: apply telemetry with "
+                "catc_apply_telemetry_settings, or re-provision (catc_provision_devices) for other settings.",
+            },
             fingerprint=current,
             blockers=blockers,
         )
@@ -182,7 +232,15 @@ def register(reg: ToolRegistrar) -> None:
                     done[cat] = f"failed: {str(e)[:300]}"
                     return {"updated": done, "stopped_at": cat}
                 done[cat] = job.get("status") or "ok"
-            return {"updated": done}
+            out: dict[str, Any] = {"updated": done}
+            if "telemetry" in done:
+                out["next"] = (
+                    "Push the telemetry to the site's devices with catc_apply_telemetry_settings(site=...), "
+                    "or re-provision (catc_provision_devices) for other settings."
+                )
+            else:
+                out["next"] = "Re-provision the site's devices (catc_provision_devices) to push the settings."
+            return out
 
         return await preview_or_apply(
             ctx,
@@ -201,6 +259,145 @@ def register(reg: ToolRegistrar) -> None:
                 "use_builtin_trap_server": use_builtin_trap_server,
                 "wired_data_collection": wired_data_collection,
             },
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
+    @reg.write(title="Apply telemetry settings", destructive=False, idempotent=True)
+    async def catc_apply_telemetry_settings(
+        ctx: Context,
+        devices: Annotated[
+            list[str] | None,
+            Field(max_length=100, description="Devices (hostname, IP, serial or id)"),
+        ] = None,
+        site: Annotated[
+            str | None, Field(description="Every device assigned to this site or a site below it")
+        ] = None,
+        tag: Annotated[str | None, Field(description="Every device with this tag")] = None,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Push the site telemetry settings (external syslog and SNMP trap servers, NetFlow / application
+        visibility collector, wired and wireless data collection) to devices without a full re-provision:
+        Catalyst Center's 'Update Telemetry Settings' device action. Each device follows the settings of
+        the site it is assigned to (catc_update_site_settings changes them). Give exactly one of devices,
+        site or tag. Preview-first: the device count, each device's site and that site's effective telemetry
+        (local or inherited from a parent); counts towards CATC_MAX_DEVICES_PER_CHANGE. One Catalyst Center
+        task per device; returns the status per device and the show commands to verify with
+        catc_run_show_commands."""
+        app: CatcApp = get_client(ctx)
+        devs, targeting = await resolve_targets(app, devices, site, tag)
+        if not devs:
+            raise InvalidRequest(f"No devices to apply telemetry settings to ({targeting}).")
+        blockers = device_limit_blockers(app, len(devs))
+        sites: dict[str, dict[str, Any]] = {}
+        per_device: list[dict[str, Any]] = []
+        unassigned: list[str] = []
+        if not blockers:  # over the limit: don't read every device's site just to refuse
+            for d in devs:
+                a = await _assigned_site(app, str(d["id"]))
+                if a is None:
+                    unassigned.append(_brief(d))
+                    continue
+                sid = str(a["siteId"])
+                name = str(a.get("siteNameHierarchy") or sid)
+                per_device.append({"device": _brief(d), "site": name})
+                if sid not in sites:
+                    try:
+                        raw = await app.get_response(
+                            f"/dna/intent/api/v1/sites/{safe_id(sid)}/{SETTINGS['telemetry']}",
+                            {"_inherited": "true"},
+                        )
+                        tele: Any = effective_telemetry(raw, name.rsplit("/", 1)[-1])
+                    except UpstreamError as e:
+                        tele = {"error": f"can't read the site's telemetry settings: {str(e)[:200]}"}
+                    sites[sid] = {"site": name, "devices": 0, "telemetry": tele}
+                sites[sid]["devices"] += 1
+        if unassigned:
+            blockers.append(
+                "Not assigned to a site, so there are no telemetry settings to apply: "
+                f"{', '.join(unassigned)}. Assign them first (catc_assign_devices_to_site)."
+            )
+        unreachable = [
+            _brief(d) for d in devs if str(d.get("reachabilityStatus") or "").lower() != "reachable"
+        ]
+        details: dict[str, Any] = {
+            "targets": targeting,
+            "device_count": len(devs),
+            "devices": per_device or [{"device": _brief(d)} for d in devs],
+            "site_telemetry": list(sites.values()),
+            "method": "POST",
+            "path": TELEMETRY_APPLY_PATH,
+            "body": "one request per device: {'deviceIds': [<device id>]}",
+            **limit_policy(app),
+        }
+        if unreachable:
+            details["warning"] = (
+                "Not Reachable in the inventory, so the update will probably fail there: "
+                f"{', '.join(unreachable)}."
+            )
+        plan = Plan(
+            f"Apply site telemetry settings to {len(devs)} device(s)",
+            details=details,
+            side_effects=[
+                "Changes the running configuration of every listed device: logging hosts, SNMP trap "
+                "receivers and NetFlow exporters follow the site's telemetry settings (others are removed).",
+                "Not saved to the startup config: run catc_write_memory(devices) afterwards to keep it.",
+            ],
+            fingerprint={
+                "devices": sorted(str(d["id"]) for d in devs),
+                "sites": {k: v["telemetry"] for k, v in sites.items()},
+            },
+            blockers=blockers,
+            blast_radius=len(devs),
+        )
+
+        async def apply() -> Any:
+            sem = asyncio.Semaphore(_APPLY_CONCURRENCY)
+
+            async def one(d: dict[str, Any]) -> dict[str, Any]:
+                row: dict[str, Any] = {"device": _brief(d)}
+                async with sem:
+                    try:
+                        job = await app.run_job(
+                            "POST",
+                            TELEMETRY_APPLY_PATH,
+                            {"deviceIds": [str(d["id"])]},
+                            ctx=ctx,
+                            what=f"telemetry update {d.get('hostname') or d['id']}",
+                        )
+                    except (TaskFailed, UpstreamTimeout, UpstreamError) as e:
+                        row.update(applied=False, error=str(e)[:400])
+                        return row
+                row.update(applied=True, status=job.get("status"))
+                if job.get("task_id"):
+                    row["task_id"] = job["task_id"]
+                if job.get("progress"):
+                    row["progress"] = job["progress"]
+                return row
+
+            rows = await asyncio.gather(*(one(d) for d in devs))
+            ok = sum(1 for r in rows if r["applied"])
+            out: dict[str, Any] = {"applied": ok, "failed": len(rows) - ok, "devices": rows}
+            done = [d for d, r in zip(devs, rows, strict=True) if r["applied"]]
+            if done:
+                out["verify"] = {
+                    "tool": "catc_run_show_commands",
+                    "devices": [str(d.get("hostname") or d.get("managementIpAddress")) for d in done],
+                    "commands": TELEMETRY_VERIFY_COMMANDS,
+                }
+                out["note"] = "Not saved to the startup config: catc_write_memory(devices) keeps it."
+            if ok < len(rows):
+                out["next"] = (
+                    "Check the failed devices are Reachable and Managed (catc_get_device) and the task "
+                    "(catc_get_task), then run catc_apply_telemetry_settings again for them."
+                )
+            return out
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_apply_telemetry_settings",
+            args={"devices": devices, "site": site, "tag": tag},
             confirm=confirm,
             plan=plan,
             apply=apply,

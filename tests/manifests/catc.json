@@ -603,6 +603,10 @@
       "tier": "dangerous",
       "title": "Apply pending fabric events"
     },
+    "catc_apply_telemetry_settings": {
+      "tier": "write",
+      "title": "Apply telemetry settings"
+    },
     "catc_assign_compliance_policy": {
       "tier": "write",
       "title": "Assign compliance policy to sites"
