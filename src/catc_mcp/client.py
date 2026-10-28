@@ -50,6 +50,17 @@ TASK_PATH = "/dna/intent/api/v1/task/{id}"
 EXECUTION_PATH = "/dna/platform/management/business-api/v1/execution-status/{id}"
 
 
+# Catalyst Center refuses a direct provision/deploy while Visibility and Control of Configurations is on
+# (422 'config preview mandated', D85/D128); the error then names the setting behind it.
+PREVIEW_GATE_RE = re.compile(
+    r"preview\W+(is\W+)?(mandat|required)|require\W*preview|itsm\W+approval", re.IGNORECASE
+)
+PREVIEW_GATE_HINT = (
+    "Catalyst Center's provisioning settings (Visibility and Control of Configurations) require a"
+    " configuration preview or ITSM approval for this: check catc_get_provisioning_settings; turning it off "
+    "is a global change (catc_set_provisioning_settings, dangerous tier)."
+)
+
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 
@@ -103,6 +114,8 @@ class CatcApiClient(ApiClient):
     def error_from_response(self, resp: httpx.Response) -> UpstreamError:
         err = super().error_from_response(resp)
         if resp.status_code != 404:
+            if PREVIEW_GATE_RE.search(str(err)):
+                return type(err)(f"{err} {PREVIEW_GATE_HINT}", err.status_code)
             return err
         try:
             body = resp.json()

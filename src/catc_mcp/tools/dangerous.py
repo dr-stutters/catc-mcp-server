@@ -14,6 +14,7 @@ from catc_mcp._core import (
     Confirm,
     InvalidRequest,
     Plan,
+    TaskFailed,
     ToolRegistrar,
     UpstreamError,
     compact,
@@ -21,13 +22,22 @@ from catc_mcp._core import (
     poll_until,
     preview_or_apply,
 )
+from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp, job_ref, safe_id
 from catc_mcp.common import ensure_list, resolve_device, resolve_site, resolve_template
-from catc_mcp.safety import device_limit_blockers, resolve_targets
+from catc_mcp.safety import (
+    TRUNCATED,
+    TargetsTruncated,
+    device_limit_blockers,
+    devices_by_id,
+    resolve_targets,
+    site_assignments,
+)
 from catc_mcp.tools.archive import archive_files
 from catc_mcp.tools.discovery import resolve_discovery
 from catc_mcp.tools.inventory import redact_config
 from catc_mcp.tools.ops_writes import Devices, brief, resolve_devices
+from catc_mcp.tools.provisioning_settings import preview_gate
 from catc_mcp.tools.sites import SITE_DETAIL_PATHS, all_sites
 from catc_mcp.tools.swim import resolve_image
 from catc_mcp.tools.templates import TemplateRef, deployment_summary
@@ -36,6 +46,7 @@ TP = "/dna/intent/api/v1/template-programmer"
 DeviceRef = Annotated[str, Field(description="Device hostname, management IP, serial number or id")]
 ImageRef = Annotated[str, Field(description="Software image id or exact name (from catc_list_images)")]
 Wait = Annotated[bool, Field(description="Wait for the operation to finish (default true)")]
+PROVISION_PATH = "/dna/intent/api/v1/sda/provisionDevices"
 
 
 async def provisioned_records(app: CatcApp, device_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -49,6 +60,44 @@ async def provisioned_records(app: CatcApp, device_ids: list[str]) -> dict[str, 
             if isinstance(r, dict) and r.get("networkDeviceId") == did:
                 out[did] = r
     return out
+
+
+async def all_provisioned(app: CatcApp) -> dict[str, dict[str, Any]]:
+    """{device id: provisioning record} for every provisioned device (the whole list, so a device
+    provisioned to a site outside the one being looked at is seen too)."""
+    page = await fetch_all(app.pager, app.api, PROVISION_PATH, {})
+    if not page.complete:
+        raise TargetsTruncated(TRUNCATED)
+    return {
+        str(r["networkDeviceId"]): r for r in page.items if isinstance(r, dict) and r.get("networkDeviceId")
+    }
+
+
+# Families provisioned through their own flows, never by the wired provisioning call.
+OTHER_FLOWS = {
+    "unified ap": "access point: it gets its configuration from its WLC",
+    "wireless controller": "WLC: provision it with catc_provision_wireless_controller",
+    "wireless sensor": "wireless sensor: it is not provisioned like a switch or router",
+}
+
+
+def provision_skip_reason(
+    dev: dict[str, Any], assignment: dict[str, Any], record: dict[str, Any] | None
+) -> str | None:
+    """Why catc_provision_site leaves a device out, or None when it provisions it."""
+    if record is not None:
+        if record.get("siteId") == assignment.get("siteId"):
+            return "already provisioned (re-provision with catc_provision_devices)"
+        return "provisioned to another site: Catalyst Center can't move a provisioned device"
+    family = str(dev.get("family") or "").strip().lower()
+    if family in OTHER_FLOWS:
+        return OTHER_FLOWS[family]
+    if assignment.get("siteType") not in ("building", "floor"):
+        return "assigned to an area: assign it to a building or floor first (catc_assign_devices_to_site)"
+    reach = str(dev.get("reachabilityStatus") or "unknown")
+    if reach.lower() != "reachable":
+        return f"not reachable ({reach}): Catalyst Center can't push to it"
+    return None
 
 
 def iso_ms(value: Any) -> str | None:
@@ -107,7 +156,7 @@ def split_applicable(
 UNSAVED_NOTE = (
     "Catalyst Center does not save the configuration after a template deploy: the change is lost on "
     "reload, and RUNNING_CONFIG compliance shows it as drift. See the unsaved lines with "
-    "catc_compare_device_configs(compare='startup'), and save it on the device (write memory) if it "
+    "catc_compare_device_configs(compare='startup'), and save it with catc_write_memory(devices) if it "
     "must persist."
 )
 
@@ -208,6 +257,7 @@ def register(reg: ToolRegistrar) -> None:
                     )
         except UpstreamError as e:
             rendered = f"(preview unavailable: {redact_config(str(e))[:200]})"
+        gate, prov = await preview_gate(app, "template deploy")
         body = {
             "templateId": tid,
             "forcePushTemplate": force_push,
@@ -228,15 +278,19 @@ def register(reg: ToolRegistrar) -> None:
                 "rendered_cli_first_device": rendered,
                 "note": "CLI rendered for the first device only; device-bound variables may differ.",
                 "params": compact(params or {}),
+                "provisioning_settings": prov,
             },
             side_effects=[
                 "Changes the running configuration of every listed device.",
-                "The change is not saved to the startup config (Catalyst Center doesn't write memory).",
+                "The change is not saved to the startup config (Catalyst Center doesn't write memory): "
+                "run catc_write_memory(devices) afterwards to keep it.",
+                *gate,
             ],
             fingerprint={
                 "template": tid,
                 "devices": sorted(str(d["id"]) for d in devs),
                 "versions": [v.get("id") for v in versions],
+                "provisioning_settings": prov,
             },
             blockers=blockers,
             blast_radius=len(devs),
@@ -316,6 +370,7 @@ def register(reg: ToolRegistrar) -> None:
                 "rediscover it, then assign and provision it."
             )
         path = "/dna/intent/api/v1/sda/provisionDevices"
+        gate, prov = await preview_gate(app, "provisioning")
         plan = Plan(
             f"Provision {len(new_devs)} and re-provision {len(again)} device(s) at {s.get('nameHierarchy')}",
             details={
@@ -323,15 +378,18 @@ def register(reg: ToolRegistrar) -> None:
                 "re_provision": brief(again),
                 "site": {"nameHierarchy": s.get("nameHierarchy"), "id": s.get("id")},
                 "requests": ([f"POST {path}"] if new_devs else []) + ([f"PUT {path}"] if again else []),
+                "provisioning_settings": prov,
             },
             side_effects=[
                 "Pushes the site's network settings to each device (not the network profile's Day-N "
-                "templates: deploy those with catc_deploy_template)."
+                "templates: deploy those with catc_deploy_template).",
+                *gate,
             ],
             fingerprint={
                 "site": s["id"],
                 "devices": sorted(str(d["id"]) for d in devs),
                 "existing": existing,
+                "provisioning_settings": prov,
             },
             blockers=blockers,
             blast_radius=len(devs),
@@ -373,6 +431,125 @@ def register(reg: ToolRegistrar) -> None:
             apply=apply,
         )
 
+    @reg.dangerous(title="Provision every device at a site", task=True)
+    async def catc_provision_site(
+        ctx: Context,
+        site: Annotated[
+            str,
+            Field(description="Area, building or floor: every device assigned there or below it counts"),
+        ],
+        wait: Wait = True,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Zero-touch for a site: provision every wired device assigned to the site (or a floor below
+        it) that isn't provisioned yet, in one change, to the building or floor it is assigned to.
+        Catalyst Center pushes the site's network settings, as catc_provision_devices does. The preview
+        lists the devices included and those skipped with the reason (already provisioned, provisioned
+        elsewhere, unreachable, access points and WLCs, which have their own flows). The included
+        devices count against CATC_MAX_DEVICES_PER_CHANGE: over it the change is refused (pick a floor).
+        The result has a row per device. Preview-first. Re-provision devices with catc_provision_devices."""
+        app: CatcApp = get_client(ctx)
+        s = await resolve_site(app, site)
+        if s.get("type") == "global":
+            raise InvalidRequest("Pick an area, building or floor, not Global.")
+        assignments = await site_assignments(app, s)
+        where = {str(a["deviceId"]): a for a in assignments}
+        devs = await devices_by_id(app, sorted(where))
+        existing = await all_provisioned(app)
+        include: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for d in sorted(devs, key=lambda d: str(d.get("hostname") or d.get("id"))):
+            did, a = str(d["id"]), where[str(d["id"])]
+            reason = provision_skip_reason(d, a, existing.get(did))
+            if reason:
+                row = {"device": brief([d])[0], "site": a.get("siteNameHierarchy"), "reason": reason}
+                skipped.append(row)
+            else:
+                include.append(d)
+        blockers = device_limit_blockers(app, len(include))
+        if not include:
+            blockers.append("Nothing to provision: every device at the site is skipped (see skipped).")
+        path = "/dna/intent/api/v1/sda/provisionDevices"
+        body = [{"networkDeviceId": str(d["id"]), "siteId": where[str(d["id"])]["siteId"]} for d in include]
+        gate, prov = await preview_gate(app, "provisioning")
+        plan = Plan(
+            f"Provision {len(include)} device(s) at {s.get('nameHierarchy')} (skip {len(skipped)})",
+            details={
+                "site": {"nameHierarchy": s.get("nameHierarchy"), "id": s.get("id"), "type": s.get("type")},
+                "provision": [
+                    {"device": brief([d])[0], "site": where[str(d["id"])].get("siteNameHierarchy")}
+                    for d in include
+                ],
+                "skipped": skipped,
+                "requests": [f"POST {path}"] if include else [],
+                "provisioning_settings": prov,
+            },
+            side_effects=[
+                "Pushes each device's site network settings (AAA, DNS, NTP, banner, syslog/SNMP, telemetry) "
+                "to it; with ISE as the site's AAA, ISE gets a network device for each.",
+                "Not the network profile's Day-N templates: deploy those with catc_deploy_template.",
+                *gate,
+            ],
+            fingerprint={
+                "site": s["id"],
+                "body": body,
+                "existing": {k: v for k, v in existing.items() if k in where},
+                "provisioning_settings": prov,
+            },
+            blockers=blockers,
+            blast_radius=len(include),
+        )
+
+        async def apply() -> Any:
+            started = await app.api.request("POST", path, json=body)
+            if not wait:
+                return {
+                    "started": started,
+                    "devices": [r["device"] for r in plan.details["provision"]],
+                    "check_with": "catc_get_task; a new catc_provision_site preview shows what is left",
+                }
+            task: dict[str, Any] | None = None
+            error: str | None = None
+            try:
+                task = await app.wait_job(started, ctx=ctx, what="provisioning")
+            except TaskFailed as err:
+                error = str(err)
+            # One request provisions them all; the provisioning records say which ones made it.
+            after = await provisioned_records(app, [str(d["id"]) for d in include])
+            results = [
+                {
+                    "device": brief([d])[0],
+                    "site": where[str(d["id"])].get("siteNameHierarchy"),
+                    "status": "provisioned" if str(d["id"]) in after else "failed",
+                }
+                for d in include
+            ]
+            failed = [r for r in results if r["status"] == "failed"]
+            out: dict[str, Any] = {
+                "provisioned": len(results) - len(failed),
+                "failed": len(failed),
+                "skipped": len(skipped),
+                "results": results,
+                "task": task,
+            }
+            if error:
+                out["error"] = error
+            if failed:
+                out["next"] = (
+                    "Check the failed devices (catc_device_360, catc_get_task for the error), fix the cause, "
+                    "then run catc_provision_site again: provisioned devices are skipped."
+                )
+            return out
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_provision_site",
+            args={"site": site, "wait": wait},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
     async def _swim(
         ctx: Context, tool: str, device: str, image: str, wait: bool, confirm: str | None, activate: bool
     ) -> dict[str, Any]:
@@ -388,6 +565,8 @@ def register(reg: ToolRegistrar) -> None:
             if activate
             else ["Copies the image to the device's flash (no reload)."]
         )
+        gate, prov = await preview_gate(app, f"image {'activation' if activate else 'distribution'}")
+        effects += gate
         plan = Plan(
             f"{action.title()} image {img.get('name')} ({img.get('version')}) on {brief([dev])[0]}",
             details={
@@ -396,9 +575,15 @@ def register(reg: ToolRegistrar) -> None:
                 "image": {k: img.get(k) for k in ("name", "version", "id")},
                 "method": "POST",
                 "path": path,
+                "provisioning_settings": prov,
             },
             side_effects=effects,
-            fingerprint={"device": dev["id"], "image": img["id"], "action": action},
+            fingerprint={
+                "device": dev["id"],
+                "image": img["id"],
+                "action": action,
+                "provisioning_settings": prov,
+            },
             blockers=device_limit_blockers(app, 1),
             blast_radius=1,
         )

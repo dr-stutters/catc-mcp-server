@@ -30,7 +30,7 @@ You need: a Catalyst Center API user for the server (read-only is enough to star
 has a wheel with stutters-mcp-core bundled in; it needs only PyPI dependencies.
 
 ```bash
-WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.9.0/catc_mcp_server-0.9.0-py3-none-any.whl
+WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.20.1/catc_mcp_server-0.20.1-py3-none-any.whl
 export CATC_URL=https://catalyst-center.example.com CATC_USERNAME=mcp-catc-ro CATC_PASSWORD='...'
 uvx --from "$WHEEL" catc-mcp-server check           # preflight: login, TLS, role, version, ISE integration
 claude mcp add catc -e CATC_URL=$CATC_URL -e CATC_USERNAME=$CATC_USERNAME -e CATC_PASSWORD="$CATC_PASSWORD" \
@@ -44,7 +44,7 @@ Claude Desktop (`claude_desktop_config.json`), same idea:
   "mcpServers": {
     "catc": {
       "command": "uvx",
-      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.9.0/catc_mcp_server-0.9.0-py3-none-any.whl", "catc-mcp-server"],
+      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.20.1/catc_mcp_server-0.20.1-py3-none-any.whl", "catc-mcp-server"],
       "env": {"CATC_URL": "https://catalyst-center.example.com", "CATC_USERNAME": "mcp-catc-ro", "CATC_PASSWORD": "..."}
     }
   }
@@ -164,7 +164,7 @@ claude mcp add --transport http catc http://cortex:8034/mcp --header "Authorizat
 | `MCP_DRY_RUN`, `MCP_CHANGE_WINDOW`, `MCP_MAX_BLAST_RADIUS`, `MCP_TWO_PERSON_TOOLS`, `MCP_DENY_TOOLS` | off | Safety rails (core G7; see Safety rails) |
 | `CATC_INSTANCES` | | Several Catalyst Centers in one server (`CATC_<NAME>_URL`, ...): every tool gets `instance` |
 | `MCP_METRICS` | `false` | Prometheus `/metrics` on the HTTP port |
-| `MCP_TASKS` / `MCP_TASKS_URL` | `false` / `memory://` | Run the long tools as MCP background tasks: `catc_create_discovery`, `catc_provision_devices`, `catc_deploy_template`, `catc_distribute_image`, `catc_activate_image`, `catc_provision_wireless_controller`, `catc_claim_pnp_device`, `catc_replace_device`, `catc_add_fabric_device`, `catc_add_anycast_gateway` (clients without task support call them normally) |
+| `MCP_TASKS` / `MCP_TASKS_URL` | `false` / `memory://` | Run the long tools as MCP background tasks: `catc_create_discovery`, `catc_provision_devices`, `catc_provision_site`, `catc_deploy_template`, `catc_distribute_image`, `catc_activate_image`, `catc_provision_wireless_controller`, `catc_claim_pnp_device`, `catc_replace_device`, `catc_add_fabric_device`, `catc_add_anycast_gateway` (clients without task support call them normally) |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
 | `MCP_HOST` / `MCP_PORT` / `MCP_PATH` | `0.0.0.0` / `8000` / `/mcp` | HTTP listener |
 | `MCP_AUTH_TOKENS` / `MCP_AUTH_TOKENS_FILE` | | `name:sha256:<hex>` entries; **required** for HTTP |
@@ -194,9 +194,9 @@ token (`catc-mcp-server token alice`).
 Every write is preview-first. On top of that (core G7, `docs/PRODUCTION.md` in stutters-mcp-core):
 
 - **`CATC_MAX_DEVICES_PER_CHANGE`** (default **10**, `0` = off): template deploys, provisioning, SWIM
-  distribute/activate, PnP claims, device replacement and device deletion that touch more devices are blocked
-  in the preview. `catc_deploy_template` targets an explicit device list, every device under a `site`
-  (child sites included; `Global` = the whole inventory) or a `tag`; the limit applies after expansion.
+  distribute/activate, PnP claims, device replacement, device deletion and `catc_write_memory` that touch more
+  devices are blocked in the preview. `catc_deploy_template` targets an explicit device list, every device under
+  a `site` (child sites included; `Global` = the whole inventory) or a `tag`; the limit applies after expansion.
 - **Blast radius**: those tools plus `catc_resync_devices` and `catc_run_compliance` report `blast_radius`
   (devices touched), limited by `MCP_MAX_BLAST_RADIUS` / `MCP_BLAST_RADIUS_OVERRIDES` (e.g.
   `catc_deploy_template=5`).
@@ -229,9 +229,16 @@ Typical flows:
 - **Troubleshoot:** `catc_device_360` / `catc_client_360` → `catc_list_issues` → `catc_get_issue`
   (Catalyst Center's suggested commands) → `catc_run_show_commands`; `catc_path_trace` (needs CDP or
   LLDP between devices); `catc_list_events`.
+- **One port** (contain or fix a client port; dangerous tier): `catc_set_interface(device, interface,
+  action=shut|no_shut|access_vlan|voice_vlan|description)` through Catalyst Center's interface API. Uplinks
+  (physical topology), trunks, port channels and virtual interfaces are refused unless `allow_uplink`; the
+  management port is never shut. The preview shows the port row, Catalyst Center's dry run
+  (`deploymentMode=Preview`) and the undo call; one device for `CATC_MAX_DEVICES_PER_CHANGE`.
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
   called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
+- **What happened to this client?** `catc_client_timeline(mac=..., hours=... or since=...)` merges its
+  onboarding steps, assurance events (ISE authentications, roams, failures) and issues by time.
 - **Template versions:** `catc_list_template_versions` → `catc_diff_template_versions`;
   `catc_template_usage` / `catc_template_drift` show which devices run an older version (roll back with
   `catc_deploy_template(version=...)`); move templates with their history between projects or Catalyst
@@ -262,6 +269,11 @@ Typical flows:
   `catc_deploy_wlc_config` (dangerous) pushes it and reports each config group's status
   (`catc_get_wlc_deployments`). Needs the provisioning settings without "require preview"
   ([docs](docs/wireless-per-device.md)).
+- **AP join and power profiles:** `catc_list_ap_profiles` shows each AP profile (SSH/Telnet and management
+  user, the AP's 802.1X supplicant, CDP, rogue detection, country, time zone, power profile; passwords masked)
+  with the wireless profile site tags that use it, plus the AP power profiles. `catc_set_ap_profile` and
+  `catc_set_ap_power_profile` create, update or delete them (write tier, preview-first). They are design
+  objects: a wireless profile site tag names the AP profile and a WLC re-provision pushes it.
 - **SD-Access:** prerequisites (the `aca` + `sda` packages, re-seeded roles, ISE), the build order
   (`catc_build_fabric_site`), the way out of the fabric, day-N changes, checks, group-based policy and teardown
   are in [docs/sd-access.md](docs/sd-access.md), with the 3.2.2 quirks found live.
@@ -280,8 +292,9 @@ assign → provision → template deploy → verification, preview-first at ever
 archive) → per-device preview → rails (≤ 10 devices, window end) → deploy → deployment status → CLI
 check → config diff → compliance → issue diff → a written rollback plan (negation template or the
 pre-change archive). It offers a maintenance window (`catc_schedule_maintenance`) so the change's own
-alerts stay quiet, and ends it after verification. Without the dangerous tier it stops after the rails with a
-reviewed change plan.
+alerts stay quiet; a started window can't be cancelled or given a new end time (Catalyst Center
+refuses it), so after verification it is ended with `catc_update_maintenance_window(end_now=true)`.
+Without the dangerous tier it stops after the rails with a reviewed change plan.
 `catc_onboard_switch_with_nac` (write tier, uses the **ise** server too) checks the ISE integration
 (`catc_get_policy_servers`), sets the site's client AAA to ISE, onboards and provisions the switch,
 confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
@@ -296,6 +309,12 @@ auth record and an undo list; by default it switches external authentication off
 `catc_client_troubleshoot` (read tier, uses **ise**) takes a client by MAC, IP or username through Catalyst
 Center (360, issues, live CLI, path trace), ISE (auth history, failure reason, NAD) and the switch's AAA health to a
 diagnosis and a previewed-only fix.
+`catc_site_health_review` (read tier) is the weekly review of one site as a single ranked report: maintenance
+windows first (`catc_list_maintenance_windows`: devices under maintenance are listed apart, never as findings),
+health now and over the window (`catc_site_health_report`, `catc_health_trend`, network, device and client
+health), open and recurring issues, compliance (`catc_compliance_report`), image currency against the golden image
+(`catc_list_device_images`) and template drift (`catc_template_drift`), ranked most severe first and ending with
+next steps that name the tools to run.
 `catc_build_fabric_site` (dangerous tier, uses **ise** for the AAA check) builds an SD-Access fabric site from
 switches to a client in the fabric: SD-Access availability and the account's tier, devices onboarded and provisioned
 at the building, the client pool, the fabric site, border and control plane before the edges, the VN, the anycast
@@ -309,6 +328,15 @@ Catalyst Center-managed edge enforces it: the groups and the cell in ISE and on 
 `ise_set_egress_policy` and `ise_push_trustsec_matrix`, the clients' SGTs (`ise_find_session`), the edge's
 downloaded cell and bindings (`catc_get_group_policy_enforcement`), a test flow and the counters, and an undo
 preview. ISE stays the policy owner; the prompt never starts Catalyst Center's group-based policy migration.
+`catc_guest_wireless_with_ise` (dangerous tier, uses **ise**) builds guest Wi-Fi with ISE central web auth
+the validated way: guest type, sponsor group and portal in ISE, a CWA redirect authorization profile and the
+Wireless MAB redirect / Guest Flow permit rules scoped to the SSID, then a Guest web-auth SSID
+(`catc_create_ssid` with `l3_auth='web_auth'`, `auth_server='auth_ise'`, the ISE PSN as `auth_servers`, MAC
+filtering and AAA override; no `pre_auth_acl`, since ISE returns the redirect ACL), a wireless profile at the AP
+location, the redirect ACL on the 9800, WLC
+provisioning, the read-back and 9800 CLI check (`show wlan name`, the policy profile's AAA override and NAC,
+CoA), `ise_policy_explain` for the redirect and permit hits, and an undo list (applied at the end with
+`keep=false`).
 `catc_decommission_device` (dangerous tier, uses **ise**) keeps a copy of the config, shows what
 un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
 removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).
@@ -319,12 +347,23 @@ SD-WAN, ISE, Catalyst Center and FMC. The Catalyst Center leg is `catc_snapshot(
 compliance per device and type, and open P1/P2 issues. The blob stays in the conversation, and the compare names what
 got unhealthy.
 
+The rest of the suite pack: `suite_access_review` (read tier) lists who can change what on every connected
+platform (admin accounts, roles and the external groups that grant them, resolved to people through Active
+Directory); `suite_asbuilt_drift` (read tier, uses **netbox**) checks whether the documentation has drifted from
+the wiring; `suite_decommission_site` (dangerous tier) removes one site everywhere it exists without leaving
+orphans (here: the site with its devices, fabric site and pool reservations); `suite_maintenance_window`
+(dangerous tier) runs one maintenance window at a site across products (here: SWIM distribute, then activate one
+device at a time). Legs whose tools a server does not ship yet are marked pending in the prompt.
+
 - **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
   `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
   NAD in ISE; deleting the device later does **not** remove that NAD). `catc_get_policy_servers`
   gives each server a `next_action`; an entry that FAILED (ISE renamed, certificate renewed, FQDN not
   matching its CN) is fixed in place with `catc_update_policy_server` (ISE password re-entered), then
   the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
+  When the enterprise CA is renewed or replaced, `catc_import_trusted_certificate` puts the new CA chain in
+  Catalyst Center's trust store (root first; leaf, expired and key-carrying PEMs refused in the preview)
+  before ISE's leaves are re-issued.
 - **SD-Access fabric AAA:** `catc_check_fabric_aaa(fabric_site)` reads every fabric device live (one command
   runner request): the RLOC its RADIUS comes from (Loopback0), each RADIUS server's state (DEAD, dead count,
   automate-tester), TrustSec environment data and PAC, with a verdict and the fix per device. Pass the ise
@@ -351,13 +390,14 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (100)
+### Read (112)
 
 | Tool | What it does |
 |---|---|
 | `catc_ai_insights` | AI-driven issues from Cisco AI Network Analytics (baseline deviations Catalyst Center learns in the cloud) for the network or a site. |
 | `catc_check_fabric_aaa` | Whether every fabric device at an SD-Access fabric site can do AAA with ISE, with a verdict and the fix per device. |
 | `catc_client_360` | Everything about one client in one call: identity (IP, user, host type/OS), health score, where it connects (switch and port, or AP, SSID, band and RSSI/SNR), VLAN, onboarding state, its active issues and recent onboarding events. |
+| `catc_client_timeline` | What happened to this client? One timeline, newest first, for one MAC: the onboarding steps Catalyst Center timestamps for it (association, authentication, DHCP, onboarded), its assurance events (ISE authentications, onboarding attempts with each step, roams, disconnects, with the result and failure reason) and its issues, merged by time with a `source` column. |
 | `catc_compare_device_configs` | Unified diff between two archived configurations of one device: what changed since the previous running config, what is unsaved (running vs startup), or any two archive files. |
 | `catc_compare_snapshot` | Compare a catc_snapshot blob from before a change with one from after it (or, when `after` is empty, a fresh snapshot of the same scope taken now) and name what changed, most severe first: major = got unhealthy (session down, metric past its limit, healthy item gone), minor = changed but not clearly bad, info = recovered or improved. |
 | `catc_compliance_report` | Which devices are out of standard: compliance at a site (and below) from the last compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX, network settings, your compliance policies as NETWORK_RULES...) and severity, with the non-compliant devices and their failing categories and policy rule violations (worst first). |
@@ -365,10 +405,12 @@ got unhealthy.
 | `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
 | `catc_diff_config` | Compare two config exports, or an export with live Catalyst Center: items added or removed and, for changed items, each field that differs (before and after values). |
 | `catc_diff_template_versions` | Unified diff between two versions of a template (or a version and the uncommitted draft), with lines added and removed. |
+| `catc_eox_report` | End-of-life (EoX) report from Catalyst Center: the network summary (hardware, software and module alerts), each device's scan status, alert count and alert types, and the bulletins behind them (end of sale, end of software maintenance and vulnerability support, last date of support, flagged when already past, with the Cisco link). |
 | `catc_export_config` | Export Catalyst Center design intent as YAML, by name and in a stable order: the site hierarchy, network settings set at each site (not inherited), credentials (type, description and username only: secrets are never exported), template projects and templates (secrets in template bodies masked), network profiles with their templates and sites, global IP pools and site reservations, SSIDs (passphrases masked), wireless profiles, tags with their dynamic rules, and compliance policies with their rules and sites. |
 | `catc_export_templates` | Export a template project, or one template, as a JSON document: content, variables, device types and every committed version with its comment, author and time. |
 | `catc_fabric_health` | SD-Access health as Catalyst Center Assurance scores it. |
 | `catc_find_host` | Where is this host plugged in: from a MAC, IP, hostname or username, each matching client Assurance saw in the window, newest first, with its switch (name, management IP) and port or AP/WLC/SSID, VLAN, SGT, site, status, health, last seen and a one-line `where`, plus a live lookup on given switches. |
+| `catc_get_activity` | One Catalyst Center activity: description, status, type, recurring, start/end (ISO 8601 UTC) and the jobs it triggered (each run of a recurring schedule, or the job a one-off activity started), with each job's status, failure reason and task id (catc_get_task(task_id) for the task's own detail). |
 | `catc_get_backup_status` | Whether Catalyst Center can take a backup now, and how the last ones went: the backup target (NFS server or physical disk, mount path, backups kept, encryption passphrase set, the NFS server's health and the disk use), `ready` with the blockers (no target, no passphrase, NFS unhealthy, a backup or restore already running), the last backup, and the recent backup/restore executions (job, status, percent done, errors). |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
@@ -391,9 +433,10 @@ got unhealthy.
 | `catc_get_network_profile` | One network profile: its type, the Day-N CLI templates attached to it and the sites it is assigned to (by name, including inherited child sites). |
 | `catc_get_physical_topology` | Physical (CDP/LLDP-derived) topology: devices and the links between them with port names, link status and addresses. |
 | `catc_get_policy_servers` | Authentication and policy servers known to Catalyst Center (System > Settings > Authentication and Policy Servers): plain RADIUS/TACACS servers and integrated Cisco ISE, with protocol, ports, state, pxGrid, and per ISE node its role (PRIMARY/SECONDARY/PXGRID), FQDN and certificate trust state; plus the ISE integration status (each step, and the certificate waiting to be accepted, if any). |
+| `catc_get_provisioning_settings` | Catalyst Center's global provisioning settings (System > Settings > Visibility and Control of Configurations): require_preview (every provision/deploy must produce a configuration preview that is reviewed before it runs) and require_itsm_approval (that preview also needs ITSM/ServiceNow approval; implies require_preview), what that means for this server's provision, template deploy, wireless deploy and SWIM tools, and the ITSM integrations configured. |
 | `catc_get_report_content` | Download a report execution's content (CSV or JSON reports only; PDF/TDE are binary). |
 | `catc_get_report_view` | A report view's formats, filters (name, type) and field groups, i.e. |
-| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge) and border settings, layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs, border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet policies. |
+| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge), and per border its BGP AS and handoff counts (IP transit, SD-Access transit, layer 2; detail in catc_list_l3_handoffs), layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs, border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet policies. |
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
 | `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the device credentials the site uses (shown as 'TYPE:description', never secrets). |
@@ -408,6 +451,10 @@ got unhealthy.
 | `catc_get_wlc_deployments` | Configuration deployments Catalyst Center ran on a Catalyst 9800 WLC, newest first: per config group (WLAN, policy and RF groups, or the site settings of a site-based provision), its status, when it ran and Catalyst Center's error and remedy when it failed. |
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
+| `catc_lifecycle_signals` | Every lifecycle and security signal Catalyst Center has for one device or the devices under a site, in one read: EoX alerts, Cisco security advisories (PSIRT), field notices, network bugs and insecure configurations (deprecated or weak CLI such as telnet, SNMPv1/v2c communities, HTTP), with one verdict line per signal and a row per device. |
+| `catc_link_mismatch` | Links whose two ends disagree, from Catalyst Center's Inventory Insight: speed/duplex mismatches and native VLAN / allowed VLAN mismatches at a site (and the sites below it). |
+| `catc_list_activities` | Catalyst Center activities (the scheduler's jobs), split into upcoming (scheduled, not started yet), in progress (running, or a work item waiting for action), recurring (the schedules, e.g. the weekly config-archive backup and the security-advisory scan) and finished (failed first, then newest first). |
+| `catc_list_ap_profiles` | AP join profiles (Design > Network Settings > Wireless > AP Profiles): per profile the AP management access (SSH/Telnet, user; passwords masked), the AP's 802.1X supplicant (EAP-FAST/TLS/PEAP, user), CDP, rogue detection and minimum RSSI, country, time zone, power profile and client limit, with the wireless profile site tags that carry it to a WLC. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
 | `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
@@ -425,10 +472,13 @@ got unhealthy.
 | `catc_list_event_notifications` | Catalyst Center platform event notifications, newest first: device unreachable, link and OSPF/BGP alerts raised as notifications, config-change (drift) events, provisioning, SWIM, licensing and system/service health. |
 | `catc_list_events` | Assurance events (syslog, SNMP traps, client onboarding events) for network devices or clients, newest first. |
 | `catc_list_global_credentials` | Global device credentials (CLI, SNMPv2c read/write, SNMPv3, NETCONF port, HTTP(S)) that discovery and sites use: description, type, username/port and id. |
+| `catc_list_health_score_definitions` | Assurance health score settings: per device family (router, switch, WLC, AP, wired and wireless client) each KPI behind the health score, its threshold (e.g. router CPU 95%), whether it counts towards overall health, whether it follows the issue threshold, and DEFAULT or changed (CUSTOM, with the factory threshold beside a changed one). |
 | `catc_list_images` | Software images known to Catalyst Center (imported into the repository, or suggested from cisco.com): name, version, product families, golden tag, integrity status and id. |
 | `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
+| `catc_list_issue_definitions` | Assurance issue definitions: for each built-in (system) one its name and display name, whether it is enabled, its priority next to the factory default, the threshold where it has one (e.g. minutes BGP may be down), device type and category; for custom ones the syslog rule in words (severity, %FACILITY-SEV-MNEMONIC, text regex, N times in M minutes), priority and whether it notifies. |
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, the device they are about, summary, status, site and how long ago each last occurred, newest first. |
 | `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
+| `catc_list_l3_handoffs` | Layer 3 handoffs of a fabric site's borders: how each VN leaves the fabric. |
 | `catc_list_maintenance_windows` | Catalyst Center device maintenance windows: description, status (UPCOMING, IN_PROGRESS, COMPLETED, FAILED), start and end in ISO 8601 UTC, duration, recurrence (every N days until a date), and the devices by hostname. |
 | `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
 | `catc_list_pending_fabric_events` | SD-Access fabric intent still to push: the pending fabric events Catalyst Center has queued, per fabric site. |
@@ -442,12 +492,13 @@ got unhealthy.
 | `catc_list_template_versions` | Version history of a template: every committed version with its number, commit time, author, comment, size and lines added/removed against the version before, and whether the template has uncommitted changes. |
 | `catc_list_templates` | Configuration templates (Template Editor) with project, language (Jinja/Velocity), software type, device families, committed version count and id. |
 | `catc_list_transit_networks` | SD-Access transit networks, with ids. |
-| `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. |
+| `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. AAA also folds in the Assurance issues saying a device marked its AAA server DEAD or not responding (open or resolved in the window): the data API counts only requests a device sent, so a dead-server window shows no failures. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
 | `catc_recent_activity` | What happened on this device or site recently? Queries Catalyst Center's assurance issues, assurance events (syslog, traps), platform event notifications and the audit log for the same window and scope, and merges them newest first with a `source` column. |
 | `catc_run_show_commands` | Run read-only `show` commands live on managed devices through Catalyst Center's command runner and return each device's output. |
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
+| `catc_security_advisories` | Cisco security advisories (PSIRTs) Catalyst Center matched against the devices: per device the scan status, scan mode and advisory count, and the advisories themselves (id, impact rating, CVSS, CVEs, first fixed releases per vulnerable version, Cisco link, affected devices), highest CVSS first. |
 | `catc_site_health_report` | One report on a site over a window: health now, the device and client trends with their dips and direction, when issues were raised, the worst devices and clients with the issue behind each, issues that keep coming back, AI-driven insights where available, and a one-line verdict. |
 | `catc_snapshot` | Take a compact, versioned snapshot of Cisco Catalyst Center health for a pre/post change check: device reachability, health score and software version, health per site, compliance per device and type, open P1/P2 Assurance issues. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
@@ -456,7 +507,7 @@ got unhealthy.
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (52)
+### Write (61)
 
 | Tool | What it does |
 |---|---|
@@ -469,6 +520,7 @@ got unhealthy.
 | `catc_clone_template` | Copy a template under a new name, in the same or another project. |
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
 | `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http server']. |
+| `catc_create_custom_issue` | Create a custom (syslog-based) Assurance issue: "alert when this syslog appears". |
 | `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
 | `catc_create_fabric_site` | Make a site an SD-Access fabric site. |
 | `catc_create_fabric_zone` | Make a building or floor inside an SD-Access fabric site a fabric zone. |
@@ -484,6 +536,7 @@ got unhealthy.
 | `catc_create_transit_network` | Define an SD-Access transit network. |
 | `catc_create_virtual_network` | Create a layer 3 virtual network (VRF) or add an existing one to more fabric sites. |
 | `catc_create_wireless_profile` | Create a wireless network profile that carries SSIDs. |
+| `catc_delete_custom_issue` | Delete a custom (syslog-based) issue definition. |
 | `catc_delete_global_credential` | Delete a global device credential. |
 | `catc_delete_ip_pool` | Release a site's reserved subpool, or delete a global pool (refused while it still has reservations). |
 | `catc_delete_report` | Delete a report and its executions. |
@@ -494,26 +547,33 @@ got unhealthy.
 | `catc_delete_wireless_profile` | Delete a wireless network profile. |
 | `catc_detach_template_from_profile` | Detach a Day-N CLI template from network profiles. |
 | `catc_import_templates` | Import templates from a catc_export_templates document: creates missing projects, then each template with its committed versions replayed in order (version comments kept; numbers start at 1 on this Catalyst Center) and the uncommitted draft on top. |
+| `catc_import_trusted_certificate` | Add an enterprise CA certificate, or a CA chain, to Catalyst Center's trusted certificates, so it trusts the servers and clients that CA issued (ISE's admin and pxGrid certificates, a syslog or proxy server). |
 | `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
 | `catc_schedule_maintenance` | Schedule a Catalyst Center maintenance window for devices (a list, every device under a site, or a tag), optionally repeating every N days, so a planned change doesn't raise an alert storm. |
+| `catc_set_ap_power_profile` | Create, update or delete an AP power profile: ordered rules that turn an Ethernet port down to a speed, a radio down to fewer spatial streams, or a radio or the USB port off when the switch gives the AP too little PoE. |
+| `catc_set_ap_profile` | Create, update or delete an AP join profile: SSH/Telnet with the AP management credentials, the AP's 802.1X supplicant (EAP-FAST, EAP-TLS or EAP-PEAP) for closed-auth switch ports, CDP, rogue detection (minimum RSSI, report and transient intervals), country, time zone and power profile. Management credentials go as a set (user, password, enable password), and an update of a profile with them, or with an EAP-FAST/PEAP supplicant, takes the passwords again (Catalyst Center never returns them). |
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
 | `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
+| `catc_trigger_lifecycle_scan` | Start Catalyst Center's field notice, network bug and/or security advisory scans now instead of waiting for the scheduled run (EoX has no on-demand scan). |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
+| `catc_update_health_score_definition` | Tune Assurance health scores to the customer's standard: change a KPI's threshold per device family (router CPU 95% -> 85%), leave a KPI out of overall health, or tie it to the issue threshold; reset_to_default puts KPIs back. |
+| `catc_update_issue_definition` | Enable or disable a built-in Assurance issue, or change its priority (P1..P4, or back to the default) or threshold: "stop paging me about X". |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
-| `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset). |
+| `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset), or end a running window now (end_now=true). |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |
 | `catc_update_site_aaa_settings` | Set a site's AAA network settings (Design > Network Settings > AAA): which server devices use for administrator login (network) and for 802.1X/MAB endpoints (client), as ISE or plain AAA, RADIUS or TACACS. |
 | `catc_update_site_settings` | Change a site's network settings (Design > Network Settings): DNS servers and domain, NTP, DHCP servers, banner, time zone, and telemetry (external syslog/SNMP trap servers, Catalyst Center as collector, wired client data collection). |
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
+| `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
-### Dangerous (43)
+### Dangerous (46)
 
 | Tool | What it does |
 |---|---|
@@ -545,6 +605,7 @@ got unhealthy.
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
 | `catc_import_config` | Build Catalyst Center design intent from a catc_export_config document: a PoC's design on a production Catalyst Center, or a rebuilt lab. |
 | `catc_provision_devices` | Provision wired network devices to the site they are assigned to: Catalyst Center pushes the site's network settings (AAA, DNS, NTP, banner, syslog/SNMP trap/telemetry, etc.) to them. |
+| `catc_provision_site` | Zero-touch for a site: provision every wired device assigned to the site (or a floor below it) that isn't provisioned yet, in one change, to the building or floor it is assigned to. |
 | `catc_provision_wireless_controller` | Provision a Catalyst 9800 WLC: set its primary managed AP locations, then push the WLANs, policy profiles and tags of the wireless profiles assigned to those sites (plus the site's AAA, DNS, NTP and telemetry settings). |
 | `catc_replace_device` | Replace a faulty device with a new one of the same model (RMA): Catalyst Center pushes the faulty device's archived running config (and licences) to the replacement through PnP and moves the inventory entry, site and history to the new serial. |
 | `catc_reset_pnp_device` | Reset a PnP device that is in Error so it retries onboarding (it becomes Unclaimed again and can be claimed with catc_claim_pnp_device). |
@@ -553,8 +614,10 @@ got unhealthy.
 | `catc_set_fabric_authentication_profile` | Set an SD-Access fabric site's authentication template and/or edit that template's settings. |
 | `catc_set_fabric_multicast` | Set multicast at an SD-Access fabric site. |
 | `catc_set_fabric_port_channel` | Create, change or delete a port channel on an SD-Access fabric device. |
+| `catc_set_interface` | Change one switch port through Catalyst Center: shut / no shut, the access VLAN, the voice VLAN or the description (containment or remediation without writing a template). |
 | `catc_set_l2_handoff` | Set or remove a layer 2 handoff: a fabric VLAN extended out of a border port into a VLAN of a traditional network. |
 | `catc_set_l2_virtual_network` | Create, change or delete a layer 2 virtual network at an SD-Access fabric site. |
+| `catc_set_provisioning_settings` | Turn Catalyst Center's 'Visibility and Control of Configurations' on or off (System > Settings): require_preview and/or require_itsm_approval, with PUT provisioningSettings. |
 | `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
 | `catc_update_fabric_device` | Change a fabric border's updatable settings in place: border priority (1-9), AS-path prepends (1-10), a custom BGP router id, and the layer 2 border type. |
 | `catc_update_fabric_site` | Change an SD-Access fabric site's control plane mode (LISP pub/sub or LISP/BGP) or underlay transport (IPv4, IPv6, dual stack). |
@@ -571,6 +634,14 @@ appliance**, with examples stripped (`scripts/bundle_spec.py`). Cisco's public
 repository only covers the Assurance APIs. To refresh it for another release, export the spec from
 *Platform > Developer Toolkit > APIs* and run
 `uv run python scripts/bundle_spec.py swagger.json <version>`.
+
+**Spec conformance (contract test).** Every request the unit suite sends to the fake appliance (method,
+path, query keys, top-level JSON body keys) is recorded and checked against the bundled spec when the
+session ends; `pytest tests/unit` fails on a path, method, query key or body key the spec doesn't
+declare. Deliberate exceptions (the business-API execution-status poll, the UI's `/api/v1/siteprofile`
+fallback, the `tag/{id}/member` body whose spec schema is wrong, ...) are listed with a reason in
+`tests/unit/spec_allowlist.py`. After a spec refresh, `uv run python scripts/spec_audit.py` prints the full
+report: mismatches, allowlisted findings and allowlist entries nothing uses any more.
 
 ## Docker
 

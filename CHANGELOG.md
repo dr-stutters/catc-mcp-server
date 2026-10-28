@@ -1,5 +1,143 @@
 # Changelog
 
+## 0.20.1 (2026-10-29)
+
+Fixes found in the live proofs of 0.18.0–0.20.0: guest CWA SSID and AP profile previews block what Catalyst Center
+refuses, previews say when requirePreview / ITSM approval holds a change, health score definitions count CUSTOM KPIs,
+dead-AAA issue times carry a date, and every prompt renders. Core 0.19.0. 219 tools (112 read, 61 write, 46
+dangerous) and fifteen prompts.
+
+### Fixed
+- `catc_create_ssid` blocks ISE central web auth without `auth_servers`, checks `pre_auth_acl` against Catalyst
+  Center's pre-auth ACLs, and adds hints to NCND03058/NCND03141 refusals; `catc_guest_wireless_with_ise` passes
+  `auth_servers` (D126, #285, #291).
+- `catc_set_ap_profile` blocks partial management credentials and updates that would drop the masked passwords, sends
+  a whole rogue detection setting on create, and takes `rogue_report_interval` / `rogue_transient_interval` (D127,
+  #284, #290).
+- `catc_deploy_template`, `catc_provision_devices`, `catc_provision_site`, `catc_distribute_image` and
+  `catc_activate_image` previews say when Catalyst Center's requirePreview / ITSM approval will hold the change
+  (D128, #286, #292).
+- `catc_list_health_score_definitions` counts and filters KPIs that Catalyst Center reports as CUSTOM (any
+  non-DEFAULT status) as changed, and the update preview predicts CUSTOM (D121, #279, #293).
+- `catc_network_services_health` dates dead-AAA issue times that are not today or fall before the window, and says
+  "since <date time>" for an issue already open when the window began (D68, #270, #288).
+- `catc-mcp-server tools` renders every prompt (no more tracebacks on stderr); the 7 workflow prompts register valid
+  examples (#287, #289).
+
+## 0.20.0 (2026-10-28)
+
+Guest wireless with ISE central web auth, AP join and power profiles, Visibility and Control of Configurations, and a
+maintenance-window fix. Core 0.19.0. 219 tools (112 read, 61 write, 46 dangerous) and fifteen prompts.
+
+### Added
+- `catc_create_ssid` takes the guest web-auth fields (L3 web auth, ISE/internal/external portal, MAC filtering, AAA
+  override, pre-auth ACL, RADIUS profiling, posture, NAS-ID options), and the new prompt
+  `catc_guest_wireless_with_ise` builds guest Wi-Fi with ISE central web auth end to end (D126, #242, #282).
+- AP join and power profiles: `catc_list_ap_profiles`, `catc_set_ap_profile` (SSH, management and 802.1X supplicant
+  credentials masked, CDP, rogue min RSSI, country, time zone, power profile) and `catc_set_ap_power_profile` (D127,
+  #243, #280).
+- `catc_get_provisioning_settings` / `catc_set_provisioning_settings` (D128, #244, #278): Visibility and Control of
+  Configurations (require preview, require ITSM approval; ITSM refused without an integration); a 'config preview
+  mandated' refusal now points to the setting.
+
+### Fixed
+- `catc_update_maintenance_window(end_now=true)`, `catc_list_maintenance_windows` and `catc_cancel_maintenance` show a
+  window ended early as `ended_early` with no end (it was 1969-12-31), and `end_now` waits for COMPLETED and gives
+  `ended_at` (D73, #269, #277).
+
+## 0.19.0 (2026-10-28)
+
+Assurance health score tuning, enterprise CA import, core 0.19.0's suite prompts, and issue-definition and
+site-scope fixes from the 3.2.2 live run. Core 0.19.0. 214 tools (110 read, 59 write, 45 dangerous) and fourteen
+prompts.
+
+### Added
+- `catc_list_health_score_definitions` and `catc_update_health_score_definition` (D121, #237, #274): list and tune the
+  Assurance health score KPIs (threshold, include in overall health, sync to issue threshold, reset to default) per
+  device family.
+- `catc_import_trusted_certificate` (D130, #246, #275): adds an enterprise CA certificate or chain to Catalyst
+  Center's trusted certificates; the preview parses each certificate and refuses leaf, expired and key-carrying PEMs,
+  and already-trusted ones are reported.
+- Core v0.19.0 (#271): the suite prompts `suite_access_review`, `suite_asbuilt_drift`, `suite_decommission_site` and
+  `suite_maintenance_window` are now registered.
+
+### Fixed
+- `catc_update_issue_definition` finds disabled system definitions by name, `catc_list_issue_definitions` lists them
+  by default, and custom rules show their syslog severity (D53, #262, #272).
+- `catc_list_devices(site=...)` now includes devices on child sites (a building's floors) and names each device's
+  site; `include_children=false` keeps the exact-site filter. `catc_site_health_review` scopes a building correctly,
+  makes one issues call, and no longer ranks a recovered dip as a worsening trend (D42, #264, #273).
+
+## 0.18.0 (2026-10-28)
+
+Link mismatches, Catalyst Center's scheduled activities, and maintenance-window and dead-AAA fixes from the 3.2.2
+live run. Core 0.15.0 (0.19.0's suite pack check fails on the bundled ise manifest, which does not yet list
+`ise_create_backup`). 211 tools (109 read, 57 write, 45 dangerous) and ten prompts.
+
+### Added
+- `catc_link_mismatch` (D119, #266): speed/duplex and native/allowed VLAN mismatches between the two ends of a link,
+  from Catalyst Center's Inventory Insight, with a fix hint per link.
+- `catc_list_activities` and `catc_get_activity` (D120, #267): the jobs Catalyst Center runs on its own schedule
+  (upcoming, in progress, recurring and finished, failed first) and the jobs each one triggered, with the failure
+  reason.
+- `catc_update_maintenance_window(end_now=true)` ends a running maintenance window now (D73, #265).
+
+### Fixed
+- `catc_cancel_maintenance` and `catc_update_maintenance_window` refuse a started (IN_PROGRESS) maintenance window up
+  front, because Catalyst Center does not allow it (NCIM90982); the `catc_change_window` prompt lets the window end on
+  its own (D73, #258, #261, #265).
+- `catc_update_maintenance_window` warns about fields Catalyst Center did not apply (3.2.2 keeps the description)
+  instead of reporting them as changed (D73, #252, #265).
+- `catc_network_services_health` puts Assurance dead-AAA issues (`fabric_aaa_server_down_trigger`,
+  `radius_error_trigger`) in the AAA verdict, and notes that the data API counts only transactions a device sent
+  (D68, #259, #263).
+
+## 0.17.0 (2026-10-28)
+
+Lifecycle and security signals, Assurance issue definitions, port actions, bulk provisioning by site and the weekly
+site review. Core 0.15.0 (0.17.0's `suite_access_review` needs `catc_list_users` and ISE admin tools not built yet).
+208 tools (106 read, 57 write, 45 dangerous) and ten prompts.
+
+### Added
+- `catc_eox_report`, `catc_security_advisories`, `catc_lifecycle_signals` (EoX, PSIRT, field notices, bugs, insecure
+  configurations) and the write-tier `catc_trigger_lifecycle_scan` (D56, #256); least-privilege roles gain Security
+  Advisory and Machine Reasoner.
+- `catc_list_issue_definitions`, `catc_update_issue_definition`, `catc_create_custom_issue` and
+  `catc_delete_custom_issue` (D53, #255): Assurance issue settings (enable/disable, priority, threshold) and
+  syslog-pattern custom issues.
+- `catc_set_interface` (dangerous; D48, #253): shut/no shut, access VLAN, voice VLAN or description on one switch
+  port through Catalyst Center's interface API, with Catalyst Center's dry run, an uplink/trunk guard and the undo in
+  the preview.
+- `catc_write_memory(devices)` (D65, #254) saves running to startup config on devices as one task with a per-device
+  result; the template-deploy warning names it.
+- `catc_provision_site` (D50, #250) provisions every assigned, unprovisioned device at a site in one previewed change,
+  with a result per device.
+- Prompt `catc_site_health_review` (read tier; D42, #251): one ranked weekly site report (health and trends, issues,
+  compliance, golden-image currency, template drift), with devices under a maintenance window kept out of the
+  findings, and next steps.
+- `catc_list_l3_handoffs` (D116, #249): border L3 handoffs per VN (VLAN, IPs, local/peer BGP AS, transit);
+  `catc_list_transit_networks` shows kind, control plane names and usage; `catc_get_sda_fabric` shows per-border BGP
+  AS and handoff counts.
+
+### Testing
+- Spec-conformance contract test (D52, #257): the unit suite checks every request against the bundled Catalyst
+  Center spec; `scripts/spec_audit.py` prints the report after a spec refresh.
+
+## 0.16.0 (2026-10-28)
+
+Device maintenance windows and the client timeline. Core 0.15.0 (0.16.1 needs peer tools the suite pack's
+`suite_access_review` calls). 196 tools (101 read, 52 write, 43 dangerous) and nine prompts.
+
+### Added
+- Maintenance-window tools (D73, #247): `catc_list_maintenance_windows`, `catc_schedule_maintenance`,
+  `catc_update_maintenance_window`, `catc_cancel_maintenance`; `catc_change_window` offers a window so a change doesn't
+  page anyone.
+- `catc_client_timeline(mac, hours | since)` (D49, #234): one client's onboarding steps, assurance events (ISE
+  authentications, roams, failures) and issues merged by time; `catc_client_troubleshoot` uses it.
+
+### Security
+- authlib 1.9.0 -> 1.9.1 (GHSA-8m4g-j4wp-wgcg, transitive through fastmcp) (#234).
+
 ## 0.15.0 (2026-10-24)
 
 Wave 7 (SD-WAN cross-architecture): pre/post change snapshots on the suite's snapshot contract. Core 0.15.0 with the suite

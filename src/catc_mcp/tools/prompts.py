@@ -127,7 +127,17 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 10. Summarise: device name, IP, site, provisioning result, what was pushed, compliance, and anything
     left to do."""
 
-    @reg.prompt(title="Run a Day-N template change window", uses=["catc"], tier=Tier.WRITE)
+    @reg.prompt(
+        title="Run a Day-N template change window",
+        uses=["catc"],
+        tier=Tier.WRITE,
+        example={
+            "template": "mcp-example/loopback",
+            "targets": "sw1,sw2",
+            "window_end": "2026-01-01T12:00:00+00:00",
+            "params": '{"loopback_id": 77}',
+        },
+    )
     def catc_change_window(
         template: Annotated[
             str, Field(description="Template to deploy: 'Project/Template name', a unique name or its id")
@@ -231,7 +241,8 @@ with the confirm token. Keep a short log of each step's result for the summary.
    - Maintenance window: {tool_ref("catc_list_maintenance_windows")} for each device. If none covers
      now until {window_end}, offer {tool_ref("catc_schedule_maintenance")} with devices={devs}, start a
      few minutes from now, end {window_end} and the change as description (show the preview: health and
-     issues go dark for those devices, and the window runs to its end time). Wait until it is
+     issues go dark for those devices, and the window runs to its end time: once started it can't be
+     cancelled or moved, only ended now, so pick an end that covers deploy + verification). Wait until it is
      IN_PROGRESS before deploying. Without one, expect the change's own issues in step 9.
 5. Deploy: {tool_ref("catc_deploy_template")} with template "{template}", devices={devs},
    params {params_arg}. Show the preview and wait for approval. If the tool isn't available (the
@@ -253,10 +264,11 @@ with the confirm token. Keep a short log of each step's result for the summary.
 9. Issue diff: {tool_ref("catc_list_issues")} per device again (and
    {tool_ref("catc_recent_activity")} for the window) and report new issues since step 1. Inside a
    maintenance window the devices raise no issues: a quiet list proves nothing, so rely on steps 6-8.
-   Once verified, end the silence: {tool_ref("catc_update_maintenance_window")} with end a few minutes
-   from now (or {tool_ref("catc_cancel_maintenance")} if it never started), then
+   Once verified, end the silence: a started window can't be cancelled or given a new end time, so
+   {tool_ref("catc_update_maintenance_window")} with end_now=true (or {tool_ref("catc_cancel_maintenance")}
+   if it never started); if Catalyst Center refuses, it ends on its own at its end time. Then
    {tool_ref("catc_list_maintenance_windows")} to see it COMPLETED, and {tool_ref("catc_list_issues")}
-   per device once more after it ends.
+   per device once more.
 10. Rollback plan (always write it, even when everything passed):
 {rollback_plan}
    - Say when it must be started to finish before {window_end}.
@@ -268,6 +280,14 @@ with the confirm token. Keep a short log of each step's result for the summary.
         title="Onboard an access switch with 802.1X/MAB (Catalyst Center + ISE)",
         uses=["catc", "ise"],
         tier=Tier.WRITE,
+        example={
+            "switch_ip": "192.0.2.21",
+            "site_path": "Global/Area/Building",
+            "access_port": "GigabitEthernet1/0/2",
+            "test_mac": "52:54:00:12:34:56",
+            "cli_credential": "mcp-cli",
+            "snmp_credential": "mcp-snmp",
+        },
     )
     def catc_onboard_switch_with_nac(
         switch_ip: Annotated[str, Field(description="Management IP of the switch to onboard")],
@@ -501,6 +521,12 @@ preview to the user and confirm only after they approve. Stop if a step fails an
         title="Catalyst Center admin login through ISE",
         uses=["catc", "ise", "win"],
         tier=Tier.DANGEROUS,
+        example={
+            "catc_ip": "192.0.2.10",
+            "ad_group": "mcp-catc-admins",
+            "ad_user": "mcp-catc-user",
+            "role": "OBSERVER-ROLE",
+        },
     )
     def catc_admin_access_via_ise(
         catc_ip: Annotated[
@@ -641,7 +667,17 @@ using Catalyst Center while external authentication is on.
     the login results with the roles granted, the fallback finding from step 9, and the undo list.
 {end}"""
 
-    @reg.prompt(title="Troubleshoot a client", uses=["catc", "ise"], tier=Tier.READ)
+    @reg.prompt(
+        title="Troubleshoot a client",
+        uses=["catc", "ise"],
+        tier=Tier.READ,
+        example={
+            "client": "52:54:00:12:34:56",
+            "destination_ip": "198.51.100.10",
+            "expected_vlan": "100",
+            "hours": "24",
+        },
+    )
     def catc_client_troubleshoot(
         client: Annotated[
             str, Field(description="The client: MAC (best), IPv4 address or the username it logged in with")
@@ -724,7 +760,9 @@ missing, skip steps 5 and say ISE could not be checked.
    authentication, so Assurance never saw it).
 2. Issues: {tool_ref("catc_list_issues")} for the client's switch/WLC and site in the window, and
    {tool_ref("catc_get_issue")} for the relevant ones (suggested commands, root cause). Issues stay active
-   for hours after they clear: compare last_seen with now.
+   for hours after they clear: compare last_seen with now. The client's own history:
+   {tool_ref("catc_client_timeline")} for {mac_ref} with hours {window:g} (onboarding steps, authentications,
+   roams, failures and issues by time); merge it by time with ISE's attempts from step 5.
 3. The device, live: {tool_ref("catc_run_show_commands")} on the switch with
    "show access-session mac <MAC> details" (status, method, policy, dACL, SGT, VLAN),
    "show interfaces <port> status", "show running-config interface <port>",
@@ -763,7 +801,122 @@ missing, skip steps 5 and say ISE could not be checked.
 9. Summary: the client, the diagnosis in one line, the evidence (one line per step), and the fix (proposed,
    or applied and verified)."""
 
-    @reg.prompt(title="Build an SD-Access fabric site", uses=["catc", "ise"], tier=Tier.DANGEROUS)
+    @reg.prompt(
+        title="Weekly site health review",
+        uses=["catc"],
+        tier=Tier.READ,
+        example={"site": "Global/Area/Building", "hours": "168"},
+    )
+    def catc_site_health_review(
+        site: Annotated[
+            str,
+            Field(
+                description="Site to review (name hierarchy), e.g. 'Global/Area/Building'; child sites too"
+            ),
+        ],
+        hours: Annotated[str, Field(description="Look-back window in hours (default 168, a week)")] = "168",
+    ) -> str:
+        """A weekly review of one site as a single ranked report: network, device and client health with
+        their trends and dips, open issues and the ones that keep coming back, compliance, software image
+        currency against the golden image, and template drift, with devices under a maintenance window
+        kept out of the findings, ending with next steps. Read tier: nothing changes; the next steps only
+        name the tools (writes among them are previewed when the user runs them)."""
+        texts = (site, hours)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        path = site.strip().rstrip("/")
+        if not path:
+            raise ValueError("Give the site to review, e.g. 'Global/Area/Building'.")
+        try:
+            window = float(hours)
+        except ValueError as exc:
+            raise ValueError(f"hours must be a number, not {hours!r}.") from exc
+        if not 0 < window <= 720:
+            raise ValueError("hours must be between 0 and 720 (30 days).")
+        w = f"{window:g}"
+        return f"""Review site {path} over the last {w} h and write one ranked report with next steps.
+Read only: no tool below changes anything. Where a step's tool fails or Catalyst Center has no data for it,
+say so in that section of the report ("not available: <reason>") and carry on; a missing section is not a
+healthy one.
+
+1. Scope. {tool_ref("catc_get_site")} for "{path}" (it must exist; stop and say so if it doesn't), then
+   {tool_ref("catc_list_devices")} with site "{path}" (all pages; it includes the devices on every site below
+   "{path}", such as a building's floors, and names each device's assigned site): hostname, IP, role,
+   platform, software version, reachability, site. This device list is the scope of every later step; if
+   it is empty while the site has child sites, say so instead of reporting an empty site as healthy.
+2. Maintenance first. {tool_ref("catc_list_maintenance_windows")} with site "{path}": note each window that is
+   IN_PROGRESS now or overlapped the last {w} h (start, end, devices). Devices in maintenance mode raise no
+   issues and get no health, and a change inside a window is expected: a device's health dip, issue or
+   unreachability that falls inside its window is NOT a finding. List those devices in the report under
+   "Under maintenance" with the window, and keep them out of the ranking. A device still unreachable or
+   unhealthy after its window ended is a finding again.
+3. Health now and over time. {tool_ref("catc_site_health_report")} with site "{path}" and hours {w} (health
+   now, device and client trends with dips and direction, worst devices and clients with the issue behind
+   each, recurring issues, AI insights, verdict). Then {tool_ref("catc_health_trend")} with scope "site",
+   target "{path}" and hours {w} for the dips (when, how long, how low) and whether it is getting worse; for
+   the network context {tool_ref("catc_get_network_health")} (this site's row against the rest) and
+   {tool_ref("catc_get_client_health")}. Per device: {tool_ref("catc_list_device_health")} with site "{path}"
+   (POOR and FAIR devices, CPU/memory, link errors, reachability); trend a POOR device with
+   {tool_ref("catc_health_trend")} scope "device" to see whether it is new or chronic.
+4. Issues. {tool_ref("catc_list_issues")} with site "{path}", status "active" and hours {w} (the issues of
+   "{path}" and its child sites, floors included); for each P1/P2
+   {tool_ref("catc_get_issue")} (root cause, suggested actions). Issues stay active for hours after they
+   clear: compare last_seen with now and with the device's live reachability before calling one current.
+   What keeps coming back: {tool_ref("catc_issue_recurrence")} with site "{path}" and hours {w}.
+5. Compliance. {tool_ref("catc_compliance_report")} with site "{path}" (non-compliant devices, failing
+   categories and severity, policy rule violations; trend.since_previous_report says what is new and what was
+   fixed); for the rule detail {tool_ref("catc_list_compliance_violations")} with device set to each
+   non-compliant device from that report (the tool needs a device, or a policy and a site). Note
+   when the last compliance run is older than the window: the result is stale, and the next steps recommend
+   {tool_ref("catc_run_compliance")} for the site's devices.
+6. Image currency. {tool_ref("catc_list_device_images")} with site "{path}": NON_COMPLIANT devices do not run
+   the golden image for their site and role (name the version they run); UNKNOWN means no golden image is
+   tagged for that platform, which is itself a finding (low). {tool_ref("catc_list_images")} with golden true
+   and site "{path}" shows which golden images apply.
+7. Template drift. {tool_ref("catc_template_drift")} with drifted_only true (deployments of the last 30
+   days): keep only the rows whose device is in the step 1 list. state behind = an older template version
+   is deployed; failed = the last deployment never succeeded.
+8. Rank the findings, most severe first, one line each: the device (or the site), what is wrong, the
+   evidence (value and time), and the step that found it. Order:
+   1. unreachable devices and P1 issues that are still current;
+   2. POOR health (device or site) and P2 issues; a site or device trend that is still getting worse.
+      direction "worse" compares the first and second half of the window, so a dip that has ended reads
+      as worse too: before ranking it here, check the trend's latest value and its dips (a dip with an
+      end and latest back above the dip threshold is recovered: rank it 6 as a past dip, with its
+      start, end and lowest value; an ongoing dip or a latest still low stays here);
+   3. compliance failures (security advisories and your compliance policies before startup vs running);
+   4. devices not on the golden image;
+   5. template drift (failed before behind);
+   6. FAIR health, P3/P4 issues, recurring issues that are cleared now, recovered dips, no golden image
+      tagged.
+   Merge duplicates (a down link raising an issue and a POOR score is one finding). Devices under
+   maintenance (step 2) never appear in the ranking.
+9. Report: a one-line verdict for {path} (healthy, watch, or act now) with the counts per rank; the ranked
+   findings; "Under maintenance"; "Not available" (sections Catalyst Center could not answer); and next steps,
+   each naming the tool: {tool_ref("catc_get_issue")} suggested commands with
+   {tool_ref("catc_run_show_commands")} for a current issue; {tool_ref("catc_run_compliance")} for stale
+   compliance (write tier, previewed); {tool_ref("catc_tag_golden_image")} where no golden image is tagged and
+   {tool_ref("catc_distribute_image")} / {tool_ref("catc_activate_image")} for devices off the golden
+   image, inside a change window (prompt catc_change_window); {tool_ref("catc_preview_template")} then
+   {tool_ref("catc_deploy_template")} to bring a drifted device to the latest committed version;
+   {tool_ref("catc_device_360")} for a POOR device.
+   Run nothing from the next steps here: the user picks them."""
+
+    @reg.prompt(
+        title="Build an SD-Access fabric site",
+        uses=["catc", "ise"],
+        tier=Tier.DANGEROUS,
+        example={
+            "building": "Global/Area/Building",
+            "border": "192.0.2.1",
+            "edges": "192.0.2.2,192.0.2.3",
+            "client_pool": "198.51.100.0/24",
+            "dhcp_server": "203.0.113.10",
+            "client_ports": "192.0.2.2:GigabitEthernet1/0/2",
+            "virtual_network": "MCP_VN",
+            "border_asn": "65001",
+        },
+    )
     def catc_build_fabric_site(
         building: Annotated[
             str, Field(description="Building to make a fabric site, e.g. 'Global/Area/Building'")
@@ -940,7 +1093,18 @@ first failure; never skip a check.
    site's VN membership, fabric devices, then the fabric site; the devices stay provisioned, the pool and the
    site stay)."""
 
-    @reg.prompt(title="Roll out and prove a group-based policy", uses=["catc", "ise"], tier=Tier.WRITE)
+    @reg.prompt(
+        title="Roll out and prove a group-based policy",
+        uses=["catc", "ise"],
+        tier=Tier.WRITE,
+        example={
+            "source_group": "Contractors",
+            "destination_group": "Production_Servers",
+            "edge": "edge1",
+            "policy": "deny",
+            "client_ips": "198.51.100.10,198.51.100.20",
+        },
+    )
     def catc_group_policy_rollout(
         source_group: Annotated[
             str, Field(description="Source security group (name or tag), e.g. Contractors")
@@ -1027,3 +1191,156 @@ decision alone. If the ise tools are missing, stop after step 2 and say the chan
 7. Summary: the cell before and after in ISE and on the edge, the clients' SGTs, the flow result with the
    counters, and the undo (preview only, not applied): {tool_ref("ise_set_egress_policy")} back to the step 2
    cell, then {tool_ref("ise_push_trustsec_matrix")}."""
+
+    @reg.prompt(title="Guest wireless with ISE central web auth", uses=["catc", "ise"], tier=Tier.DANGEROUS)
+    def catc_guest_wireless_with_ise(
+        site: Annotated[
+            str, Field(description="AP location the guest SSID is broadcast at: a floor or building path")
+        ],
+        wlc: Annotated[str, Field(description="Catalyst 9800 WLC (hostname or management IP), site-based")],
+        ssid: Annotated[str, Field(description="Guest SSID name (32 characters at most)")] = "mcp-guest",
+        portal: Annotated[
+            str, Field(description="ISE sponsored-guest or self-registration portal the redirect opens")
+        ] = "Sponsored Guest Portal (default)",
+        redirect_acl: Annotated[
+            str, Field(description="Redirect (pre-auth) ACL name on the WLC: permit = redirect to ISE")
+        ] = "ACL_WEBAUTH_REDIRECT",
+        guest_type: Annotated[str, Field(description="ISE guest type sponsors create accounts of")] = (
+            "Daily (default)"
+        ),
+        sponsor_group: Annotated[
+            str, Field(description="ISE sponsor group that may create them (empty: any that already does)")
+        ] = "",
+        policy_set: Annotated[
+            str, Field(description="ISE policy set the WLC's wireless MAB lands in (empty: find it)")
+        ] = "",
+        keep: Annotated[
+            Literal["true", "false"],
+            Field(description="false: a proof run, everything is undone (previewed) at the end"),
+        ] = "true",
+    ) -> str:
+        """Guest Wi-Fi with ISE central web auth (CWA), the validated campus design: the ISE half (guest
+        type, sponsor group, portal, a CWA redirect authorization profile and the MAB redirect / Guest Flow
+        permit rules) joined to the Catalyst Center half (a Guest web-auth SSID with ISE as the auth server,
+        MAC filtering, AAA override and the redirect ACL, a wireless profile at the AP location, WLC
+        provisioning), then the WLC's intended-vs-deployed diff, a 9800 CLI check, ISE's policy explain
+        and an undo list. Every write is preview-first; uses the ise server; dangerous tier (provisioning)."""
+        texts = (site, wlc, ssid, portal, redirect_acl, guest_type, sponsor_group, policy_set)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        loc, ctrl, name = site.strip(), wlc.strip(), ssid.strip()
+        if not (loc and ctrl and name):
+            raise ValueError("Give site, wlc and ssid.")
+        if len(name) > 32:
+            raise ValueError("ssid must be 32 characters at most.")
+        acl = redirect_acl.strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", acl):
+            raise ValueError(f"redirect_acl must be a WLC ACL name, not {redirect_acl!r}.")
+        portal_name, gtype = portal.strip(), guest_type.strip()
+        if not (portal_name and gtype):
+            raise ValueError("Give portal and guest_type.")
+        wlan = f"{name}_profile"[:32]
+        wprofile = f"{name}-wireless"
+        authz = f"{name}-cwa"
+        sg = sponsor_group.strip()
+        sponsor = (
+            f'sponsor group "{sg}" must list "{gtype}"\n   among its guest types: if it doesn\'t (or '
+            f'doesn\'t exist), preview {tool_ref("ise_set_sponsor_group")}\n   name "{sg}" adding '
+            f'guest_types ["{gtype}"] and keep its member groups.'
+            if sg
+            else f'at least one sponsor group must list\n   "{gtype}"; name it. If none does, stop and ask '
+            f"which sponsor group to extend with {tool_ref('ise_set_sponsor_group')}."
+        )
+        pset = f'policy set "{policy_set.strip()}"' if policy_set.strip() else "the policy set step 1 found"
+        end = (
+            f"""11. Undo (keep=false), each preview-first and applied only on approval, in this order:
+    {tool_ref("catc_unassign_profile_from_sites")} "{wprofile}" from ["{loc}"], then
+    {tool_ref("catc_provision_wireless_controller")} again with the same managed AP locations (the WLAN and
+    its policy profile leave the WLC), {tool_ref("catc_delete_wireless_profile")} "{wprofile}",
+    {tool_ref("catc_delete_ssid")} "{name}", the ACL template if step 6 deployed one (a negation template:
+    'no ip access-list extended {acl}'), then on ISE {tool_ref("ise_delete_policy_rule")} for
+    {name}-permit and {name}-redirect, {tool_ref("ise_delete_object")} kind authz_profile
+    "{authz}", and the sponsor group change from step 2 if it made one (put the guest types back). Re-read
+    with {tool_ref("catc_get_wireless_controller")} and {tool_ref("ise_get_policy_set")}: nothing named
+    {name} is left."""
+            if keep == "false"
+            else f"""11. Keep it (keep=true). Write the undo list down for the user, in this order:
+    unassign "{wprofile}" from the site and re-provision the WLC, delete the wireless profile, the SSID and
+    any ACL template, then on ISE the two rules ({tool_ref("ise_delete_policy_rule")}), the authorization
+    profile "{authz}" ({tool_ref("ise_delete_object")}) and any sponsor group change."""
+        )
+        return f"""Build guest Wi-Fi with ISE central web auth (CWA): SSID "{name}" at {loc} on WLC
+{ctrl}; the redirect sends unknown guests to ISE portal "{portal_name}" through redirect ACL {acl};
+sponsors create "{gtype}" accounts. Every write is preview-first: show the preview, wait for the user's
+approval, then repeat the call with the confirm token. Stop and report on any failure. The flow (Cisco ISE
+guest access prescriptive deployment guide, CWA with Catalyst 9800): the guest associates to an open SSID,
+the WLC sends MAB to ISE, ISE answers with a redirect URL and ACL, the guest logs in on the portal, ISE
+sends a CoA and the second MAB matches Guest Flow and is permitted.
+
+1. Preconditions. Catalyst Center: {tool_ref("catc_get_policy_servers")}: an ISE entry COMPLETE with
+   next_action "none" (note its PSN address: the SSID in step 5 and the ACL in step 6 need it).
+   {tool_ref("catc_get_site_settings")} for "{loc}": client AAA (wireless) must point at that ISE; if
+   not, stop and name the fix ({tool_ref("catc_update_site_aaa_settings")}).
+   {tool_ref("catc_get_wireless_controller")} "{ctrl}": a Catalyst 9800 that Catalyst Center provisions
+   site-based (per-device configuration off; with it on, use {tool_ref("catc_set_wlan_security")}
+   instead and stop here); note its building and managed AP locations.
+   ISE: {tool_ref("ise_status")} (ERS up); {tool_ref("ise_get_nad")} for the WLC's management IP (a NAD
+   with a RADIUS secret, usually created by Catalyst Center's provisioning; without it stop). Then
+   {tool_ref("ise_policy_explain")} with nad="{ctrl}" and flow="wireless-mab": the set it selects is
+   where the guest rules go, and its authentication rule for MAB must have if_user_not_found CONTINUE
+   (read it with {tool_ref("ise_get_policy_set")}): otherwise ISE rejects the unknown guest MAC before
+   any redirect.
+2. ISE guest objects. {tool_ref("ise_list_guest_types")}: "{gtype}" exists (else ask: create it with
+   {tool_ref("ise_set_guest_type")} or pick another). {tool_ref("ise_list_sponsor_groups")}: {sponsor}
+   {tool_ref("ise_list_guest_portals")}: "{portal_name}" exists and is a sponsored-guest or
+   self-registration portal; note which guest types it allows.
+3. CWA authorization profile: {tool_ref("ise_create_authz_profile")} name "{authz}", access
+   ACCESS_ACCEPT, redirect {{type: CentralizedWebAuth, acl: {acl}, portal: {portal_name}}}. The preview
+   names the portal as ISE spells it and warns that the ACL must exist on the WLC (step 6).
+4. Authorization rules in {pset} ({tool_ref("ise_create_authz_rule")}; insert each at rank 0, so the
+   last one created ends up first):
+   a. "{name}-redirect": conditions ["Wireless_MAB", "Radius:Called-Station-ID endsWith :{name}"],
+      profiles ["{authz}"].
+   b. "{name}-permit": conditions ["Guest_Flow", "Radius:Called-Station-ID endsWith :{name}"],
+      profiles ["PermitAccess"] (a guest VLAN or dACL profile instead, if the user has one). Created
+      second, it sits above the redirect rule: after the portal login the CoA'd session matches Guest
+      Flow first.
+   Read the set back with {tool_ref("ise_get_policy_set")}.
+5. The SSID: {tool_ref("catc_create_ssid")} ssid="{name}", security="OPEN", guest=true,
+   l3_auth="web_auth", auth_server="auth_ise", auth_servers=["<the PSN address from step 1>"],
+   mac_filtering=true, aaa_override=true (site Global, so the wireless profile can carry it). Catalyst
+   Center refuses a central web auth SSID without auth_servers (NCND03058). Leave pre_auth_acl out: ISE
+   returns the redirect ACL {acl} with the redirect (AAA override), and Catalyst Center accepts a
+   pre_auth_acl only when it knows the ACL (NCND03141). The preview must show l3AuthType web_auth,
+   authServer auth_ise, authServers, isMacFilteringEnabled and aaaOverride, no blocker, and no warning
+   about MAC filtering or AAA override. Then {tool_ref("catc_create_wireless_profile")} name
+   "{wprofile}", ssids ["{name}"]; {tool_ref("catc_assign_profile_to_sites")} "{wprofile}" to ["{loc}"];
+   if the WLC is not at a building yet, {tool_ref("catc_assign_devices_to_site")} (the WLC to the
+   building above {loc}).
+6. The redirect ACL. {tool_ref("catc_run_show_commands")} on {ctrl}: "show ip access-lists {acl}".
+   ISE names this ACL in the redirect, so it must exist on the WLC. If the ACL is missing, offer it as a
+   Day-N template on the WLC ({tool_ref("catc_create_template")} -> {tool_ref("catc_commit_template")} ->
+   {tool_ref("catc_deploy_template")}) with the guide's entries (deny = no redirect): deny udp any any eq
+   domain, deny udp any eq domain any, deny udp any any eq bootps, deny ip any host <PSN>, deny ip host
+   <PSN> any, permit tcp any any eq www, permit tcp any any eq 443 (the ISE portal on port 8443 stays
+   reachable because traffic to the PSN is never redirected).
+7. Provision: {tool_ref("catc_provision_wireless_controller")} device "{ctrl}" with its managed AP
+   locations (step 1's list plus {loc} if missing). Show the preview (it pushes the WLAN, policy profile
+   and tags of every profile at those locations) and wait for approval.
+8. Read back: {tool_ref("catc_get_wireless_controller")} "{ctrl}": provisioning succeeded and "{name}"
+   is among its SSIDs, admin up and managed. {tool_ref("catc_get_wlc_config")} wlc="{ctrl}" diff=true:
+   a WLC with per-device configuration models shows the wlan_profiles record "{wlan}" and its policy
+   profile in sync; a site-based WLC has no such models (the tool says so), and then step 9's CLI is
+   the proof.
+9. 9800 CLI ({tool_ref("catc_run_show_commands")} on {ctrl}): "show wlan name {wlan}" (Security: MAC
+   Filtering on with the ISE authorization list, no 802.1X, no web auth on the WLAN itself); "show
+   wireless profile policy detailed {wlan}" (AAA Override and NAC (RADIUS NAC) enabled, the accounting
+   list); "show running-config | section dynamic-author" (ISE as a CoA client: without it the portal
+   login never re-authorizes the guest).
+10. ISE side proof: {tool_ref("ise_policy_explain")} nad="{ctrl}", flow="wireless-mab", attributes
+    {{"Radius:Called-Station-ID": "aa-bb-cc-dd-ee-ff:{name}"}}: it must hit {name}-redirect with
+    profile {authz}; adding "Network Access:UseCase": "Guest Flow" must hit {name}-permit. No AP in a
+    lab means no real guest: say so instead of claiming an end-to-end login. Summary: what was created
+    where (ISE profile and rules, sponsor change, SSID, wireless profile and site, ACL, provisioning),
+    the CLI findings and the undo list.
+{end}"""

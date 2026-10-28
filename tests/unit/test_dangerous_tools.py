@@ -35,6 +35,7 @@ async def test_dangerous_hidden_without_flag() -> None:
         "catc_deploy_template",
         "catc_delete_site",
         "catc_provision_devices",
+        "catc_provision_site",
         "catc_activate_image",
     }
 

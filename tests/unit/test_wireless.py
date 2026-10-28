@@ -537,3 +537,217 @@ async def test_wlc_config_intended_500_ncnd00050_is_empty(api: respx.MockRouter)
     assert "rf_profiles" in out["no_data"]
     dep = await wlc_call({"wlc": "wlc1", "state": "deployed"})
     assert "rf_profiles" in dep["unavailable"]
+
+
+# --- D126: guest web-auth SSID fields (3.2.2 POST .../wirelessSettings/ssids) ------------------------------
+
+CWA = {
+    "ssid": "mcp-guest",
+    "security": "OPEN",
+    "guest": True,
+    "l3_auth": "web_auth",
+    "auth_server": "auth_ise",
+    "auth_servers": ["192.0.2.30"],
+    "mac_filtering": True,
+    "aaa_override": True,
+    "pre_auth_acl": "ACL_WEBAUTH_REDIRECT",
+}
+PRE_AUTH_ACLS = "/dna/intent/api/v1/wirelessSettings/preAuthAcls"
+REDIRECT_ACL = {"id": "a1", "aclName": "ACL_WEBAUTH_REDIRECT", "aclListName": "ACL_WEBAUTH_REDIRECT"}
+
+
+def ssid_400(*codes: str) -> dict[str, Any]:
+    """A 3.2.2 POST .../wirelessSettings/ssids refusal, shaped like the recorded ones (#285)."""
+    inner = ", ".join(f'"{c}: refused for SSID : mcp-guest"' for c in codes)
+    return {
+        "response": {
+            "errorCode": "NCND00001",
+            "message": f"NCND00001: The Common Settings request has validation errors: [{inner}]",
+        },
+        "version": "1.0",
+    }
+
+
+async def test_guest_cwa_ssid_body(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).mock(
+        side_effect=[
+            httpx.Response(200, json={"response": []}),
+            httpx.Response(200, json={"response": []}),
+            httpx.Response(200, json={"response": [{"id": "g1", "ssid": "mcp-guest"}]}),
+        ]
+    )
+    api.get(PRE_AUTH_ACLS).respond(json={"response": [REDIRECT_ACL], "version": "1.0"})
+    post = api.post(SSIDS).respond(202, json={"response": {"taskId": "tg"}})
+    task_ok(api, "tg")
+    preview, done = await flow("catc_create_ssid", {**CWA, "nas_options": ["SSID", "AP Name"]})
+    body = preview["preview"]["body"]
+    assert body == {
+        "ssid": "mcp-guest",
+        "authType": "OPEN",
+        "wlanType": "Guest",
+        "profileName": "mcp-guest_profile",
+        "ssidRadioType": "Triple band operation(2.4GHz, 5GHz and 6GHz)",
+        "isBroadcastSSID": True,
+        "isEnabled": True,
+        "l3AuthType": "web_auth",
+        "authServer": "auth_ise",
+        "authServers": ["192.0.2.30"],
+        "isMacFilteringEnabled": True,
+        "aaaOverride": True,
+        "aclName": "ACL_WEBAUTH_REDIRECT",
+        "nasOptions": ["SSID", "AP Name"],
+    }
+    effects = " ".join(preview.get("side_effects") or [])
+    assert "MAC filtering" not in effects and "knows pre-auth ACL 'ACL_WEBAUTH_REDIRECT'" in effects
+    assert json.loads(post.calls.last.request.content) == body
+    assert done and done["result"]["ssid_id"] == "g1"
+
+
+async def test_guest_cwa_warns_without_mab_and_override(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    api.get(PRE_AUTH_ACLS).respond(json={"response": [REDIRECT_ACL], "version": "1.0"})
+    args = {k: v for k, v in CWA.items() if k not in ("mac_filtering", "aaa_override")}
+    async with Client(server()) as c:
+        preview = await run(c, "catc_create_ssid", args)
+    effects = " ".join(preview["side_effects"])
+    assert (
+        preview["status"] == "preview" and "mac_filtering=true" in effects and "aaa_override=true" in effects
+    )
+
+
+async def test_guest_external_and_internal_portals(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    api.get(PRE_AUTH_ACLS).respond(json={"response": [{"aclName": "ACL_POSTURE"}], "version": "1.0"})
+    base = {"ssid": "g", "security": "OPEN", "guest": True, "l3_auth": "web_auth"}
+    async with Client(server()) as c:
+        ext = await run(
+            c,
+            "catc_create_ssid",
+            {**base, "auth_server": "auth_external", "external_auth_url": "https://portal.example.com/login"},
+        )
+        own = await run(
+            c, "catc_create_ssid", {**base, "auth_server": "auth_internal", "web_passthrough": True}
+        )
+        plain = await run(c, "catc_create_ssid", {"ssid": "g", "security": "OPEN", "guest": True})
+        ent = await run(
+            c,
+            "catc_create_ssid",
+            {"ssid": "e", "security": "WPA2_ENTERPRISE", "posturing": True, "pre_auth_acl": "ACL_POSTURE"},
+        )
+    assert ext["preview"]["body"]["externalAuthIpAddress"] == "https://portal.example.com/login"
+    assert ext["preview"]["body"]["authServer"] == "auth_external"
+    assert own["preview"]["body"]["webPassthrough"] is True
+    # The spec makes l3AuthType mandatory for Guest: a plain guest SSID says 'open'.
+    assert plain["preview"]["body"]["l3AuthType"] == "open" and "authServer" not in plain["preview"]["body"]
+    eb = ent["preview"]["body"]
+    assert eb["isPosturingEnabled"] is True and eb["aclName"] == "ACL_POSTURE" and "l3AuthType" not in eb
+
+
+@pytest.mark.parametrize(
+    ("args", "error"),
+    [
+        ({"guest": True, "l3_auth": "web_auth"}, "needs auth_server"),
+        ({"guest": True, "l3_auth": "web_auth", "auth_server": "auth_external"}, "needs external_auth_url"),
+        ({"guest": True, "auth_server": "auth_ise"}, "only with l3_auth='web_auth'"),
+        ({"guest": True, "web_passthrough": True}, "only with l3_auth='web_auth'"),
+        (
+            {"guest": True, "l3_auth": "web_auth", "auth_server": "auth_ise", "external_auth_url": "x"},
+            "only with auth_server='auth_external'",
+        ),
+        (
+            {"guest": True, "l3_auth": "web_auth", "auth_server": "auth_ise", "web_passthrough": True},
+            "ISE central web auth",
+        ),
+        ({"guest": True, "posturing": True}, "only to Enterprise"),
+        ({"pre_auth_acl": "ACL_X"}, "posturing=true"),
+        ({"nas_options": ["SSID", "SSID"]}, "must not repeat"),
+    ],
+)
+async def test_guest_field_rules(api: respx.MockRouter, args: dict[str, Any], error: str) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    with pytest.raises(ToolError, match=error.replace("(", r"\(").replace(")", r"\)")):
+        await flow("catc_create_ssid", {"ssid": "g", "security": "OPEN", **args})
+
+
+# --- #285: what the appliance refused in the D126 live proof ---------------------------------------------
+
+
+async def test_guest_cwa_without_auth_servers_is_blocked(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    post = api.post(SSIDS)
+    args = {k: v for k, v in CWA.items() if k not in ("auth_servers", "pre_auth_acl")}
+    async with Client(server()) as c:
+        out = await run(c, "catc_create_ssid", args)
+        blank = await run(c, "catc_create_ssid", {**args, "auth_servers": [" "]})
+    assert out["status"] == "blocked" and "needs auth_servers" in out["blockers"][0]
+    assert "NCND03058" in out["blockers"][0] and blank["status"] == "blocked"
+    assert not post.called
+
+
+async def test_internal_portal_needs_no_auth_servers(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    async with Client(server()) as c:
+        out = await run(
+            c,
+            "catc_create_ssid",
+            {
+                "ssid": "g",
+                "security": "OPEN",
+                "guest": True,
+                "l3_auth": "web_auth",
+                "auth_server": "auth_internal",
+            },
+        )
+    assert out["status"] == "preview"
+
+
+async def test_unknown_pre_auth_acl_warns(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    # 3.2.2 with no design pre-auth ACLs answers an empty list (recorded live).
+    api.get(PRE_AUTH_ACLS).respond(json={"response": [], "version": "1.0"})
+    async with Client(server()) as c:
+        out = await run(c, "catc_create_ssid", CWA)
+    effects = " ".join(out["side_effects"])
+    assert out["status"] == "preview" and "lists no pre-auth ACL named 'ACL_WEBAUTH_REDIRECT'" in effects
+    assert "known: none" in effects and "NCND03141" in effects
+
+
+async def test_pre_auth_acl_list_unreadable_is_a_note(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    api.get(PRE_AUTH_ACLS).respond(404, json={"response": {"errorCode": "NOT_FOUND", "message": "nope"}})
+    async with Client(server()) as c:
+        out = await run(c, "catc_create_ssid", CWA)
+    assert out["status"] == "preview"
+    assert "Could not read the pre-auth ACLs" in " ".join(out["side_effects"])
+
+
+@pytest.mark.parametrize(
+    ("code", "hint"),
+    [("NCND03058", "needs auth_servers: the ISE PSN"), ("NCND03141", "checks pre_auth_acl against")],
+)
+async def test_ssid_400_gets_a_hint(api: respx.MockRouter, code: str, hint: str) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    api.get(PRE_AUTH_ACLS).respond(json={"response": [REDIRECT_ACL], "version": "1.0"})
+    api.post(SSIDS).respond(400, json=ssid_400(code))
+    with pytest.raises(ToolError) as err:
+        await flow("catc_create_ssid", CWA)
+    assert code in str(err.value) and hint in str(err.value)
+
+
+async def test_ssid_400_other_code_unchanged(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL])
+    api.get(SSIDS).respond(json={"response": []})
+    api.get(PRE_AUTH_ACLS).respond(json={"response": [REDIRECT_ACL], "version": "1.0"})
+    api.post(SSIDS).respond(400, json=ssid_400("NCND09999"))
+    with pytest.raises(ToolError) as err:
+        await flow("catc_create_ssid", CWA)
+    assert "NCND09999" in str(err.value) and "Hint:" not in str(err.value)

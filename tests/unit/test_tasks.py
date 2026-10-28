@@ -15,6 +15,7 @@ from .test_write_tools import mock_sites
 LONG = {
     "catc_create_discovery",
     "catc_provision_devices",
+    "catc_provision_site",
     "catc_deploy_template",
     "catc_distribute_image",
     "catc_activate_image",

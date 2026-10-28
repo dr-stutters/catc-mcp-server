@@ -1,5 +1,7 @@
 """Workflow prompts: core prompt contract, rendering and tier gating (D6)."""
 
+import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -51,6 +53,7 @@ SAMPLES = {
         "expected_vlan": "10",
         "hours": "4",
     },
+    "catc_site_health_review": {"site": "Global/mcp-test-lab/mcp-test-bldg", "hours": "168"},
     "catc_build_fabric_site": {
         "building": "Global/mcp-test-lab/mcp-test-fabric",
         "border": "198.18.128.176",
@@ -68,6 +71,17 @@ SAMPLES = {
         "edge": "mcp-catc-fab-edge1",
         "policy": "deny",
         "client_ips": "10.10.40.100, 10.10.40.101",
+    },
+    "catc_guest_wireless_with_ise": {
+        "site": "Global/mcp-test-lab/mcp-test-bldg/Floor 1",
+        "wlc": "mcp-catc-wlc",
+        "ssid": "mcp-guest",
+        "portal": "Sponsored Guest Portal (default)",
+        "redirect_acl": "ACL_WEBAUTH_REDIRECT",
+        "guest_type": "Daily (default)",
+        "sponsor_group": "mcp-guest-sponsors",
+        "policy_set": "",
+        "keep": "false",
     },
     "suite_change_check": {
         "site": "Global/mcp-test-lab/mcp-test-bldg",
@@ -101,10 +115,30 @@ async def test_prompt_contract_all_tiers() -> None:
     )
 
 
+async def test_manifest_renders_every_prompt(caplog: pytest.LogCaptureFixture) -> None:
+    # `catc-mcp-server tools` renders each prompt with its registered example (else placeholders);
+    # one without a valid example is listed as "did not render" and FastMCP logs a traceback (#287).
+    from catc_mcp._core.manifest import build_manifest
+
+    server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    with caplog.at_level(logging.ERROR):
+        manifest = await build_manifest(server, server="catc-mcp-server", prefix="catc")
+    unrendered = sorted(n for n, meta in manifest["prompts"].items() if not meta["rendered"])
+    assert unrendered == []
+    assert not [r for r in caplog.records if "Error rendering prompt" in r.getMessage()]
+    # The committed manifest other servers check against must match (regenerate with
+    # `catc-mcp-server tools --json --out tests/manifests/catc.json`).
+    committed = json.loads((MANIFESTS / "catc.json").read_text())
+    assert {n: m["rendered"] for n, m in committed["prompts"].items()} == {
+        n: True for n in manifest["prompts"]
+    }
+
+
 async def test_suite_pack() -> None:
     server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
-    # Peer snapshot tools not shipped yet (ise I82); peers without a committed manifest are not checked.
-    await assert_suite_pack(server, "catc", MANIFESTS, pending=["ise_snapshot", "ise_compare_snapshot"])
+    # The committed ise, fmc, cat-sdwan and cml manifests are checked leg by leg; tools a suite prompt
+    # itself marks pending (core 0.19, stutters-mcp-core#171) are waived by core.
+    await assert_suite_pack(server, "catc", MANIFESTS)
 
 
 async def test_onboard_prompt_renders() -> None:
@@ -401,3 +435,93 @@ async def test_client_troubleshoot_validates() -> None:
             )
         with pytest.raises(Exception, match="destination_ip"):
             await c.get_prompt("catc_client_troubleshoot", {"client": "x", "destination_ip": "nope"})
+
+
+async def test_site_health_review_renders_every_section() -> None:
+    args = SAMPLES["catc_site_health_review"]
+    async with Client(create_server(make_settings())) as c:  # read tier: no writes needed
+        assert "catc_site_health_review" in {p.name for p in await c.list_prompts()}
+        text = (await c.get_prompt("catc_site_health_review", args)).messages[0].content.text  # type: ignore[union-attr]
+        default = (
+            (await c.get_prompt("catc_site_health_review", {"site": "Global/mcp-test-lab/"}))
+            .messages[0]
+            .content.text
+        )  # type: ignore[union-attr]
+    for tool in (
+        "catc_list_devices",
+        "catc_list_maintenance_windows",
+        "catc_site_health_report",
+        "catc_health_trend",
+        "catc_get_network_health",
+        "catc_get_client_health",
+        "catc_list_device_health",
+        "catc_list_issues",
+        "catc_issue_recurrence",
+        "catc_compliance_report",
+        "catc_list_compliance_violations",
+        "catc_list_device_images",
+        "catc_template_drift",
+    ):
+        assert f"`{tool}`" in text, tool
+    assert 'site "Global/mcp-test-lab/mcp-test-bldg"' in text and "hours 168" in text
+    # The violations tool refuses a bare site.
+    assert "with device set to each\n   non-compliant device" in text
+    # #264: the scope includes the building's floors (catc_list_devices includes child sites), and the
+    # issues site filter already covers them, so there is no second wildcard call.
+    scope = text[text.index("1. Scope") : text.index("2. Maintenance")]
+    assert "includes the devices on every site below" in scope and "floors" in scope
+    assert 'site "Global/mcp-test-lab/mcp-test-bldg/*"' not in text
+    # #264: a "worse" trend whose dip has ended is a recovered dip, not a current finding.
+    # D73: maintenance comes before any finding and its devices stay out of the ranking.
+    assert text.index("catc_list_maintenance_windows") < text.index("catc_site_health_report")
+    assert "is NOT a finding" in text and "never appear in the ranking" in text
+    ranking = text[text.index("8. Rank") : text.index("9. Report")]
+    assert ranking.index("unreachable") < ranking.index("golden image") < ranking.index("template drift")
+    # #264: a "worse" trend whose dip has ended is a recovered dip, not a current finding.
+    assert "check the trend's latest value and its dips" in ranking and "recovered dips" in ranking
+    assert "next steps" in text[text.index("9. Report") :]
+    # Read tier: the next steps name write tools without running them.
+    assert "Run nothing from the next steps here" in text
+    assert 'site "Global/mcp-test-lab"' in default and "hours 168" in default
+
+
+@pytest.mark.parametrize(
+    ("bad", "match"),
+    [
+        ({"site": "  "}, "Give the site"),
+        ({"site": "Global/x", "hours": "0"}, "hours"),
+        ({"site": "Global/x", "hours": "900"}, "hours"),
+        ({"site": "Global/x", "hours": "week"}, "hours"),
+        ({"site": 'Global/"x'}, "quotes"),
+    ],
+)
+async def test_site_health_review_validates(bad: dict[str, str], match: str) -> None:
+    async with Client(create_server(make_settings())) as c:
+        with pytest.raises(Exception, match=match):
+            await c.get_prompt("catc_site_health_review", bad)
+
+
+async def test_guest_wireless_prompt_renders() -> None:
+    args = SAMPLES["catc_guest_wireless_with_ise"]
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        text = (await c.get_prompt("catc_guest_wireless_with_ise", args)).messages[0].content.text  # type: ignore[union-attr]
+        kept = await c.get_prompt(
+            "catc_guest_wireless_with_ise", {**args, "keep": "true", "sponsor_group": ""}
+        )
+        keep_text = kept.messages[0].content.text  # type: ignore[union-attr]
+    # The ISE half before the Catalyst Center half, the SSID with every CWA field, CLI check, undo.
+    assert text.index("`ise_create_authz_profile`") < text.index("`catc_create_ssid`")
+    assert 'auth_server="auth_ise", auth_servers=["<the PSN address from step 1>"]' in text
+    assert "mac_filtering=true, aaa_override=true" in text
+    assert "CentralizedWebAuth" in text and 'pre_auth_acl="' not in text and "NCND03058" in text
+    assert "show wlan name mcp-guest_profile" in text and 'flow="wireless-mab"' in text
+    assert "Undo (keep=false)" in text and "`ise_delete_policy_rule`" in text and "mcp-guest-sponsors" in text
+    assert "Keep it (keep=true)" in keep_text and "at least one sponsor group" in keep_text
+
+
+async def test_guest_wireless_prompt_rejects_bad_args() -> None:
+    args = SAMPLES["catc_guest_wireless_with_ise"]
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        for bad in ({"redirect_acl": "1 bad acl"}, {"ssid": "x" * 33}, {"wlc": 'w"1'}):
+            with pytest.raises(MCPError):
+                await c.get_prompt("catc_guest_wireless_with_ise", {**args, **bad})

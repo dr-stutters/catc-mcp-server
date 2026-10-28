@@ -37,6 +37,7 @@ READ: dict[str, str] = {
     "Network Operations.LAN Automation": "Read",  # LAN automation sessions and status
     "Security.Audit Log": "Read",  # audit logs, recent activity
     "Security.SSI": "Read",  # catc_get_ssi_readiness (Security Service Insertion readiness)
+    "Security.Security Advisory": "Read",  # catc_security_advisories, catc_lifecycle_signals (PSIRT)
     "System.System Settings": "Read",  # catc_get_policy_servers (ISE)
     # catc_get_system_health, catc_list_backups / catc_get_backup_status, the account check in catc_status.
     # Its maximum is Read on 3.2.2, so catc_create_backup needs SUPER-ADMIN-ROLE (docs/least-privilege.md).
@@ -52,12 +53,15 @@ READ: dict[str, str] = {
 WRITE: dict[str, str] = {
     **READ,
     "Assurance.Monitoring": "Write",  # catc_update_issue_status
+    "Assurance.Settings": "Write",  # issue definitions: catc_update_issue_definition, custom issues
     "Network Design.Profiles & Settings": "Write",  # settings, creds, pools, profiles, templates, preview
     "Network Design.Wireless Maps": "Write",  # floors (POST/PUT/DELETE /v2/floors are map operations)
     "Network Management.Discovery": "Write",
     "Network Management.Hierarchy": "Write",  # sites, assign devices to sites
     "Network Management.Inventory": "Write",  # resync, device role (network-device/brief), tags
-    "Network Operations.Compliance": "Write",  # compliance runs and policies
+    "Network Operations.Compliance": "Write",  # compliance runs and policies; field notice scans
+    "Security.Security Advisory": "Write",  # catc_trigger_lifecycle_scan (security advisories)
+    "Utilities.Machine Reasoner": "Write",  # catc_trigger_lifecycle_scan (network bugs)
     "Network Operations.Device Replacement & Refresh": "Write",  # mark for replacement
     "Network Operations.SWIM": "Write",  # golden tagging (distribute/activate are MCP-dangerous)
 }
