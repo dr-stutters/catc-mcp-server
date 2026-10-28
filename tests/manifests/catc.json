@@ -992,6 +992,10 @@
     "catc_update_template": {
       "tier": "write",
       "title": "Update template"
+    },
+    "catc_write_memory": {
+      "tier": "write",
+      "title": "Write memory"
     }
   },
   "version": "0.16.0"

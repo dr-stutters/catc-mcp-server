@@ -194,9 +194,9 @@ token (`catc-mcp-server token alice`).
 Every write is preview-first. On top of that (core G7, `docs/PRODUCTION.md` in stutters-mcp-core):
 
 - **`CATC_MAX_DEVICES_PER_CHANGE`** (default **10**, `0` = off): template deploys, provisioning, SWIM
-  distribute/activate, PnP claims, device replacement and device deletion that touch more devices are blocked
-  in the preview. `catc_deploy_template` targets an explicit device list, every device under a `site`
-  (child sites included; `Global` = the whole inventory) or a `tag`; the limit applies after expansion.
+  distribute/activate, PnP claims, device replacement, device deletion and `catc_write_memory` that touch more
+  devices are blocked in the preview. `catc_deploy_template` targets an explicit device list, every device under
+  a `site` (child sites included; `Global` = the whole inventory) or a `tag`; the limit applies after expansion.
 - **Blast radius**: those tools plus `catc_resync_devices` and `catc_run_compliance` report `blast_radius`
   (devices touched), limited by `MCP_MAX_BLAST_RADIUS` / `MCP_BLAST_RADIUS_OVERRIDES` (e.g.
   `catc_deploy_template=5`).
@@ -460,7 +460,7 @@ got unhealthy.
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (52)
+### Write (53)
 
 | Tool | What it does |
 |---|---|
@@ -516,6 +516,7 @@ got unhealthy.
 | `catc_update_site_settings` | Change a site's network settings (Design > Network Settings): DNS servers and domain, NTP, DHCP servers, banner, time zone, and telemetry (external syslog/SNMP trap servers, Catalyst Center as collector, wired client data collection). |
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
+| `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
 ### Dangerous (44)
 

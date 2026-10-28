@@ -4,7 +4,8 @@ Core enforces MCP_DRY_RUN, MCP_CHANGE_WINDOW, MCP_MAX_BLAST_RADIUS / MCP_BLAST_R
 MCP_TWO_PERSON_TOOLS for every write. Here: device targets (explicit devices, or every device under a site
 or with a tag) and Catalyst Center's own limit, CATC_MAX_DEVICES_PER_CHANGE (default 10, 0 = off), which
 applies to the tools that change device configuration or software (template deploys, provisioning, SWIM,
-PnP claims and device replacement, device deletion). Each of those reports `blast_radius` = devices touched.
+PnP claims and device replacement, device deletion, write memory). Each of those reports `blast_radius` =
+devices touched.
 """
 
 from __future__ import annotations
