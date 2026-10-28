@@ -331,8 +331,9 @@ preview. ISE stays the policy owner; the prompt never starts Catalyst Center's g
 `catc_guest_wireless_with_ise` (dangerous tier, uses **ise**) builds guest Wi-Fi with ISE central web auth
 the validated way: guest type, sponsor group and portal in ISE, a CWA redirect authorization profile and the
 Wireless MAB redirect / Guest Flow permit rules scoped to the SSID, then a Guest web-auth SSID
-(`catc_create_ssid` with `l3_auth='web_auth'`, `auth_server='auth_ise'`, MAC filtering, AAA override and the
-redirect ACL as `pre_auth_acl`), a wireless profile at the AP location, the redirect ACL on the 9800, WLC
+(`catc_create_ssid` with `l3_auth='web_auth'`, `auth_server='auth_ise'`, the ISE PSN as `auth_servers`, MAC
+filtering and AAA override; no `pre_auth_acl`, since ISE returns the redirect ACL), a wireless profile at the AP
+location, the redirect ACL on the 9800, WLC
 provisioning, the read-back and 9800 CLI check (`show wlan name`, the policy profile's AAA override and NAC,
 CoA), `ise_policy_explain` for the redirect and permit hits, and an undo list (applied at the end with
 `keep=false`).
