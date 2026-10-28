@@ -745,6 +745,10 @@
       "tier": "read",
       "title": "List ITSM integrations"
     },
+    "catc_list_l3_handoffs": {
+      "tier": "read",
+      "title": "List layer 3 handoffs"
+    },
     "catc_list_maintenance_windows": {
       "tier": "read",
       "title": "List maintenance windows"
@@ -816,6 +820,10 @@
     "catc_provision_devices": {
       "tier": "dangerous",
       "title": "Provision devices"
+    },
+    "catc_provision_site": {
+      "tier": "dangerous",
+      "title": "Provision every device at a site"
     },
     "catc_provision_wireless_controller": {
       "tier": "dangerous",
