@@ -541,3 +541,9 @@ Suite plan: four waves of cross-architecture scenarios led by Catalyst SD-WAN, f
 | D127 | **`catc_list_ap_profiles` / `catc_set_ap_profile` / `catc_set_ap_power_profile`**: AP join and power profiles | ✅ v0.20.0 (PR #280; live proof pending) | [#243](https://github.com/dr-stutters/catc-mcp-server/issues/243) |
 | D128 | **`catc_get_provisioning_settings` / `catc_set_provisioning_settings`**: Visibility and Control of Configurations | ✅ v0.20.0 (PR #278; live proof pending) | [#244](https://github.com/dr-stutters/catc-mcp-server/issues/244) |
 | D73 follow-up | Windows ended early show `ended_early` (not 1969); `end_now` waits for COMPLETED | ✅ v0.20.0 (PR #277) | [#269](https://github.com/dr-stutters/catc-mcp-server/issues/269) |
+| D126 follow-up | Guest CWA SSID preview checks `auth_servers` and `pre_auth_acl` | ✅ v0.20.1 (PR #291) | [#285](https://github.com/dr-stutters/catc-mcp-server/issues/285) |
+| D127 follow-up | `catc_set_ap_profile` previews block the requests Catalyst Center refuses | ✅ v0.20.1 (PR #290) | [#284](https://github.com/dr-stutters/catc-mcp-server/issues/284) |
+| D128 follow-up | Deploy, provisioning and SWIM previews say when requirePreview / ITSM approval is on | ✅ v0.20.1 (PR #292) | [#286](https://github.com/dr-stutters/catc-mcp-server/issues/286) |
+| D121 follow-up | Health score definitions count CUSTOM (any non-DEFAULT status) as changed | ✅ v0.20.1 (PR #293) | [#279](https://github.com/dr-stutters/catc-mcp-server/issues/279) |
+| D68 follow-up | Dead-AAA issue times dated when not today; "since" for pre-window starts | ✅ v0.20.1 (PR #288) | [#270](https://github.com/dr-stutters/catc-mcp-server/issues/270) |
+| D73 follow-up | `catc-mcp-server tools` renders every prompt (7 prompts register examples) | ✅ v0.20.1 (PR #289) | [#287](https://github.com/dr-stutters/catc-mcp-server/issues/287) |

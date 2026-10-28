@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.20.1 (2026-10-29)
+
+Fixes found in the live proofs of 0.18.0–0.20.0: guest CWA SSID and AP profile previews block what Catalyst Center
+refuses, previews say when requirePreview / ITSM approval holds a change, health score definitions count CUSTOM KPIs,
+dead-AAA issue times carry a date, and every prompt renders. Core 0.19.0. 219 tools (112 read, 61 write, 46
+dangerous) and fifteen prompts.
+
+### Fixed
+- `catc_create_ssid` blocks ISE central web auth without `auth_servers`, checks `pre_auth_acl` against Catalyst
+  Center's pre-auth ACLs, and adds hints to NCND03058/NCND03141 refusals; `catc_guest_wireless_with_ise` passes
+  `auth_servers` (D126, #285, #291).
+- `catc_set_ap_profile` blocks partial management credentials and updates that would drop the masked passwords, sends
+  a whole rogue detection setting on create, and takes `rogue_report_interval` / `rogue_transient_interval` (D127,
+  #284, #290).
+- `catc_deploy_template`, `catc_provision_devices`, `catc_provision_site`, `catc_distribute_image` and
+  `catc_activate_image` previews say when Catalyst Center's requirePreview / ITSM approval will hold the change
+  (D128, #286, #292).
+- `catc_list_health_score_definitions` counts and filters KPIs that Catalyst Center reports as CUSTOM (any
+  non-DEFAULT status) as changed, and the update preview predicts CUSTOM (D121, #279, #293).
+- `catc_network_services_health` dates dead-AAA issue times that are not today or fall before the window, and says
+  "since <date time>" for an issue already open when the window began (D68, #270, #288).
+- `catc-mcp-server tools` renders every prompt (no more tracebacks on stderr); the 7 workflow prompts register valid
+  examples (#287, #289).
+
 ## 0.20.0 (2026-10-28)
 
 Guest wireless with ISE central web auth, AP join and power profiles, Visibility and Control of Configurations, and a
