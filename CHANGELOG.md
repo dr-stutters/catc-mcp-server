@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.18.0 (2026-10-28)
+
+Link mismatches, Catalyst Center's scheduled activities, and maintenance-window and dead-AAA fixes from the 3.2.2
+live run. Core 0.15.0 (0.19.0's suite pack check fails on the bundled ise manifest, which does not yet list
+`ise_create_backup`). 211 tools (109 read, 57 write, 45 dangerous) and ten prompts.
+
+### Added
+- `catc_link_mismatch` (D119, #266): speed/duplex and native/allowed VLAN mismatches between the two ends of a link,
+  from Catalyst Center's Inventory Insight, with a fix hint per link.
+- `catc_list_activities` and `catc_get_activity` (D120, #267): the jobs Catalyst Center runs on its own schedule
+  (upcoming, in progress, recurring and finished, failed first) and the jobs each one triggered, with the failure
+  reason.
+- `catc_update_maintenance_window(end_now=true)` ends a running maintenance window now (D73, #265).
+
+### Fixed
+- `catc_cancel_maintenance` and `catc_update_maintenance_window` refuse a started (IN_PROGRESS) maintenance window up
+  front, because Catalyst Center does not allow it (NCIM90982); the `catc_change_window` prompt lets the window end on
+  its own (D73, #258, #261, #265).
+- `catc_update_maintenance_window` warns about fields Catalyst Center did not apply (3.2.2 keeps the description)
+  instead of reporting them as changed (D73, #252, #265).
+- `catc_network_services_health` puts Assurance dead-AAA issues (`fabric_aaa_server_down_trigger`,
+  `radius_error_trigger`) in the AAA verdict, and notes that the data API counts only transactions a device sent
+  (D68, #259, #263).
+
 ## 0.17.0 (2026-10-28)
 
 Lifecycle and security signals, Assurance issue definitions, port actions, bulk provisioning by site and the weekly
