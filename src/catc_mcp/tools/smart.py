@@ -284,14 +284,23 @@ RUNNER_MAX_COMMANDS = 5
 
 
 async def run_show(
-    app: CatcApp, ctx: Context, devs: list[dict[str, Any]], cmds: list[str]
+    app: CatcApp,
+    ctx: Context,
+    devs: list[dict[str, Any]],
+    cmds: list[str],
+    *,
+    name: str = "catc-mcp-show",
+    wait_s: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Run checked `show` commands on resolved devices through the command runner: one entry per
+    """Run already-checked commands on resolved devices through the command runner: one entry per
     device with its output (secrets masked), failures and commands Catalyst Center blocked. More than
-    RUNNER_MAX_COMMANDS commands go in several runner requests, one after another, merged per device."""
+    RUNNER_MAX_COMMANDS commands go in several runner requests, one after another, merged per device.
+    Callers check the commands first (check_show_command; device_probe.check_runner_command for
+    ping/traceroute); `wait_s` overrides CATC_COMMAND_RUNNER_TIMEOUT for slow commands."""
     merged: dict[str, dict[str, Any]] = {}
     for i in range(0, len(cmds), RUNNER_MAX_COMMANDS):
-        for entry in await _run_show_once(app, ctx, devs, cmds[i : i + RUNNER_MAX_COMMANDS]):
+        part = cmds[i : i + RUNNER_MAX_COMMANDS]
+        for entry in await _run_show_once(app, ctx, devs, part, name=name, wait_s=wait_s):
             into = merged.setdefault(str(entry["device"]), {"device": entry["device"], "output": {}})
             into["output"].update(entry.get("output") or {})
             for key in ("failed", "blocked_by_catalyst_center"):
@@ -301,14 +310,20 @@ async def run_show(
 
 
 async def _run_show_once(
-    app: CatcApp, ctx: Context, devs: list[dict[str, Any]], cmds: list[str]
+    app: CatcApp,
+    ctx: Context,
+    devs: list[dict[str, Any]],
+    cmds: list[str],
+    *,
+    name: str = "catc-mcp-show",
+    wait_s: float | None = None,
 ) -> list[dict[str, Any]]:
     names = {str(d["id"]): str(d.get("hostname") or d.get("managementIpAddress")) for d in devs}
-    timeout = app.settings.command_runner_timeout
+    timeout = wait_s or app.settings.command_runner_timeout
     started = await app.api.post(
         "/dna/intent/api/v1/network-device-poller/cli/read-request",
         {
-            "name": "catc-mcp-show",
+            "name": name,
             "commands": cmds,
             "deviceUuids": list(names),
             "timeout": int(min(timeout, 300)),

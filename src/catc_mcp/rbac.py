@@ -42,7 +42,7 @@ READ: dict[str, str] = {
     # catc_get_system_health, catc_list_backups / catc_get_backup_status, the account check in catc_status.
     # Its maximum is Read on 3.2.2, so catc_create_backup needs SUPER-ADMIN-ROLE (docs/least-privilege.md).
     "System.System Administration": "Read",
-    "Utilities.Command Runner": "Read",  # catc_run_show_commands (Read is enough for show commands)
+    "Utilities.Command Runner": "Read",  # catc_run_show_commands, catc_ping, catc_traceroute (Read is enough)
     "Utilities.Event Viewer": "Read",
     "Utilities.Scheduler": "Read",  # (minimum Read)
     "Utilities.Machine Reasoner": "Read",  # dependency of Assurance.Monitoring

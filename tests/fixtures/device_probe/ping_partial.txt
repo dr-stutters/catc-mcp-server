@@ -1,0 +1,6 @@
+ping vrf CORP 198.51.100.30 repeat 10
+Type escape sequence to abort.
+Sending 10, 100-byte ICMP Echos to 198.51.100.30, timeout is 2 seconds:
+.!!!.!!!!!
+Success rate is 80 percent (8/10), round-trip min/avg/max = 3/5/12 ms
+edge-r1#

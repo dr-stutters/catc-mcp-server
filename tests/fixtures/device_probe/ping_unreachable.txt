@@ -1,0 +1,6 @@
+ping 203.0.113.99 repeat 5
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 203.0.113.99, timeout is 2 seconds:
+.....
+Success rate is 0 percent (0/5)
+edge-r1#

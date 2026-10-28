@@ -61,7 +61,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Security.Security Advisory | Read | `catc_security_advisories` and the PSIRT part of `catc_lifecycle_signals` (403 without it) |
 | System.System Settings | Read | `catc_get_policy_servers` (ISE integration) |
 | System.System Administration | Read | `catc_get_system_health`, `catc_list_backups`, `catc_get_backup_status`, the account check in `catc_status` |
-| Utilities.Command Runner | Read | `catc_run_show_commands` (Read is enough for show commands) |
+| Utilities.Command Runner | Read | `catc_run_show_commands`, `catc_ping`, `catc_traceroute` (Read is enough for show, ping and traceroute) |
 | Utilities.Event Viewer, Scheduler, Machine Reasoner, Reports, App Hosting | Read | dependencies of Assurance.Monitoring |
 
 **Denied** (not used by any read tool): Extensions.ITSM, Network Design.Wireless Maps (floor writes only), Policy.Application

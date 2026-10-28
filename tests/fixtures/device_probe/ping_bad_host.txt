@@ -1,0 +1,5 @@
+ping nosuchhost.example.com repeat 5
+Translating "nosuchhost.example.com"...domain server (192.0.2.53)
+% Unrecognized host or address, or protocol not running.
+
+edge-r1#

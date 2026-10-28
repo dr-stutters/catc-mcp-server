@@ -1,0 +1,10 @@
+traceroute 198.51.100.20 numeric timeout 2 ttl 1 30
+Type escape sequence to abort.
+Tracing the route to 198.51.100.20
+VRF info: (vrf in name/id, vrf out name/id)
+  1 192.0.2.2 1 msec 1 msec 0 msec
+  2 192.0.2.6 [MPLS: Label 16 Exp 0] 3 msec
+    192.0.2.10 [MPLS: Label 16 Exp 0] 2 msec
+    192.0.2.6 [MPLS: Label 16 Exp 0] 3 msec
+  3 198.51.100.20 2 msec *  2 msec
+edge-r1#
