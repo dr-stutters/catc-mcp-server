@@ -1,6 +1,8 @@
 """D53: Assurance issue definitions (respx). The system rows follow the 3.2.2 lab appliance's live answer
 (2026-10-28, GET systemIssueDefinitions?limit=3&offset=1, ids replaced); the empty custom list is its live
-answer too. Custom definitions with rules follow the 3.2.2 spec (customIssueDefinitions)."""
+answer too. Custom definitions with rules follow the 3.2.2 spec (customIssueDefinitions), except that the
+appliance returns rules[].severity as a string ("5"), as recorded live (#262). Like the appliance, the fake
+GET without issueEnabled leaves out disabled definitions, even with name= set (#262)."""
 
 import json
 from typing import Any
@@ -22,6 +24,7 @@ BGP_ID = "3e4250c4-0000-4000-8000-000000000001"
 WLC_ID = "01d34dd7-0000-4000-8000-000000000002"
 SENSOR_ID = "009e5b42-0000-4000-8000-000000000003"
 CUSTOM_ID = "c0c0c0c0-0000-4000-8000-000000000004"
+RADIO_ID = "2a2a2a2a-0000-4000-8000-000000000005"
 
 BGP = {
     "id": BGP_ID,
@@ -86,6 +89,23 @@ OSPF = {
         }
     ],
 }
+# Factory-disabled (one of the six 2.4 GHz radio definitions on 3.2.2); absent from the default GET.
+RADIO = {
+    "id": RADIO_ID,
+    "name": "radio_util_trigger_2_4ghz",
+    "displayName": "Radio - High Utilization 2.4 GHz",
+    "description": "Radio channel utilization is above the threshold on the 2.4 GHz band",
+    "priority": "P3",
+    "defaultPriority": "P3",
+    "deviceType": "UNIFIED_AP",
+    "issueEnabled": False,
+    "profileId": "global",
+    "definitionStatus": "DEFAULT",
+    "categoryName": "UTILIZATION",
+    "synchronizeToHealthThreshold": False,
+}
+# A custom rule as the appliance returns it: severity as a string.
+OSPF_LIVE = {**OSPF, "rules": [{**OSPF["rules"][0], "severity": "5"}]}
 
 
 def rw_server() -> Any:
@@ -96,7 +116,7 @@ class Lab:
     """A fake appliance holding system and custom definitions; records the writes."""
 
     def __init__(self, api: respx.MockRouter, custom: list[dict[str, Any]] | None = None) -> None:
-        self.system = {d["id"]: dict(d) for d in (BGP, WLC, SENSOR)}
+        self.system = {d["id"]: dict(d) for d in (BGP, WLC, SENSOR, RADIO)}
         self.custom = [dict(d) for d in (custom or [])]
         self.sent: list[tuple[str, str, Any]] = []
         self.queries: list[dict[str, str]] = []
@@ -125,7 +145,8 @@ class Lab:
             if q.get("name") in (None, d["name"])
             and q.get("priority") in (None, d["priority"])
             and q.get("deviceType") in (None, d["deviceType"])
-            and q.get("issueEnabled") in (None, str(d["issueEnabled"]).lower())
+            # 3.2.2: no issueEnabled -> enabled definitions only.
+            and q.get("issueEnabled", "true") == str(d["issueEnabled"]).lower()
         ]
         return self._page(rows, q)
 
@@ -358,3 +379,87 @@ async def test_delete_not_deletable(api: respx.MockRouter) -> None:
     out, _ = await preview_then_apply("catc_delete_custom_issue", {"definition": CUSTOM_ID})
     assert out["status"] == "blocked" and "not deletable" in out["blockers"][0]
     assert lab.sent == []
+
+
+async def test_default_listing_includes_disabled(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_list_issue_definitions", {"response_format": "json"})
+        names = [r["name"] for r in out["results"]]
+        assert sorted(names) == sorted(
+            ["BGP_Down", "global_sensor_outlook_fail_trigger", "wlc_monitor", "radio_util_trigger_2_4ghz"]
+        )
+        assert len(names) == len(set(names))
+        assert {q.get("issueEnabled") for q in lab.queries} == {"true", "false"}
+        out = await run(c, "catc_list_issue_definitions", {"search": "2.4 ghz", "response_format": "json"})
+        assert [r["name"] for r in out["results"]] == ["radio_util_trigger_2_4ghz"]
+        out = await run(
+            c, "catc_list_issue_definitions", {"name": "radio_util_trigger_2_4ghz", "response_format": "json"}
+        )
+        assert [r["enabled"] for r in out["results"]] == [False]
+        lab.queries.clear()
+        out = await run(c, "catc_list_issue_definitions", {"enabled": True, "response_format": "json"})
+        assert "radio_util_trigger_2_4ghz" not in [r["name"] for r in out["results"]]
+        assert {q.get("issueEnabled") for q in lab.queries} == {"true"}
+
+
+async def test_reenable_disabled_by_name(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    preview, done = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "radio_util_trigger_2_4ghz", "enabled": True}
+    )
+    assert preview["status"] == "preview"
+    assert preview["preview"]["changes"] == {"enabled": {"from": False, "to": True}}
+    assert done and lab.sent[-1][:2] == ("PUT", RADIO_ID) and lab.sent[-1][2]["issueEnabled"] is True
+    # By display name too (resolved from the merged full list).
+    _, done = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "WLC Monitor", "enabled": True}
+    )
+    assert done and lab.sent[-1][:2] == ("PUT", WLC_ID)
+    # Disable then re-enable the same definition by name (the live failure in #262).
+    await preview_then_apply("catc_update_issue_definition", {"definition": "BGP_Down", "enabled": False})
+    _, done = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "BGP_Down", "enabled": True}
+    )
+    assert done and lab.sent[-1] == (
+        "PUT",
+        BGP_ID,
+        {
+            "issueEnabled": True,
+            "priority": "P2",
+            "synchronizeToHealthThreshold": False,
+            "thresholdValue": 3.0,
+        },
+    )
+
+
+async def test_string_severity_rule_text(api: respx.MockRouter) -> None:
+    text = "severity 5 (notice), %OSPF-5-ADJCHG, text matching /from FULL to DOWN/, 1 time(s)"
+    lab = Lab(api, custom=[OSPF_LIVE])
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_list_issue_definitions", {"kind": "custom", "response_format": "json"})
+    assert out["results"][0]["rules"] == [text]
+    preview, _ = await preview_then_apply("catc_delete_custom_issue", {"definition": "mcp-ospf-down"})
+    assert preview["preview"]["definition"]["rules"] == [text]
+    assert lab.sent == [("DELETE", CUSTOM_ID, None)]
+
+
+async def test_create_result_with_string_severity(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+
+    def post_live(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        lab.sent.append(("POST", CUSTOM, body))
+        made = {
+            **body,
+            "id": CUSTOM_ID,
+            "rules": [{**r, "severity": str(r["severity"])} for r in body["rules"]],
+        }
+        return httpx.Response(200, json={"response": made, "version": "1.0"})
+
+    api.post(CUSTOM).mock(side_effect=post_live)
+    _, done = await preview_then_apply(
+        "catc_create_custom_issue",
+        {"name": "mcp-ospf-adj", "severity": 5, "facility": "OSPF", "mnemonic": "ADJCHG"},
+    )
+    assert done and done["result"]["created"]["rules"] == ["severity 5 (notice), %OSPF-5-ADJCHG, 1 time(s)"]
