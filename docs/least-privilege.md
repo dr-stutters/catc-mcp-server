@@ -99,7 +99,7 @@ sites, and Inventory Write allows deleting devices. Those tools are in the serve
 ## 3. Dangerous role: `mcp-catc-dangerous`
 
 Everything in `mcp-catc-rw`, plus Write on Network Operations.PnP (`catc_claim_pnp_device`, reset, delete),
-Network Provision.Device Provision (`catc_provision_devices`, `catc_delete_device` of a provisioned device,
+Network Provision.Device Provision (`catc_provision_devices`, `catc_provision_site`, `catc_delete_device` of a provisioned device,
 `catc_replace_device`; template deploys also need this role: tested, rw gets 403 on the deploy API), Network Provision.SD-Access, Utilities.Scheduler (a dependency of Device Provision and SD-Access Write) and System.System Settings.
 
 **After deploying the SD-Access packages, re-run the seed step.** Installing `aca` + `sda` adds Policy.Group-Based

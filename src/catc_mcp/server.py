@@ -80,7 +80,8 @@ to sites; ids are UUIDs. Most tools accept a name, IP, serial or site path and r
 Start with catc_status, then catc_list_devices or catc_get_site_hierarchy.
 Workflows:
 - Onboard: catc_create_global_credential -> catc_create_discovery (wait=true) -> catc_create_site ->
-  catc_update_site_settings -> catc_assign_devices_to_site -> catc_provision_devices.
+  catc_update_site_settings -> catc_assign_devices_to_site -> catc_provision_devices (every unprovisioned
+  device at a site in one change: catc_provision_site).
 - Day-N change: catc_create_template -> catc_commit_template -> catc_preview_template ->
   catc_deploy_template -> verify with catc_run_show_commands -> catc_run_compliance /
   catc_compare_device_configs.
