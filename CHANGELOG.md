@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.22.0 (2026-10-29)
+
+Licensing, ping and traceroute from a managed device, SD-Access fabric wireless writes, and a trusted-certificate
+read-back fix. Core 0.19.0. 232 tools (118 read, 66 write, 48 dangerous) and fifteen prompts.
+
+### Added
+- Licensing: `catc_license_summary` (appliance licence and Smart Account registration, device licence counts with
+  expired and expiring devices, CSSM usage) and `catc_list_device_licenses` (networkDeviceLicenses/query with
+  filters) (D55, #102, #305).
+- `catc_ping` and `catc_traceroute` ping and traceroute from a managed device through the command runner and return
+  parsed loss %, RTT and hops; every command is checked against a fixed allow-list (D74, #129, #304).
+- SD-Access fabric wireless: `catc_add_fabric_wlc` (the fabric WLC) and `catc_set_fabric_ssid_mapping` (SSID-to-VLAN
+  mappings, wireless multicast); `catc_update_anycast_gateway` takes `wireless_pool` (D124, #240, #303).
+
+### Fixed
+- `catc_import_trusted_certificate` no longer reports an earlier import's audit record as the read-back when the same
+  CA is re-imported within a minute; `read_back` is 'pending' when the new record has not appeared yet (D130, #301,
+  #302).
+
 ## 0.21.0 (2026-10-29)
 
 User-defined fields, wired per-device intended configuration, telemetry settings pushed without a re-provision, a
