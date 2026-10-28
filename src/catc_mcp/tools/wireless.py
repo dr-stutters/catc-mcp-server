@@ -24,6 +24,7 @@ from catc_mcp._core import (
     NotFound,
     Plan,
     ToolRegistrar,
+    UpstreamError,
     ValidationFailed,
     compact,
     get_client,
@@ -42,6 +43,19 @@ MASK = "********"
 _DIGEST_KEY = os.urandom(32)
 PROFILES = "/dna/intent/api/v1/wirelessProfiles"
 WLC = "/dna/intent/api/v1/wirelessControllers"
+# Design pre-auth ACLs (3.2.2: Network Settings > Wireless > Pre-Auth ACLs); an SSID's aclName must be one
+# Catalyst Center knows, or the create is refused with NCND03141 (D126 live proof, #285).
+PRE_AUTH_ACLS = "/dna/intent/api/v1/wirelessSettings/preAuthAcls"
+# 400 codes from POST .../wirelessSettings/ssids (3.2.2), with what to do about each.
+SSID_ERROR_HINTS = {
+    "NCND03058": "A Central WebAuth SSID (l3_auth='web_auth', auth_server='auth_ise') needs auth_servers: "
+    "the ISE PSN IP(s) the WLC sends MAB to (catc_get_policy_servers, or the site's client AAA server in "
+    "catc_get_site_settings).",
+    "NCND03141": "Catalyst Center checks pre_auth_acl against the pre-auth ACLs it knows (GET "
+    f"{PRE_AUTH_ACLS}, Network Settings > Wireless > Pre-Auth ACLs) and refuses any other name. Define the "
+    "ACL there first, or leave pre_auth_acl out: for ISE central web auth the redirect ACL is returned by "
+    "ISE (aaa_override) and only has to exist on the WLC.",
+}
 Security = Literal[
     "OPEN", "WPA2_PERSONAL", "WPA2_ENTERPRISE", "WPA3_PERSONAL", "WPA2_WPA3_PERSONAL", "WPA3_ENTERPRISE"
 ]
@@ -149,14 +163,60 @@ def web_auth_fields(
             )
     if pre_auth_acl:
         notes.append(
-            f"The pre-auth ACL {pre_auth_acl.strip()!r} must exist on the WLC (Catalyst Center sends only "
-            "the name); for ISE CWA it is the redirect ACL the ISE authorization profile names."
+            f"Catalyst Center checks the pre-auth ACL name {pre_auth_acl.strip()!r} against the pre-auth "
+            "ACLs it knows before it stores the SSID (NCND03141 otherwise); for ISE CWA the redirect ACL "
+            "also has to exist on the WLC under the name the ISE authorization profile returns."
         )
     if radius_profiling:
         notes.append(
             "RADIUS profiling needs at least one AAA/PSN server on the SSID or the site's AAA settings."
         )
     return {k: v for k, v in fields.items() if v is not None}, notes
+
+
+def cwa_blockers(
+    *, l3_auth: str | None, auth_server: str | None, auth_servers: list[str] | None
+) -> list[str]:
+    """Catalyst Center refuses a Central WebAuth SSID without authServers (NCND03058, 3.2.2): it does not
+    fall back to the site's AAA settings."""
+    if (
+        l3_auth == "web_auth"
+        and auth_server == "auth_ise"
+        and not [a for a in auth_servers or [] if a.strip()]
+    ):
+        return [
+            "ISE central web auth (l3_auth='web_auth', auth_server='auth_ise') needs auth_servers: the ISE "
+            "PSN IP(s) (catc_get_policy_servers, or the site's client AAA server in catc_get_site_settings). "
+            "Catalyst Center refuses it otherwise (NCND03058) and does not use the site's AAA settings."
+        ]
+    return []
+
+
+async def pre_auth_acl_note(app: CatcApp, name: str) -> str:
+    """What Catalyst Center's design pre-auth ACL list says about `name` (a preview side effect)."""
+    try:
+        page = await fetch_all(app.pager, app.api, PRE_AUTH_ACLS, cap=2000)
+    except UpstreamError as e:
+        return (
+            f"Could not read the pre-auth ACLs Catalyst Center knows ({e}); the create may still be refused."
+        )
+    acls = [a for a in page.items if isinstance(a, dict)]
+    if any(name in (a.get("aclName"), a.get("aclListName")) for a in acls):
+        return f"Catalyst Center knows pre-auth ACL {name!r} (Network Settings > Wireless > Pre-Auth ACLs)."
+    known = sorted({str(a.get("aclName") or a.get("aclListName")) for a in acls})
+    return (
+        f"Catalyst Center lists no pre-auth ACL named {name!r} (known: {', '.join(known) or 'none'}): it "
+        "will most likely refuse the SSID (NCND03141). Define the ACL under Network Settings > Wireless > "
+        "Pre-Auth ACLs first, or leave pre_auth_acl out (ISE CWA returns the redirect ACL itself)."
+    )
+
+
+def ssid_error(err: ValidationFailed) -> ValidationFailed:
+    """The appliance's 400 with a hint for each known NCND code in it (or the error unchanged)."""
+    hints = [h for code, h in SSID_ERROR_HINTS.items() if code in str(err)]
+    if not hints:
+        return err
+    return ValidationFailed(f"{err} Hint: {' '.join(hints)}", status_code=err.status_code)
 
 
 def ssids_path(site_id: str) -> str:
@@ -266,8 +326,9 @@ def register(reg: ToolRegistrar) -> None:
         auth_servers: Annotated[
             list[str] | None,
             Field(
-                description="AAA server IPs for 802.1X or MAC filtering (default: the site's AAA settings, "
-                "e.g. ISE)"
+                description="AAA (ISE PSN) server IPs for 802.1X or MAC filtering. Required for ISE central "
+                "web auth (auth_server='auth_ise'): Catalyst Center does not fall back to the site's AAA "
+                "settings for it. Otherwise the default is the site's AAA settings"
             ),
         ] = None,
         l3_auth: Annotated[
@@ -306,8 +367,9 @@ def register(reg: ToolRegistrar) -> None:
             str | None,
             Field(
                 max_length=128,
-                description="Pre-auth ACL name on the WLC (for ISE CWA: the redirect ACL, e.g. "
-                "ACL_WEBAUTH_REDIRECT); an Enterprise SSID needs posturing=true for it",
+                description="Pre-auth ACL name; Catalyst Center accepts only an ACL it knows (Network "
+                "Settings > Wireless > Pre-Auth ACLs; the preview checks). ISE CWA doesn't need it: ISE "
+                "returns the redirect ACL. An Enterprise SSID needs posturing=true for it",
             ),
         ] = None,
         radius_profiling: Annotated[
@@ -326,8 +388,9 @@ def register(reg: ToolRegistrar) -> None:
         """Define an SSID (WLAN) in network design. Nothing reaches a WLC until a wireless profile with this
         SSID is assigned to AP locations and the WLC is provisioned. Preview-first; passphrases are masked.
         Guest with ISE central web auth (CWA): guest=true, security='OPEN', l3_auth='web_auth',
-        auth_server='auth_ise', mac_filtering=true, aaa_override=true, pre_auth_acl=<the redirect ACL>
-        (prompt catc_guest_wireless_with_ise joins it to the ISE side)."""
+        auth_server='auth_ise', auth_servers=[<ISE PSN IPs>], mac_filtering=true, aaa_override=true
+        (prompt catc_guest_wireless_with_ise joins it to the ISE side). pre_auth_acl must be an ACL
+        Catalyst Center knows."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site)
         personal = security.endswith("PERSONAL")
@@ -350,6 +413,9 @@ def register(reg: ToolRegistrar) -> None:
         )
         existing = [x for x in await site_ssids(app, str(s["id"])) if x.get("ssid") == ssid]
         blockers = [f"SSID {ssid} already exists at {s.get('nameHierarchy')}."] if existing else []
+        blockers += cwa_blockers(l3_auth=l3_auth, auth_server=auth_server, auth_servers=auth_servers)
+        if pre_auth_acl and pre_auth_acl.strip():
+            notes.append(await pre_auth_acl_note(app, pre_auth_acl.strip()))
         body: dict[str, Any] = {
             "ssid": ssid,
             "authType": security,
@@ -380,7 +446,10 @@ def register(reg: ToolRegistrar) -> None:
             send = dict(body)
             if passphrase is not None:
                 send["passphrase"] = passphrase.get_secret_value()
-            job = await app.run_job("POST", path, send, ctx=ctx, what="create SSID")
+            try:
+                job = await app.run_job("POST", path, send, ctx=ctx, what="create SSID")
+            except ValidationFailed as e:
+                raise ssid_error(e) from e
             made = [x for x in await site_ssids(app, str(s["id"])) if x.get("ssid") == ssid]
             return {**job, "ssid_id": made[0].get("id") if made else None}
 
