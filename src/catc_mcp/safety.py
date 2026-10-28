@@ -4,7 +4,8 @@ Core enforces MCP_DRY_RUN, MCP_CHANGE_WINDOW, MCP_MAX_BLAST_RADIUS / MCP_BLAST_R
 MCP_TWO_PERSON_TOOLS for every write. Here: device targets (explicit devices, or every device under a site
 or with a tag) and Catalyst Center's own limit, CATC_MAX_DEVICES_PER_CHANGE (default 10, 0 = off), which
 applies to the tools that change device configuration or software (template deploys, provisioning, SWIM,
-PnP claims and device replacement, device deletion). Each of those reports `blast_radius` = devices touched.
+PnP claims and device replacement, device deletion, write memory). Each of those reports `blast_radius` =
+devices touched.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from catc_mcp.tools.sites import all_sites
 ASSIGNED = "/dna/intent/api/v1/networkDevices/assignedToSite"
 
 
-async def _devices_by_id(app: CatcApp, ids: list[str]) -> list[dict[str, Any]]:
+async def devices_by_id(app: CatcApp, ids: list[str]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for i in range(0, len(ids), 100):
         chunk = ensure_list(
@@ -48,19 +49,36 @@ async def site_devices(app: CatcApp, site: dict[str, Any]) -> list[dict[str, Any
         if not page.complete:
             raise TargetsTruncated(TRUNCATED)
         return [d for d in page.items if isinstance(d, dict)]
+    ids = [str(a["deviceId"]) for a in await site_assignments(app, site)]
+    return await devices_by_id(app, sorted(set(ids)))
+
+
+async def site_assignments(app: CatcApp, site: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every device assignment ({"deviceId", "siteId", "siteNameHierarchy", "siteType"}) at an area,
+    building or floor and every site below it. `assignedToSite` lists only a site's own devices, so
+    each child is read. Refuses (TargetsTruncated) rather than undercount when a list is partial."""
     prefix = str(site.get("nameHierarchy")) + "/"
     sites, complete = await all_sites(app)
     if not complete:
         raise TargetsTruncated(TRUNCATED)
-    ids: list[str] = []
+    out: list[dict[str, Any]] = []
     for s in [site, *(c for c in sites if str(c.get("nameHierarchy", "")).startswith(prefix))]:
         if s.get("type") not in ("building", "floor", "area"):
             continue
         assigned = await fetch_all(app.pager, app.api, ASSIGNED, {"siteId": s["id"]})
         if not assigned.complete:
             raise TargetsTruncated(TRUNCATED)
-        ids += [str(a["deviceId"]) for a in assigned.items if isinstance(a, dict) and a.get("deviceId")]
-    return await _devices_by_id(app, sorted(set(ids)))
+        for a in assigned.items:
+            if isinstance(a, dict) and a.get("deviceId"):
+                out.append(
+                    {
+                        "siteId": s["id"],
+                        "siteNameHierarchy": s.get("nameHierarchy"),
+                        "siteType": s.get("type"),
+                        **a,
+                    }
+                )
+    return out
 
 
 async def tag_devices(app: CatcApp, tag: dict[str, Any]) -> list[dict[str, Any]]:
@@ -70,7 +88,7 @@ async def tag_devices(app: CatcApp, tag: dict[str, Any]) -> list[dict[str, Any]]
     if not page.complete:
         raise TargetsTruncated(TRUNCATED)
     ids = [str(m.get("id") or m.get("instanceUuid")) for m in page.items if isinstance(m, dict)]
-    return await _devices_by_id(app, sorted({i for i in ids if i and i != "None"}))
+    return await devices_by_id(app, sorted({i for i in ids if i and i != "None"}))
 
 
 async def resolve_targets(

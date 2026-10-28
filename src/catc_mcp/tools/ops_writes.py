@@ -1,5 +1,5 @@
-"""Operational writes: tags, discovery, device-to-site assignment, resync, compliance runs, issue
-status. All preview-first."""
+"""Operational writes: tags, discovery, device-to-site assignment, resync, write memory, compliance runs,
+issue status. All preview-first."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import contextlib
@@ -16,8 +16,10 @@ from catc_mcp._core import (
     InvalidRequest,
     NotFound,
     Plan,
+    TaskFailed,
     ToolRegistrar,
     UpstreamError,
+    UpstreamTimeout,
     get_client,
     poll_until,
     preview_or_apply,
@@ -91,6 +93,73 @@ ROLE_PATH = "/dna/intent/api/v1/network-device/brief"
 def normalize_role(role: str) -> str:
     """'border_router', 'Border-Router' -> 'BORDER ROUTER'."""
     return " ".join(role.replace("_", " ").replace("-", " ").upper().split())
+
+
+# Write memory (D65): POST network-device-config/write-memory starts one parent task; the per-device
+# results come from GET network-device-config/task?parentTaskId= (3.2.2 spec: taskStatus, failureMessage,
+# errorCode, detailMessage per device; taskType COPY_RUNNING_TO_STARTUP).
+WRITE_MEMORY_PATH = "/dna/intent/api/v1/network-device-config/write-memory"
+CONFIG_TASK_PATH = "/dna/intent/api/v1/network-device-config/task"
+_DONE_STATES = ("SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "FAILURE", "FAILED", "ERROR", "CANCELLED")
+_OK_STATES = ("SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE")
+
+
+def _config_task_done(row: dict[str, Any]) -> bool:
+    return bool(row.get("completionTime")) or str(row.get("taskStatus") or "").upper() in _DONE_STATES
+
+
+def _config_task_ok(row: dict[str, Any]) -> bool:
+    return str(row.get("taskStatus") or "").upper() in _OK_STATES and not (
+        row.get("failureMessage") or row.get("errorCode")
+    )
+
+
+async def config_task_rows(app: CatcApp, parent_task_id: str) -> list[dict[str, Any]]:
+    rows = ensure_list(await app.get_response(CONFIG_TASK_PATH, {"parentTaskId": parent_task_id}))
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def write_memory_result(
+    devs: list[dict[str, Any]], rows: list[dict[str, Any]], parent_task_id: str
+) -> dict[str, Any]:
+    """One row per requested device (by id, else IP): saved / failed / no result."""
+    by_id = {str(r.get("deviceId")): r for r in rows if r.get("deviceId")}
+    by_ip = {str(r.get("deviceIpAddress")): r for r in rows if r.get("deviceIpAddress")}
+    out: list[dict[str, Any]] = []
+    for d in devs:
+        r = by_id.get(str(d["id"])) or by_ip.get(str(d.get("managementIpAddress")))
+        row: dict[str, Any] = {"device": brief([d])[0]}
+        if r is None:
+            row["saved"] = False
+            row["error"] = "Catalyst Center reported no result for this device."
+        else:
+            row["saved"] = _config_task_ok(r)
+            row["status"] = r.get("taskStatus")
+            if r.get("detailMessage"):
+                row["detail"] = r["detailMessage"]
+            if not row["saved"]:
+                row["error"] = (
+                    r.get("failureMessage")
+                    or r.get("errorCode")
+                    or ("still running" if not _config_task_done(r) else "no reason given")
+                )
+            if r.get("taskId"):
+                row["task_id"] = r["taskId"]
+        out.append(row)
+    saved = sum(1 for r in out if r["saved"])
+    result: dict[str, Any] = {
+        "parent_task_id": parent_task_id,
+        "saved": saved,
+        "failed": len(out) - saved,
+        "devices": out,
+    }
+    if saved < len(out):
+        result["next"] = (
+            "Check the failed devices are Reachable and Managed (catc_get_device), then run "
+            "catc_write_memory again for them; the unsaved lines show in "
+            "catc_compare_device_configs(compare='startup')."
+        )
+    return result
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -551,6 +620,84 @@ def register(reg: ToolRegistrar) -> None:
             ctx,
             tool="catc_resync_devices",
             args={"devices": devices, "force": force},
+            confirm=confirm,
+            plan=plan,
+            apply=apply,
+        )
+
+    @reg.write(title="Write memory", destructive=False, idempotent=True)
+    async def catc_write_memory(
+        ctx: Context,
+        devices: Devices,
+        confirm: Confirm = None,
+    ) -> dict[str, Any]:
+        """Save the running configuration to the startup configuration (write memory) on devices, so a
+        template deploy or other change survives a reload. Catalyst Center never does this by itself after
+        catc_deploy_template. Preview-first: lists the devices (unreachable ones are named) and counts towards
+        CATC_MAX_DEVICES_PER_CHANGE. Runs as one Catalyst Center task and returns the result per device
+        (saved, status, error). What would be saved: catc_compare_device_configs(compare='startup')."""
+        app: CatcApp = get_client(ctx)
+        devs = await resolve_devices(app, devices)
+        unreachable = [d for d in devs if str(d.get("reachabilityStatus") or "").lower() != "reachable"]
+        body = {"deviceId": [str(d["id"]) for d in devs]}
+        details: dict[str, Any] = {
+            "devices": brief(devs),
+            "method": "POST",
+            "path": WRITE_MEMORY_PATH,
+            "body": body,
+        }
+        if unreachable:
+            details["warning"] = (
+                "Not Reachable in the inventory, so the save will probably fail there: "
+                f"{', '.join(brief(unreachable))}."
+            )
+        plan = Plan(
+            f"Write memory (running -> startup config) on {len(devs)} device(s)",
+            details=details,
+            side_effects=[
+                "Overwrites the startup configuration of every listed device with its running configuration.",
+                "The previous startup configuration stays in Catalyst Center's config archive.",
+            ],
+            fingerprint=sorted(str(d["id"]) for d in devs),
+            blockers=device_limit_blockers(app, len(devs)),
+            blast_radius=len(devs),
+        )
+
+        async def apply() -> Any:
+            started = await app.api.request("POST", WRITE_MEMORY_PATH, json=body)
+            ref = job_ref(started)
+            if ref is None:
+                return {"result": started, "warning": "Catalyst Center returned no task id to follow."}
+            parent = ref[1]
+            note: str | None = None
+            try:
+                await app.wait_job(started, ctx=ctx, what="write memory")
+            except TaskFailed as e:
+                note = str(e)  # the per-device rows still say which devices failed
+            try:
+                rows = await poll_until(
+                    lambda: config_task_rows(app, parent),
+                    done=lambda rows: bool(rows) and all(_config_task_done(r) for r in rows),
+                    timeout=min(60.0 if note else 120.0, app.settings.mcp_task_timeout),
+                    interval=1.0,
+                    ctx=ctx,
+                    what="write memory per-device results",
+                )
+            except UpstreamTimeout:
+                rows = await config_task_rows(app, parent)
+                note = (note + " " if note else "") + (
+                    "Some per-device results were not final yet; read them again with "
+                    f"catc_api_call GET {CONFIG_TASK_PATH}?parentTaskId={parent}."
+                )
+            out = write_memory_result(devs, rows, parent)
+            if note:
+                out["note"] = note
+            return out
+
+        return await preview_or_apply(
+            ctx,
+            tool="catc_write_memory",
+            args={"devices": devices},
             confirm=confirm,
             plan=plan,
             apply=apply,

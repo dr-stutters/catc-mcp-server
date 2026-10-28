@@ -4,7 +4,10 @@ A transit network is the domain a border hands traffic to: an IP transit (VRF-li
 WAN, one VLAN/SVI per virtual network) or an SD-Access transit (LISP pub/sub or BGP between fabric sites, with
 its own transit control plane nodes). Defining a transit changes no device; a border's layer 3 handoff onto it
 pushes the per-VN SVIs and BGP to the border. Without an IP handoff a custom VN has no route out of the fabric
-(no DHCP from a server outside it, no shared services). Teardown: catc_delete_l3_handoff, then
+(no DHCP from a server outside it, no shared services). Read them back per border and VN with
+catc_list_l3_handoffs (D116). SD-Access over Catalyst SD-WAN uses an IP transit: the 3.2.2 API has no SD-WAN
+transit type, and the border hands each VN off over VRF-lite eBGP to the SD-WAN edge (one service VPN per VN).
+Teardown: catc_delete_l3_handoff, then
 catc_delete_transit_network (or catc_delete_fabric_site / catc_delete_fabric_device with cascade=true).
 """
 
@@ -33,12 +36,19 @@ from catc_mcp.client import CatcApp, safe_id
 from catc_mcp.common import ensure_list, resolve_device, resolve_site
 from catc_mcp.safety import device_limit_blockers
 from catc_mcp.tools.ops_writes import brief
-from catc_mcp.tools.sda import SDA, fabric_devices, sda_job, sda_list
+from catc_mcp.tools.sda import SDA, edge_labels, fabric_devices, resolve_fabric, sda_job, sda_list
 
 TYPES = {
     "ip": "IP_BASED_TRANSIT",
     "sda_pubsub": "SDA_LISP_PUB_SUB_TRANSIT",
     "sda_bgp": "SDA_LISP_BGP_TRANSIT",
+}
+# What each transit type is, in plain words. The 3.2.2 spec defines only these three; an unknown type (a later
+# release) is listed with its raw name.
+KINDS = {
+    "IP_BASED_TRANSIT": "IP transit (VRF-lite eBGP per VN; also SD-Access over SD-WAN to the WAN edge)",
+    "SDA_LISP_PUB_SUB_TRANSIT": "SD-Access transit (LISP pub/sub)",
+    "SDA_LISP_BGP_TRANSIT": "SD-Access transit (LISP/BGP)",
 }
 IP_HANDOFFS = "fabricDevices/layer3Handoffs/ipTransits"
 SDA_HANDOFFS = "fabricDevices/layer3Handoffs/sdaTransits"
@@ -68,6 +78,55 @@ def transit_row(t: dict[str, Any]) -> dict[str, Any]:
     if t.get("siteId"):
         row["site_id"] = t["siteId"]
     return row
+
+
+async def device_names(app: CatcApp, ids: list[str]) -> dict[str, str]:
+    """network device id -> 'hostname (IP)' (the id itself when the inventory has none)."""
+    uniq = sorted({i for i in ids if i})
+    labels = await edge_labels(app, [{"networkDeviceId": i} for i in uniq])
+    return dict(zip(uniq, labels, strict=False))
+
+
+def ip_handoff_row(
+    h: dict[str, Any], border: str, local_as: Any, transit: dict[str, Any] | None
+) -> dict[str, Any]:
+    t = transit or {}
+    row = {
+        "border": border,
+        "transit": t.get("name") or h.get("transitNetworkId"),
+        "transit_type": t.get("type"),
+        "virtual_network": h.get("virtualNetworkName"),
+        "vlan_id": h.get("vlanId"),
+        "interface": h.get("interfaceName"),
+        "local_ip": h.get("localIpAddress"),
+        "remote_ip": h.get("remoteIpAddress"),
+        "local_ipv6": h.get("localIpv6Address"),
+        "remote_ipv6": h.get("remoteIpv6Address"),
+        "local_as": local_as,
+        "remote_as": (t.get("ipTransitSettings") or {}).get("autonomousSystemNumber"),
+        "external_pool": h.get("externalConnectivityIpPoolName"),
+        "tcp_mss_adjustment": h.get("tcpMssAdjustment") or None,
+        "id": h.get("id"),
+    }
+    return {k: v for k, v in row.items() if v is not None}
+
+
+def sda_handoff_row(h: dict[str, Any], border: str, transit: dict[str, Any] | None) -> dict[str, Any]:
+    t = transit or {}
+    row = {
+        "border": border,
+        "transit": t.get("name") or h.get("transitNetworkId"),
+        "transit_type": t.get("type"),
+        "virtual_network": "(all VNs: LISP over the transit)",
+        "connected_to_internet": h.get("connectedToInternet"),
+        "lisp_transport": h.get("lispTransportType"),
+        "dual_stack": h.get("isDualStack"),
+        "multicast_over_transit": h.get("isMulticastOverTransitEnabled"),
+        "affinity_id_prime": h.get("affinityIdPrime"),
+        "affinity_id_decider": h.get("affinityIdDecider"),
+        "id": h.get("id"),
+    }
+    return {k: v for k, v in row.items() if v is not None}
 
 
 async def resolve_transit(app: CatcApp, ref: str) -> dict[str, Any]:
@@ -115,20 +174,117 @@ def register(reg: ToolRegistrar) -> None:
         transit_type: Annotated[
             Literal["ip", "sda_pubsub", "sda_bgp"] | None, Field(description="Only this transit type")
         ] = None,
+        usage: Annotated[
+            bool,
+            Field(description="Also count handoffs onto each transit: borders and VNs (reads every fabric)"),
+        ] = False,
         limit: Annotated[int, Field(ge=1, le=500)] = 100,
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """SD-Access transit networks, with ids. IP transits show their autonomous system and routing
-        protocol; SD-Access transits (LISP pub/sub or BGP) their transit control plane devices and multicast
-        setting. Borders hand off onto them with catc_add_l3_handoff."""
+        protocol; SD-Access transits (LISP pub/sub or BGP) their transit control plane devices (with
+        hostnames) and multicast setting; `kind` says what each type is. Catalyst Center 3.2.2 has no
+        SD-WAN transit type: SD-Access over Catalyst SD-WAN is an IP transit to the WAN edge. usage=true adds
+        which borders hand off onto each and for which VNs. Borders hand off onto them with
+        catc_add_l3_handoff; per-border detail: catc_list_l3_handoffs."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {}
         if name:
             params["name"] = name
         if transit_type:
             params["type"] = TYPES[transit_type]
-        rows = [transit_row(t) for t in await sda_list(app, "transitNetworks", params)]
+        transits = await sda_list(app, "transitNetworks", params)
+        rows = [transit_row(t) for t in transits]
+        cp_ids = [str(c) for r in rows for c in r.get("control_plane_devices", [])]
+        names = await device_names(app, cp_ids) if cp_ids else {}
+        for r, t in zip(rows, transits, strict=True):
+            r["kind"] = KINDS.get(str(t.get("type")), str(t.get("type")))
+            if r.get("control_plane_devices"):
+                r["control_plane"] = [names.get(str(c), str(c)) for c in r["control_plane_devices"]]
+        if usage:
+            by_id = {str(r["id"]): r for r in rows}
+            for r in rows:
+                r.update(borders=[], virtual_networks=[], handoffs=0)
+            for f in await sda_list(app, "fabricSites"):
+                for path in (IP_HANDOFFS, SDA_HANDOFFS):
+                    for h in await sda_list(app, path, {"fabricId": f["id"]}):
+                        used = by_id.get(str(h.get("transitNetworkId")))
+                        if used is None:
+                            continue
+                        used["handoffs"] += 1
+                        if h.get("networkDeviceId") and h["networkDeviceId"] not in used["borders"]:
+                            used["borders"].append(h["networkDeviceId"])
+                        vn = h.get("virtualNetworkName")
+                        if vn and vn not in used["virtual_networks"]:
+                            used["virtual_networks"].append(vn)
+            border_names = await device_names(app, [str(b) for r in rows for b in r["borders"]])
+            for r in rows:
+                r["borders"] = [border_names.get(str(b), str(b)) for b in r["borders"]]
+                if not r["virtual_networks"]:
+                    del r["virtual_networks"]
+        return list_result(Page(rows[offset : offset + limit], offset, len(rows)), fmt=response_format)
+
+    @reg.read(title="List layer 3 handoffs")
+    async def catc_list_l3_handoffs(
+        ctx: Context,
+        fabric_site: Annotated[
+            str, Field(description="Fabric site: its site (name hierarchy or id) or fabric id")
+        ],
+        border: Annotated[
+            str | None, Field(description="Only this border node (hostname, IP, serial or id)")
+        ] = None,
+        virtual_network: Annotated[
+            str | None, Field(description="Only IP transit handoffs of this layer 3 VN")
+        ] = None,
+        limit: Annotated[int, Field(ge=1, le=500)] = 100,
+        offset: Annotated[int, Field(ge=0)] = 0,
+        response_format: ResponseFormat = "markdown",
+    ) -> ToolResult:
+        """Layer 3 handoffs of a fabric site's borders: how each VN leaves the fabric. IP transit handoffs
+        (VRF-lite, and SD-Access over SD-WAN to the WAN edge) give one row per border and VN with the SVI
+        VLAN, the interface, local and remote point-to-point addresses, the border's own BGP AS (local_as)
+        and the transit's (remote_as, the peer's), and the pool the addresses came from; SD-Access transit
+        handoffs one row per border (all VNs go over LISP) with internet access, LISP transport and
+        multicast. Ids are what catc_delete_l3_handoff removes. Add one with catc_add_l3_handoff."""
+        app: CatcApp = get_client(ctx)
+        fabric, site = await resolve_fabric(app, fabric_site)
+        fid = str(fabric["id"])
+        borders = [
+            d
+            for d in await sda_list(app, "fabricDevices", {"fabricId": fid})
+            if "BORDER_NODE" in (d.get("deviceRoles") or [])
+        ]
+        if border:
+            dev = await resolve_device(app, border)
+            borders = [d for d in borders if str(d.get("networkDeviceId")) == str(dev["id"])]
+            if not borders:
+                raise InvalidRequest(
+                    f"{brief([dev])[0]} is not a border node of {site.get('nameHierarchy')}."
+                )
+        transits = {str(t.get("id")): t for t in await sda_list(app, "transitNetworks")}
+        names = await device_names(app, [str(d.get("networkDeviceId")) for d in borders])
+        rows: list[dict[str, Any]] = []
+        for d in borders:
+            ndid = str(d.get("networkDeviceId"))
+            label = names.get(ndid, ndid)
+            local_as = ((d.get("borderDeviceSettings") or {}).get("layer3Settings") or {}).get(
+                "localAutonomousSystemNumber"
+            )
+            q = {"fabricId": fid, "networkDeviceId": ndid}
+            for h in await sda_list(app, IP_HANDOFFS, q):
+                if virtual_network and h.get("virtualNetworkName") != virtual_network:
+                    continue
+                rows.append(ip_handoff_row(h, label, local_as, transits.get(str(h.get("transitNetworkId")))))
+            if not virtual_network:
+                rows += [
+                    sda_handoff_row(h, label, transits.get(str(h.get("transitNetworkId"))))
+                    for h in await sda_list(app, SDA_HANDOFFS, q)
+                ]
+        # Per border: IP transit handoffs (by transit, then VLAN), then SD-Access transit ones.
+        rows.sort(
+            key=lambda r: (str(r["border"]), "vlan_id" not in r, str(r.get("transit")), r.get("vlan_id") or 0)
+        )
         return list_result(Page(rows[offset : offset + limit], offset, len(rows)), fmt=response_format)
 
     @reg.write(title="Create transit network")

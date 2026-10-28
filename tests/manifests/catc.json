@@ -745,6 +745,10 @@
       "tier": "read",
       "title": "List ITSM integrations"
     },
+    "catc_list_l3_handoffs": {
+      "tier": "read",
+      "title": "List layer 3 handoffs"
+    },
     "catc_list_maintenance_windows": {
       "tier": "read",
       "title": "List maintenance windows"
@@ -817,6 +821,10 @@
       "tier": "dangerous",
       "title": "Provision devices"
     },
+    "catc_provision_site": {
+      "tier": "dangerous",
+      "title": "Provision every device at a site"
+    },
     "catc_provision_wireless_controller": {
       "tier": "dangerous",
       "title": "Provision wireless controller"
@@ -876,6 +884,10 @@
     "catc_set_fabric_port_channel": {
       "tier": "dangerous",
       "title": "Set fabric port channel"
+    },
+    "catc_set_interface": {
+      "tier": "dangerous",
+      "title": "Set interface"
     },
     "catc_set_l2_handoff": {
       "tier": "dangerous",
@@ -984,6 +996,10 @@
     "catc_update_template": {
       "tier": "write",
       "title": "Update template"
+    },
+    "catc_write_memory": {
+      "tier": "write",
+      "title": "Write memory"
     }
   },
   "version": "0.16.0"
