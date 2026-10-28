@@ -92,6 +92,16 @@ fabric zones (`catc_create_fabric_zone`), port channels (`catc_set_fabric_port_c
 (`catc_get_fabric_multicast`, `catc_set_fabric_multicast`), anchored VNs across sites
 (`catc_anchor_virtual_network`, needs an SD-Access transit).
 
+**Fabric wireless (D124).** Provision the 9800 at the fabric site's building
+(`catc_provision_wireless_controller`), then `catc_add_fabric_wlc(wlc, fabric_site)` (dangerous: Catalyst Center
+configures LISP peering between the WLC and the control plane nodes; `remove=true` takes it out again). Flag the
+client pool as a wireless pool (`catc_update_anycast_gateway(wireless_pool=true)`) and map the fabric SSIDs to its
+VLAN with `catc_set_fabric_ssid_mapping(fabric_site, rows=[{vlan, ssids, security_group}], remove=[vlan])`
+(write tier; optionally `wireless_multicast`). Each row replaces that VLAN's SSIDs and leaves the other VLANs
+alone; an SSID given for a new VLAN moves off its old one. The preview shows the mapping before and after and
+warns about a pool that isn't a wireless pool or a site without a fabric WLC. Read back with
+`catc_get_fabric_wireless`.
+
 **Layer 2 handoff prerequisites.** Catalyst Center checks two things only when it applies a layer 2 handoff;
 `catc_set_l2_handoff` refuses in the preview when either is missing:
 - The border has the layer 2 border type: `catc_update_fabric_device(device, layer2_border=true)`. Without it

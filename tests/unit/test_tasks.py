@@ -32,6 +32,7 @@ LONG = {
     "catc_set_extranet_policy",
     "catc_set_fabric_port_channel",
     "catc_set_fabric_multicast",
+    "catc_add_fabric_wlc",
     "catc_add_l3_handoff",
     "catc_delete_l3_handoff",
     "catc_set_l2_virtual_network",

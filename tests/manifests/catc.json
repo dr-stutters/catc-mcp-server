@@ -579,6 +579,10 @@
       "tier": "dangerous",
       "title": "Add fabric device"
     },
+    "catc_add_fabric_wlc": {
+      "tier": "dangerous",
+      "title": "Add fabric WLC"
+    },
     "catc_add_ise_server": {
       "tier": "dangerous",
       "title": "Add Cisco ISE to Catalyst Center"
@@ -1326,6 +1330,10 @@
     "catc_set_fabric_port_channel": {
       "tier": "dangerous",
       "title": "Set fabric port channel"
+    },
+    "catc_set_fabric_ssid_mapping": {
+      "tier": "write",
+      "title": "Set fabric SSID mapping"
     },
     "catc_set_interface": {
       "tier": "dangerous",

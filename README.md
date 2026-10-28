@@ -517,7 +517,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (64)
+### Write (65)
 
 | Tool | What it does |
 |---|---|
@@ -567,6 +567,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_set_ap_profile` | Create, update or delete an AP join profile: SSH/Telnet with the AP management credentials, the AP's 802.1X supplicant (EAP-FAST, EAP-TLS or EAP-PEAP) for closed-auth switch ports, CDP, rogue detection (minimum RSSI, report and transient intervals), country, time zone and power profile. Management credentials go as a set (user, password, enable password), and an update of a profile with them, or with an EAP-FAST/PEAP supplicant, takes the passwords again (Catalyst Center never returns them). |
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
 | `catc_set_device_udfs` | Set or clear user-defined field values on network devices (e.g. asset tag, owner, CMDB id from the source of truth). |
+| `catc_set_fabric_ssid_mapping` | Map fabric SSIDs to the VLANs of an SD-Access fabric site (wireless clients on the SSID land in that anycast gateway's VN and pool), unmap them, and optionally turn fabric wireless multicast on or off. |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
 | `catc_set_wired_feature` | Store a change to a switch's per-device intended layer-2 configuration (Per Device Configuration enabled): add or change VLANs, STP/VTP/CDP/LLDP/snooping globals, or per-interface switchport, trunk, 802.1X/MAB settings. |
 | `catc_set_udf` | Create a global user-defined field (asset tag, owner, CMDB id...) that devices can then carry, change its description or name, or delete it. |
@@ -587,7 +588,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 | `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
-### Dangerous (47)
+### Dangerous (48)
 
 | Tool | What it does |
 |---|---|
@@ -595,6 +596,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_activate_image` | Install and activate a software image on a device (distributing it first if needed). |
 | `catc_add_anycast_gateway` | Add an anycast gateway (the client subnet's default gateway, the same IP on every edge) for an IP pool in a virtual network at a fabric site. |
 | `catc_add_fabric_device` | Give a provisioned device a fabric role (control plane, border, edge) at a fabric site. |
+| `catc_add_fabric_wlc` | Add a wireless controller to an SD-Access fabric site (or remove it, remove=true). |
 | `catc_add_ise_server` | Integrate Cisco ISE with Catalyst Center as the AAA and policy server: CatC connects to ISE (ERS over 443, pxGrid 8910), discovers its nodes and, after you accept ISE's certificate, trusts it. |
 | `catc_add_l3_handoff` | Hand a border off onto a transit network. |
 | `catc_anchor_virtual_network` | Create a layer 3 virtual network anchored at one fabric site and extend it to others (multi-site SD-Access), extend an anchored VN to more sites, or stop anchoring one (remove_anchor). |
