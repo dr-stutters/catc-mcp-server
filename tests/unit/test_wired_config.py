@@ -10,7 +10,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from catc_mcp.server import create_server
-from catc_mcp.tools.wired_config import diff_feature, item_key, mask, unwrap_items
+from catc_mcp.tools.wired_config import changes, cli_text, diff_feature, item_key, mask, unwrap_items
 
 from .conftest import make_settings
 from .test_read_tools import DEV_ID, DEVICE
@@ -106,6 +106,16 @@ def test_item_keys_and_diff() -> None:
 def test_mask_hides_url_password() -> None:
     rec = {"databaseAgent": {"agentUrl": "ftp://user:Secr3t@192.0.2.10/snoop.db"}}
     assert "Secr3t" not in json.dumps(mask(rec)) and "ftp://user:" in json.dumps(mask(rec))
+
+
+def test_preview_and_cli_mask_url_password() -> None:
+    url = "ftp://user:Secr3t@192.0.2.10/snoop.db"
+    diff = changes(None, {"databaseAgent": {"agentUrl": url}})
+    assert "Secr3t" not in json.dumps(diff) and "192.0.2.10" in json.dumps(diff)
+    rows, _, _ = cli_text(
+        {"response": {"previewItems": [{"configPreview": f"ip dhcp snooping database {url}"}]}}
+    )
+    assert "Secr3t" not in json.dumps(rows)
 
 
 # --- read ---------------------------------------------------------------------------------------

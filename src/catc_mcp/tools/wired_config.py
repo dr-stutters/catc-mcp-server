@@ -458,7 +458,8 @@ def check_items(
 def changes(old: dict[str, Any] | None, new: dict[str, Any]) -> dict[str, Any]:
     o = norm(old or {})
     n = norm(new)
-    return {f: {"from": o.get(f, UNSET), "to": n[f]} for f in sorted(n) if o.get(f) != n[f]}
+    # Masked for the preview: a database agent URL given in `items` carries its password.
+    return {f: mask({"from": o.get(f, UNSET), "to": n[f]}) for f in sorted(n) if o.get(f) != n[f]}
 
 
 def cli_text(preview: Any) -> tuple[list[dict[str, Any]], list[str], str | None]:
@@ -472,7 +473,12 @@ def cli_text(preview: Any) -> tuple[list[dict[str, Any]], list[str], str | None]
             continue
         rows.append(
             compact(
-                {"name": it.get("name"), "config_type": it.get("configType"), "cli": it.get("configPreview")}
+                {
+                    "name": it.get("name"),
+                    "config_type": it.get("configType"),
+                    # 'ip dhcp snooping database ftp://user:password@...' would show the password
+                    "cli": mask(it.get("configPreview")),
+                }
             )
         )
         errs += [str(e) for e in ensure_list(it.get("errorMessages")) if e]
