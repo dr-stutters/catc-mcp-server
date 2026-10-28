@@ -119,10 +119,14 @@ def verdict(
     return line + "."
 
 
-def hhmm(ms: Any) -> str | None:
+def when_utc(ms: Any, *, start: int, now: int) -> str | None:
+    """'10:15 UTC' for a time on today's UTC date inside the window; '2026-10-26 10:15 UTC' otherwise, so an
+    issue that started days ago never reads as today (#270)."""
     if not isinstance(ms, int | float) or isinstance(ms, bool):
         return None
-    return datetime.fromtimestamp(ms / 1000, tz=UTC).strftime("%H:%M UTC")
+    at = datetime.fromtimestamp(ms / 1000, tz=UTC)
+    same_day = at.date() == datetime.fromtimestamp(now / 1000, tz=UTC).date()
+    return at.strftime("%H:%M UTC" if same_day and ms >= start else "%Y-%m-%d %H:%M UTC")
 
 
 def like(value: str, pattern: str) -> bool:
@@ -131,8 +135,9 @@ def like(value: str, pattern: str) -> bool:
     return fnmatch.fnmatchcase(v, p) or fnmatch.fnmatchcase(v.split(".")[0], p)
 
 
-def dead_row(i: dict[str, Any]) -> dict[str, Any]:
-    """One dead-AAA issue: the issue row plus the server it names and short first/last/resolved times."""
+def dead_row(i: dict[str, Any], start: int, now: int) -> dict[str, Any]:
+    """One dead-AAA issue: the issue row plus the server it names and short first/last/resolved times (dated
+    when not today or before the window; started_before_window when it was already open at the start)."""
     row = issue_row(i)
     attrs = issue_attrs(i)
     if "device" not in row:
@@ -143,19 +148,27 @@ def dead_row(i: dict[str, Any]) -> dict[str, Any]:
     server = found.group(1) if found else attrs.get("serverIp") or attrs.get("aaaServerIp")
     if server:
         row["server"] = str(server)
-    row["first_at"] = hhmm(i.get("firstOccurredTime"))
-    row["last_at"] = hhmm(i.get("mostRecentOccurredTime"))
-    if str(i.get("status") or "").lower() == "resolved" and (at := hhmm(i.get("updatedTime"))):
+    first = i.get("firstOccurredTime")
+    row["first_at"] = when_utc(first, start=start, now=now)
+    if isinstance(first, int | float) and row["first_at"] and first < start:
+        row["started_before_window"] = True
+    row["last_at"] = when_utc(i.get("mostRecentOccurredTime"), start=start, now=now)
+    resolved = str(i.get("status") or "").lower() == "resolved"
+    if resolved and (at := when_utc(i.get("updatedTime"), start=start, now=now)):
         row["resolved_at"] = at
     return {k: v for k, v in row.items() if v is not None}
 
 
 def dead_phrase(row: dict[str, Any], names: dict[str, str]) -> str:
-    """'sw1 marked ISE 192.0.2.10 DEAD at 03:44 UTC (P1, resolved 03:47 UTC)'."""
+    """'sw1 marked ISE 192.0.2.10 DEAD at 03:44 UTC (P1, resolved 03:47 UTC)'; an issue already open when the
+    window began: 'since 2026-10-26 10:15 UTC'."""
     ip = row.get("server") or "its AAA server"
     label = f"{names[ip]} {ip}" if ip in names else ip
     what = DEAD_ISSUES.get(str(row.get("name")), "reported {label} unreachable").format(label=label)
-    when = f"at {row['first_at']}" if row.get("first_at") else "in the window"
+    if not row.get("first_at"):
+        when = "in the window"
+    else:
+        when = f"{'since' if row.get('started_before_window') else 'at'} {row['first_at']}"
     if row.get("resolved_at"):
         state = f"resolved {row['resolved_at']}"
     elif str(row.get("status") or "").lower() == "active":
@@ -194,7 +207,7 @@ async def dead_server_issues(
             nh, at = str(site["nameHierarchy"]), str(i.get("siteHierarchy") or "")
             if at and at != nh and not at.startswith(nh + "/"):
                 continue
-        row = dead_row(i)
+        row = dead_row(i, start, end)
         if server and not like(str(row.get("server") or ""), server):
             continue
         if device and not like(str(row.get("device") or ""), device):
