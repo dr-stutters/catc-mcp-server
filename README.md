@@ -269,6 +269,11 @@ Typical flows:
   `catc_deploy_wlc_config` (dangerous) pushes it and reports each config group's status
   (`catc_get_wlc_deployments`). Needs the provisioning settings without "require preview"
   ([docs](docs/wireless-per-device.md)).
+- **AP join and power profiles:** `catc_list_ap_profiles` shows each AP profile (SSH/Telnet and management
+  user, the AP's 802.1X supplicant, CDP, rogue detection, country, time zone, power profile; passwords masked)
+  with the wireless profile site tags that use it, plus the AP power profiles. `catc_set_ap_profile` and
+  `catc_set_ap_power_profile` create, update or delete them (write tier, preview-first). They are design
+  objects: a wireless profile site tag names the AP profile and a WLC re-provision pushes it.
 - **SD-Access:** prerequisites (the `aca` + `sda` packages, re-seeded roles, ISE), the build order
   (`catc_build_fabric_site`), the way out of the fabric, day-N changes, checks, group-based policy and teardown
   are in [docs/sd-access.md](docs/sd-access.md), with the 3.2.2 quirks found live.
@@ -384,7 +389,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (111)
+### Read (112)
 
 | Tool | What it does |
 |---|---|
@@ -448,6 +453,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_lifecycle_signals` | Every lifecycle and security signal Catalyst Center has for one device or the devices under a site, in one read: EoX alerts, Cisco security advisories (PSIRT), field notices, network bugs and insecure configurations (deprecated or weak CLI such as telnet, SNMPv1/v2c communities, HTTP), with one verdict line per signal and a row per device. |
 | `catc_link_mismatch` | Links whose two ends disagree, from Catalyst Center's Inventory Insight: speed/duplex mismatches and native VLAN / allowed VLAN mismatches at a site (and the sites below it). |
 | `catc_list_activities` | Catalyst Center activities (the scheduler's jobs), split into upcoming (scheduled, not started yet), in progress (running, or a work item waiting for action), recurring (the schedules, e.g. the weekly config-archive backup and the security-advisory scan) and finished (failed first, then newest first). |
+| `catc_list_ap_profiles` | AP join profiles (Design > Network Settings > Wireless > AP Profiles): per profile the AP management access (SSH/Telnet, user; passwords masked), the AP's 802.1X supplicant (EAP-FAST/TLS/PEAP, user), CDP, rogue detection and minimum RSSI, country, time zone, power profile and client limit, with the wireless profile site tags that carry it to a WLC. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
 | `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
@@ -500,7 +506,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (59)
+### Write (61)
 
 | Tool | What it does |
 |---|---|
@@ -545,6 +551,8 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
 | `catc_schedule_maintenance` | Schedule a Catalyst Center maintenance window for devices (a list, every device under a site, or a tag), optionally repeating every N days, so a planned change doesn't raise an alert storm. |
+| `catc_set_ap_power_profile` | Create, update or delete an AP power profile: ordered rules that turn an Ethernet port down to a speed, a radio down to fewer spatial streams, or a radio or the USB port off when the switch gives the AP too little PoE. |
+| `catc_set_ap_profile` | Create, update or delete an AP join profile: SSH/Telnet with the AP management credentials, the AP's 802.1X supplicant (EAP-FAST, EAP-TLS or EAP-PEAP) for closed-auth switch ports, CDP, rogue detection minimum RSSI, country, time zone and power profile. |
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |

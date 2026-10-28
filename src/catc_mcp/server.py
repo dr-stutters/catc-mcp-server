@@ -14,6 +14,7 @@ from catc_mcp.tools import (
     aaa,
     activities,
     activity,
+    ap_profiles,
     archive,
     assurance,
     assurance_analytics,
@@ -102,6 +103,9 @@ Workflows:
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
   locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
   catc_get_wireless_controller -> catc_get_wlc_config (feature config, intended vs deployed, diff=true).
+  AP join/power profiles (AP SSH, 802.1X supplicant, CDP, rogue RSSI, country, PoE rules):
+  catc_list_ap_profiles -> catc_set_ap_power_profile / catc_set_ap_profile -> a wireless profile site tag
+  names the AP profile -> re-provision the WLC.
 - Wireless per-device (a 9800 with Per-Device Configuration enabled, not site-based): catc_set_wlan_security /
   catc_set_wlan_vlan / catc_set_rf_profile stage the change -> catc_get_wlc_config(diff=true) ->
   catc_deploy_wlc_config -> catc_get_wlc_deployments.
@@ -234,6 +238,7 @@ REGISTER = [
     wireless.register,
     wireless_config.register,
     wireless_writes.register,
+    ap_profiles.register,
     reports.register,
     config_io.register,
     config_import.register,
