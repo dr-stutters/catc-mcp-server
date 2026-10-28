@@ -21,6 +21,7 @@ CPU_ID = "86476100-0000-4000-8000-000000000001"
 MEM_ID = "4ed21ae3-0000-4000-8000-000000000002"
 SW_CPU_ID = "5c0c0c0c-0000-4000-8000-000000000003"
 RSSI_ID = "7e7e7e7e-0000-4000-8000-000000000004"
+LINK_ID = "9a9a9a9a-0000-4000-8000-000000000005"
 
 
 def kpi(did: str, name: str, display: str, family: str, value: float, **kw: Any) -> dict[str, Any]:
@@ -47,9 +48,11 @@ ROWS = [
         "ct_hs_cpu_utilization",
         "SWITCH_AND_HUB",
         80.0,
-        definitionStatus="MODIFIED",
+        definitionStatus="CUSTOM",  # what 3.2.2 reports for a changed KPI (#279)
     ),
     kpi(RSSI_ID, "rssiThreshold", "ct_hs_rssi", "WIRELESS_CLIENT", -72.0),
+    # Another release may say MODIFIED: still changed from the default.
+    kpi(LINK_ID, "linkErrorThreshold", "ct_hs_link_error", "WIRED_CLIENT", 2.0, definitionStatus="MODIFIED"),
 ]
 DEVICES = {
     "Routers": [{"id": "r1", "family": "Routers"}, {"id": "r2", "family": "Routers"}],
@@ -90,7 +93,7 @@ class Lab:
         return httpx.Response(200, json={"response": [d], "version": "1.0"})
 
     def _apply(self, did: str, body: dict[str, Any]) -> dict[str, Any]:
-        self.rows[did] = {**self.rows[did], **body, "definitionStatus": "MODIFIED"}
+        self.rows[did] = {**self.rows[did], **body, "definitionStatus": "CUSTOM"}
         return self.rows[did]
 
     def put(self, request: httpx.Request) -> httpx.Response:
@@ -126,10 +129,13 @@ async def test_list_definitions(api: respx.MockRouter) -> None:
         out = await run(
             c, "catc_list_health_score_definitions", {"modified_only": True, "response_format": "json"}
         )
-        assert [(r["device_family"], r["factory_threshold"]) for r in out["results"]] == [
-            ("SWITCH_AND_HUB", 95.0)
+        assert [(r["device_family"], r["status"], r["factory_threshold"]) for r in out["results"]] == [
+            ("SWITCH_AND_HUB", "CUSTOM", 95.0),
+            ("WIRED_CLIENT", "MODIFIED", 1.0),
         ]
-        assert out["modified"] == 1
+        assert out["modified"] == 2
+        out = await run(c, "catc_list_health_score_definitions", {"response_format": "json"})
+        assert out["total"] == 5 and out["modified"] == 2
         out = await run(
             c, "catc_list_health_score_definitions", {"search": "rssi", "response_format": "json"}
         )
@@ -145,7 +151,7 @@ async def test_update_single_put(api: respx.MockRouter) -> None:
     assert details["method"] == "PUT" and details["path"] == f"{PATH}/{CPU_ID}"
     kpi_ = details["definitions"][0]
     assert kpi_["changes"] == {"threshold": {"from": 95.0, "to": 90.0}}
-    assert kpi_["status"] == {"from": "DEFAULT", "to": "MODIFIED"}
+    assert kpi_["status"] == {"from": "DEFAULT", "to": "CUSTOM"}
     assert details["blast_radius"] == {"ROUTER": "2 device(s) in inventory with family 'Routers'"}
     assert any("re-scores 2 device(s)" in s for s in preview["side_effects"])
     assert done and done["result"]["updated"][0]["threshold"] == 90.0
@@ -199,9 +205,31 @@ async def test_reset_to_default(api: respx.MockRouter) -> None:
     preview, done = await preview_then_apply("catc_update_health_score_definition", args)
     kpi_ = preview["preview"]["definitions"][0]
     assert kpi_["changes"] == {"threshold": {"from": 80.0, "to": 95.0}}
-    assert kpi_["status"]["to"] == "DEFAULT"
+    assert kpi_["status"] == {"from": "CUSTOM", "to": "DEFAULT"}
     assert done and lab.sent[0][:2] == ("PUT", SW_CPU_ID)
     assert lab.sent[0][2]["thresholdValue"] == 95.0
+
+
+async def test_changed_kpi_is_listed_after_update(api: respx.MockRouter) -> None:
+    """#279: the live sequence on 3.2.2. A KPI written back as CUSTOM shows under modified_only and in the
+    count, and a KPI already changed (MODIFIED) keeps its status in the preview."""
+    Lab(api)
+    args = {"definitions": [{"name": "cpuUtilizationThreshold", "device_family": "ROUTER", "threshold": 90}]}
+    _, done = await preview_then_apply("catc_update_health_score_definition", args)
+    assert done and done["result"]["updated"][0]["status"] == "CUSTOM"
+    async with Client(create_server(make_settings())) as c:
+        out = await run(
+            c,
+            "catc_list_health_score_definitions",
+            {"device_family": "ROUTER", "modified_only": True, "response_format": "json"},
+        )
+    assert [(r["name"], r["status"], r["factory_threshold"]) for r in out["results"]] == [
+        ("cpuUtilizationThreshold", "CUSTOM", 95.0)
+    ]
+    assert out["modified"] == 1
+    args = {"definitions": [{"name": LINK_ID, "threshold": 3}]}
+    preview, _ = await preview_then_apply("catc_update_health_score_definition", args)
+    assert preview["preview"]["definitions"][0]["status"] == {"from": "MODIFIED", "to": "MODIFIED"}
 
 
 async def test_blockers_and_errors(api: respx.MockRouter) -> None:

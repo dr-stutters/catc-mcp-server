@@ -5,12 +5,13 @@ overall score.
 `GET /dna/intent/api/v1/healthScoreDefinitions` (one-based offset, `/count`, `/{id}`) lists one row per KPI
 and device family: `name` (e.g. cpuUtilizationThreshold), `displayName`, `deviceFamily` (ROUTER,
 SWITCH_AND_HUB, WIRELESS_CONTROLLER, UNIFIED_AP, WIRED_CLIENT, WIRELESS_CLIENT), `thresholdValue`,
-`includeForOverallHealth`, `synchronizeToIssueThreshold` and `definitionStatus` (DEFAULT or MODIFIED). A 3.2.2
-lab appliance holds 78 rows; the query filters are `deviceType` (the family) and `includeForOverallHealth`.
+`includeForOverallHealth`, `synchronizeToIssueThreshold` and `definitionStatus`: DEFAULT, or CUSTOM once
+changed (3.2.2; anything other than DEFAULT counts as changed, MODIFIED included). A 3.2.2 lab appliance holds
+78 rows; the query filters are `deviceType` (the family) and `includeForOverallHealth`.
 Writes are synchronous: `PUT /{id}` for one row and `POST /bulkUpdate` (a list of {id, ...}) for several,
 each taking thresholdValue, includeForOverallHealth and synchronizeToIssueThreshold only.
 
-The API reports no factory value next to a MODIFIED one, so `FACTORY` holds the 3.2.2 defaults recorded from
+The API reports no factory value next to a changed one, so `FACTORY` holds the 3.2.2 defaults recorded from
 the lab appliance on 2026-10-28 (every row DEFAULT): reset_to_default uses them and refuses KPIs it doesn't
 know rather than guess.
 """
@@ -124,6 +125,17 @@ FACTORY: dict[str, dict[str, float]] = {
 
 def factory_threshold(d: dict[str, Any]) -> float | None:
     return FACTORY.get(str(d.get("deviceFamily")), {}).get(str(d.get("name")))
+
+
+def is_changed(d: dict[str, Any]) -> bool:
+    """Changed from the default: 3.2.2 says CUSTOM; any status other than DEFAULT (MODIFIED too) counts."""
+    status = d.get("definitionStatus")
+    return status is not None and str(status).upper() != "DEFAULT"
+
+
+def changed_status(d: dict[str, Any]) -> str:
+    """The status a KPI shows after an update: the one it already has when changed, else CUSTOM (3.2.2)."""
+    return str(d["definitionStatus"]) if is_changed(d) else "CUSTOM"
 
 
 def row(d: dict[str, Any]) -> dict[str, Any]:
@@ -242,8 +254,8 @@ def register(reg: ToolRegistrar) -> None:
     ) -> ToolResult:
         """Assurance health score settings: per device family (router, switch, WLC, AP, wired and wireless
         client) each KPI behind the health score, its threshold (e.g. router CPU 95%), whether it counts
-        towards overall health, whether it follows the issue threshold, and DEFAULT or MODIFIED (with the
-        factory threshold beside a changed one). Answers "why is this router 'poor' at 90% CPU?" and "what
+        towards overall health, whether it follows the issue threshold, and DEFAULT or changed (CUSTOM, with
+        the factory threshold beside a changed one). Answers "why is this router 'poor' at 90% CPU?" and "what
         did we tune?". Change them with catc_update_health_score_definition."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {}
@@ -257,13 +269,13 @@ def register(reg: ToolRegistrar) -> None:
             for d in everything.items
             if isinstance(d, dict)
             and (not search or _matches(d, search))
-            and (not modified_only or d.get("definitionStatus") == "MODIFIED")
+            and (not modified_only or is_changed(d))
             and (not device_family or d.get("deviceFamily") == device_family)
         ]
         rows.sort(key=lambda d: (str(d.get("deviceFamily")), str(d.get("name"))))
         page = Page(items=[row(d) for d in rows[offset : offset + limit]], offset=offset, total=len(rows))
         extra: dict[str, Any] = {}
-        modified = sum(1 for d in rows if d.get("definitionStatus") == "MODIFIED")
+        modified = sum(1 for d in rows if is_changed(d))
         extra["modified"] = modified
         if not page.items and offset == 0:
             extra["note"] = "No health score definitions match."
@@ -395,7 +407,7 @@ def register(reg: ToolRegistrar) -> None:
                 "changes": i["changes"],
                 "status": {
                     "from": i["d"].get("definitionStatus"),
-                    "to": "DEFAULT" if reset_to_default else "MODIFIED",
+                    "to": "DEFAULT" if reset_to_default else changed_status(i["d"]),
                 },
             }
             for i in items
