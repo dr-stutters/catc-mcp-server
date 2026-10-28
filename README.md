@@ -333,6 +333,14 @@ SD-WAN, ISE, Catalyst Center and FMC. The Catalyst Center leg is `catc_snapshot(
 compliance per device and type, and open P1/P2 issues. The blob stays in the conversation, and the compare names what
 got unhealthy.
 
+The rest of the suite pack: `suite_access_review` (read tier) lists who can change what on every connected
+platform (admin accounts, roles and the external groups that grant them, resolved to people through Active
+Directory); `suite_asbuilt_drift` (read tier, uses **netbox**) checks whether the documentation has drifted from
+the wiring; `suite_decommission_site` (dangerous tier) removes one site everywhere it exists without leaving
+orphans (here: the site with its devices, fabric site and pool reservations); `suite_maintenance_window`
+(dangerous tier) runs one maintenance window at a site across products (here: SWIM distribute, then activate one
+device at a time). Legs whose tools a server does not ship yet are marked pending in the prompt.
+
 - **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
   `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
   NAD in ISE; deleting the device later does **not** remove that NAD). `catc_get_policy_servers`
