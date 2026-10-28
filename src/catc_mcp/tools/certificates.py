@@ -126,7 +126,9 @@ def multipart(filename: str, data: bytes) -> tuple[bytes, str]:
 
 
 def is_duplicate(err: Exception) -> bool:
-    return bool(DUPLICATE_RE.search(str(err))) or getattr(err, "status_code", None) == 409
+    """A refused duplicate, by its wording. A bare 409 is not enough: the 3.2.2 spec also uses 409 for an
+    edit conflict that may succeed on retry, and calling that already_trusted would hide a missing CA."""
+    return bool(DUPLICATE_RE.search(str(err)))
 
 
 def register(reg: ToolRegistrar) -> None:

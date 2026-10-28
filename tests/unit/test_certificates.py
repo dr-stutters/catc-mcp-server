@@ -182,6 +182,16 @@ async def test_already_trusted_is_reported_and_chain_continues(api: respx.MockRo
     assert [c["status"] for c in done["result"]["certificates"]] == ["already_trusted", "imported"]
 
 
+async def test_conflict_without_duplicate_wording_fails(api: respx.MockRouter) -> None:
+    post = api.post(IMPORT_PATH).respond(
+        409, json={"response": {"errorCode": "CONFLICT", "message": "Resource is being edited, retry later"}}
+    )
+    _, done = await flow({"certificate_pem": pem(ROOT[0], ISSUING[0]), "name": "mcp-ca"})
+    assert post.call_count == 1
+    assert done["result"]["certificates"][0]["status"] == "failed"
+    assert "rest of the chain was not sent" in done["result"]["stopped"]
+
+
 async def test_already_trusted_from_the_task(api: respx.MockRouter) -> None:
     api.post(IMPORT_PATH).respond(202, json={"response": {"taskId": TASK}})
     api.get(TASK_PATH).respond(
