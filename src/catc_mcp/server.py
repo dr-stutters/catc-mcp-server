@@ -33,6 +33,7 @@ from catc_mcp.tools import (
     ops_writes,
     platform,
     pnp,
+    ports,
     profiles,
     prompts,
     reports,
@@ -79,7 +80,8 @@ to sites; ids are UUIDs. Most tools accept a name, IP, serial or site path and r
 Start with catc_status, then catc_list_devices or catc_get_site_hierarchy.
 Workflows:
 - Onboard: catc_create_global_credential -> catc_create_discovery (wait=true) -> catc_create_site ->
-  catc_update_site_settings -> catc_assign_devices_to_site -> catc_provision_devices.
+  catc_update_site_settings -> catc_assign_devices_to_site -> catc_provision_devices (every unprovisioned
+  device at a site in one change: catc_provision_site).
 - Day-N change: catc_create_template -> catc_commit_template -> catc_preview_template ->
   catc_deploy_template -> verify with catc_run_show_commands -> catc_run_compliance /
   catc_compare_device_configs.
@@ -88,7 +90,8 @@ Workflows:
   catc_add_anycast_gateway -> catc_assign_fabric_port; check with catc_get_sda_fabric, and AAA to ISE from
   the RLOCs (RADIUS state, ISE NAD, TrustSec environment data) with catc_check_fabric_aaa. Tear down:
   catc_delete_fabric_device / catc_delete_fabric_site (cascade=true removes everything in reverse order).
-  Way out of the fabric: catc_create_transit_network -> catc_add_l3_handoff (border, per VN VLAN + eBGP).
+  Way out of the fabric: catc_create_transit_network -> catc_add_l3_handoff (border, per VN VLAN + eBGP);
+  read back per border and VN with catc_list_l3_handoffs (SD-Access over SD-WAN is an IP transit).
 - Wireless: catc_create_ssid -> catc_create_wireless_profile -> catc_assign_profile_to_sites (AP
   locations) -> catc_assign_devices_to_site (WLC to a building) -> catc_provision_wireless_controller ->
   catc_get_wireless_controller -> catc_get_wlc_config (feature config, intended vs deployed, diff=true).
@@ -104,6 +107,9 @@ Workflows:
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
   commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Issues stay 'active' for
   hours after the problem clears: check last_seen and the live state before calling one current.
+- One port (contain or fix a client port; dangerous tier): catc_set_interface(device, interface,
+  shut|no_shut|access_vlan|voice_vlan|description); uplinks and trunks refused unless allow_uplink; the
+  preview carries Catalyst Center's dry run and the undo call.
 - What changed / who did it: catc_recent_activity (device or site, merged issues, syslog, notifications,
   audit), catc_list_audit_logs(changes_only=true), catc_compare_device_configs (config diff; the
   archive lags a few minutes behind a change).
@@ -199,6 +205,7 @@ REGISTER = [
     config_io.register,
     config_import.register,
     dangerous.register,
+    ports.register,
     suite.register,
 ]
 
