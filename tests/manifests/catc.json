@@ -759,6 +759,10 @@
       "tier": "read",
       "title": "List authentication and policy servers"
     },
+    "catc_get_provisioning_settings": {
+      "tier": "read",
+      "title": "Provisioning settings (Visibility and Control of Configurations)"
+    },
     "catc_get_report_content": {
       "tier": "read",
       "title": "Get report content"
@@ -1098,6 +1102,10 @@
     "catc_set_l2_virtual_network": {
       "tier": "dangerous",
       "title": "Set layer 2 virtual network"
+    },
+    "catc_set_provisioning_settings": {
+      "tier": "dangerous",
+      "title": "Change provisioning settings (Visibility and Control of Configurations)"
     },
     "catc_set_rf_profile": {
       "tier": "write",

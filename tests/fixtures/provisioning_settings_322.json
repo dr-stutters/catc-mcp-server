@@ -1,0 +1,5 @@
+{
+  "_source": "Catalyst Center 3.2.2 lab appliance, 2026-10-28 (read-only GETs)",
+  "settings": {"response": {"requirePreview": true, "requireItsmApproval": false}, "version": "1.0"},
+  "itsm_instances_none": {"page": 1, "pageSize": 50, "totalPages": 0, "data": [], "totalRecords": 0}
+}
