@@ -373,6 +373,24 @@ async def test_update_warns_when_the_end_is_kept(api: respx.MockRouter) -> None:
     assert "end time" in warning and "2099-01-11T00:30:00Z" in warning
 
 
+async def test_update_no_false_warning_without_a_description(api: respx.MockRouter) -> None:
+    # A window with no description reads back as None; the body sends "": not a dropped rename.
+    mock_device_lookup(api)
+    w = window()
+    del w["description"]
+    put = api.put(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t9"}})
+
+    def reread(request: httpx.Request) -> httpx.Response:
+        got = dict(w, maintenanceSchedule=dict(w["maintenanceSchedule"], endTime=END_MS + 5_400_000))
+        return httpx.Response(200, json={"response": got if put.called else w, "version": "1.0"})
+
+    api.get(f"{PATH}/{WIN_ID}").mock(side_effect=reread)
+    api.get(PATH).respond(json={"response": [], "version": "1.0"})
+    task_ok(api, "t9")
+    _, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end": "2099-01-10T14:30Z"})
+    assert done is not None and done["status"] == "applied" and "warnings" not in done["result"]
+
+
 async def test_update_description_only_is_blocked(api: respx.MockRouter) -> None:
     mock_device_lookup(api)
     mock_windows(api, [window()])

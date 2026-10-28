@@ -721,9 +721,11 @@ def register(reg: ToolRegistrar) -> None:
         # The fields this update changes, checked against the window read back after the PUT.
         wanted = {
             k: after[k]
-            for k in ("description", "start", "end", "repeats_every_days", "repeats_until")
+            for k in ("start", "end", "repeats_every_days", "repeats_until")
             if after[k] != before.get(k)
         }
+        if renames:  # not when the window has no description (None on read, "" in the body)
+            wanted["description"] = description
         side_effects = [GOES_DARK, RUNS_FULL]
         if renames:
             side_effects.insert(0, DESCRIPTION_FIXED)
