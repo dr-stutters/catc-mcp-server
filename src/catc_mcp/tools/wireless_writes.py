@@ -643,7 +643,8 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append(
                 "Catalyst Center refuses intended deploy while the provisioning settings have "
                 f"{' and '.join(gates)} on ({SETTINGS}). That setting is global: it covers every "
-                "provisioning flow, so turning it off is a separate, previewed change (catc_api_call PUT)."
+                "provisioning flow, so turning it off is a separate, previewed change "
+                "(catc_set_provisioning_settings)."
             )
         changed = sorted(pending)
         details: dict[str, Any] = {

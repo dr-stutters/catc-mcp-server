@@ -30,7 +30,7 @@ You need: a Catalyst Center API user for the server (read-only is enough to star
 has a wheel with stutters-mcp-core bundled in; it needs only PyPI dependencies.
 
 ```bash
-WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.18.0/catc_mcp_server-0.18.0-py3-none-any.whl
+WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.19.0/catc_mcp_server-0.19.0-py3-none-any.whl
 export CATC_URL=https://catalyst-center.example.com CATC_USERNAME=mcp-catc-ro CATC_PASSWORD='...'
 uvx --from "$WHEEL" catc-mcp-server check           # preflight: login, TLS, role, version, ISE integration
 claude mcp add catc -e CATC_URL=$CATC_URL -e CATC_USERNAME=$CATC_USERNAME -e CATC_PASSWORD="$CATC_PASSWORD" \
@@ -44,7 +44,7 @@ Claude Desktop (`claude_desktop_config.json`), same idea:
   "mcpServers": {
     "catc": {
       "command": "uvx",
-      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.18.0/catc_mcp_server-0.18.0-py3-none-any.whl", "catc-mcp-server"],
+      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.19.0/catc_mcp_server-0.19.0-py3-none-any.whl", "catc-mcp-server"],
       "env": {"CATC_URL": "https://catalyst-center.example.com", "CATC_USERNAME": "mcp-catc-ro", "CATC_PASSWORD": "..."}
     }
   }
@@ -381,7 +381,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (111)
+### Read (112)
 
 | Tool | What it does |
 |---|---|
@@ -424,6 +424,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_get_network_profile` | One network profile: its type, the Day-N CLI templates attached to it and the sites it is assigned to (by name, including inherited child sites). |
 | `catc_get_physical_topology` | Physical (CDP/LLDP-derived) topology: devices and the links between them with port names, link status and addresses. |
 | `catc_get_policy_servers` | Authentication and policy servers known to Catalyst Center (System > Settings > Authentication and Policy Servers): plain RADIUS/TACACS servers and integrated Cisco ISE, with protocol, ports, state, pxGrid, and per ISE node its role (PRIMARY/SECONDARY/PXGRID), FQDN and certificate trust state; plus the ISE integration status (each step, and the certificate waiting to be accepted, if any). |
+| `catc_get_provisioning_settings` | Catalyst Center's global provisioning settings (System > Settings > Visibility and Control of Configurations): require_preview (every provision/deploy must produce a configuration preview that is reviewed before it runs) and require_itsm_approval (that preview also needs ITSM/ServiceNow approval; implies require_preview), what that means for this server's provision, template deploy, wireless deploy and SWIM tools, and the ITSM integrations configured. |
 | `catc_get_report_content` | Download a report execution's content (CSV or JSON reports only; PDF/TDE are binary). |
 | `catc_get_report_view` | A report view's formats, filters (name, type) and field groups, i.e. |
 | `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge), and per border its BGP AS and handoff counts (IP transit, SD-Access transit, layer 2; detail in catc_list_l3_handoffs), layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs, border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet policies. |
@@ -563,7 +564,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 | `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
-### Dangerous (45)
+### Dangerous (46)
 
 | Tool | What it does |
 |---|---|
@@ -607,6 +608,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_set_interface` | Change one switch port through Catalyst Center: shut / no shut, the access VLAN, the voice VLAN or the description (containment or remediation without writing a template). |
 | `catc_set_l2_handoff` | Set or remove a layer 2 handoff: a fabric VLAN extended out of a border port into a VLAN of a traditional network. |
 | `catc_set_l2_virtual_network` | Create, change or delete a layer 2 virtual network at an SD-Access fabric site. |
+| `catc_set_provisioning_settings` | Turn Catalyst Center's 'Visibility and Control of Configurations' on or off (System > Settings): require_preview and/or require_itsm_approval, with PUT provisioningSettings. |
 | `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
 | `catc_update_fabric_device` | Change a fabric border's updatable settings in place: border priority (1-9), AS-path prepends (1-10), a custom BGP router id, and the layer 2 border type. |
 | `catc_update_fabric_site` | Change an SD-Access fabric site's control plane mode (LISP pub/sub or LISP/BGP) or underlay transport (IPv4, IPv6, dual stack). |
