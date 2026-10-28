@@ -6,7 +6,8 @@ arguments: {"params": "{\"loopback_id\": 77}", "rollback": "negation", "targets"
 Run a safe Day-N change with Catalyst Center: baseline (issues, compliance, config archive),
 per-device preview, safety-rail checks (device limit, window end), deploy, deployment status,
 CLI verification, a compliance run, the config diff, a post-change issue diff, and a written
-rollback plan. Deploying is dangerous-tier; without it the prompt stops at a reviewed plan.
+rollback plan. Offers a maintenance window so the change doesn't page anyone, and ends it after.
+Deploying is dangerous-tier; without it the prompt stops at a reviewed plan.
 
 ## user
 
@@ -34,6 +35,11 @@ with the confirm token. Keep a short log of each step's result for the summary.
      a rollback (allow 15 minutes); otherwise stop and say the window is too short;
    - no P1/P2 issue open on a target in step 1 (or the user accepts it explicitly);
    - the user has approved the rendered CLI from step 3.
+   - Maintenance window: `catc_list_maintenance_windows` for each device. If none covers
+     now until 2099-01-01T23:00+11:00, offer `catc_schedule_maintenance` with devices=["r1.mcp.lab", "r2.mcp.lab"], start a
+     few minutes from now, end 2099-01-01T23:00+11:00 and the change as description (show the preview: health and
+     issues go dark for those devices, and the window runs to its end time). Wait until it is
+     IN_PROGRESS before deploying. Without one, expect the change's own issues in step 9.
 5. Deploy: `catc_deploy_template` with template "mcp-test-dayn/mcp-test-loopback", devices=["r1.mcp.lab", "r2.mcp.lab"],
    params {"loopback_id": 77}. Show the preview and wait for approval. If the tool isn't available (the
    dangerous tier is off on this server), stop here: hand the user steps 1-4 and the rollback
@@ -52,7 +58,12 @@ with the confirm token. Keep a short log of each step's result for the summary.
    (startup vs running) usually turns NON_COMPLIANT because Catalyst Center doesn't save the
    config; anything else that changed is a finding.
 9. Issue diff: `catc_list_issues` per device again (and
-   `catc_recent_activity` for the window) and report new issues since step 1.
+   `catc_recent_activity` for the window) and report new issues since step 1. Inside a
+   maintenance window the devices raise no issues: a quiet list proves nothing, so rely on steps 6-8.
+   Once verified, end the silence: `catc_update_maintenance_window` with end a few minutes
+   from now (or `catc_cancel_maintenance` if it never started), then
+   `catc_list_maintenance_windows` to see it COMPLETED, and `catc_list_issues`
+   per device once more after it ends.
 10. Rollback plan (always write it, even when everything passed):
    - Write the negation: for every line the template added (step 7's diff, '+'
      lines; if the deploy failed before step 7, use the rendered CLI from step 3), the
