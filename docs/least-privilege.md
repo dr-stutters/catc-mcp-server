@@ -45,7 +45,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Network Management.Discovery | Read | `catc_list_discoveries`, `catc_list_discovery_devices` |
 | Network Management.Hierarchy | Read | sites (minimum Read) |
 | Network Management.Inventory | Read | devices, interfaces, modules, config, config archive, tags |
-| Network Management.License | Read | licence records in `catc_get_device_hardware` |
+| Network Management.License | Read | licence records in `catc_get_device_hardware`; `catc_license_summary`, `catc_list_device_licenses` |
 | Network Management.Network-wide Settings | Read | (fixed at Read) |
 | Network Operations.Compliance | Read | compliance summary/detail, policies, violations |
 | Network Operations.Device Replacement & Refresh | Read | `catc_list_device_replacements` |
