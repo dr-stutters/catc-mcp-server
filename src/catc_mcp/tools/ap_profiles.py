@@ -80,8 +80,20 @@ MGMT_IMPACT = (
     "for PnP-onboarded APs, which may need a factory reset to pick them up."
 )
 NO_SECRETS_BACK = (
-    "Catalyst Center never returns the AP passwords: an update sends only the passwords given here, and "
-    "the others stay as Catalyst Center has them."
+    "Catalyst Center never returns the AP passwords (it shows them masked): an update sends only the "
+    "passwords given here."
+)
+# A create with only some rogue fields gets the rest as 0 and is refused (NCND00041, live 3.2.2): the
+# factory default-ap-profile's values fill in the fields not given.
+ROGUE_DEFAULTS = {
+    "rogueDetection": True,
+    "rogueDetectionMinRssi": -90,
+    "rogueDetectionReportInterval": 10,
+    "rogueDetectionTransientInterval": 0,
+}
+MGMT_ALL_THREE = (
+    "Catalyst Center takes the AP management user, password and enable password together or not at all "
+    "(NCND80157): give mgmt_user, mgmt_password and mgmt_enable_password"
 )
 
 InterfaceType = Literal["ETHERNET", "RADIO", "USB"]
@@ -442,6 +454,18 @@ def register(reg: ToolRegistrar) -> None:
         rogue_min_rssi: Annotated[
             int | None, Field(ge=-128, le=-70, description="Rogue detection minimum RSSI, dBm")
         ] = None,
+        rogue_report_interval: Annotated[
+            int | None,
+            Field(ge=10, le=300, description="Seconds between the APs' rogue reports to the WLC (10-300)"),
+        ] = None,
+        rogue_transient_interval: Annotated[
+            int | None,
+            Field(
+                ge=0,
+                le=1800,
+                description="Seconds a rogue must be heard before it is reported: 0 (off) or 120-1800",
+            ),
+        ] = None,
         country: Annotated[
             str | None, Field(min_length=2, max_length=2, description="AP country code, e.g. US, GB, AU")
         ] = None,
@@ -462,9 +486,11 @@ def register(reg: ToolRegistrar) -> None:
     ) -> dict[str, Any]:
         """Create, update or delete an AP join profile: SSH/Telnet with the AP management credentials, the
         AP's 802.1X supplicant (EAP-FAST, EAP-TLS or EAP-PEAP) for closed-auth switch ports, CDP, rogue
-        detection minimum RSSI, country, time zone and power profile. Only the settings given change. A
-        design object: it reaches a WLC through a wireless profile site tag and a re-provision. Preview-first;
-        passwords are masked and never stored."""
+        detection (minimum RSSI, report and transient intervals), country, time zone and power profile.
+        Only the settings given change. The management user, password and enable password go together;
+        Catalyst Center never returns the passwords, so an update of a profile that has them (or an
+        EAP-FAST/PEAP supplicant) takes them again. A design object: it reaches a WLC through a wireless
+        profile site tag and a re-provision. Preview-first; passwords are masked and never stored."""
         app: CatcApp = get_client(ctx)
         country = country.upper() if country else None
         if country and country not in COUNTRIES:
@@ -475,6 +501,8 @@ def register(reg: ToolRegistrar) -> None:
             ("dot1x_password", dot1x_password, False),
         ):
             check_password(what, s, strong=strong)
+        if rogue_transient_interval is not None and 0 < rogue_transient_interval < 120:
+            raise InvalidRequest("rogue_transient_interval is 0 (off) or 120-1800 seconds.")
         offsets = (time_zone_offset_hour, time_zone_offset_minutes)
         if any(o is not None for o in offsets) and time_zone != "delta":
             raise InvalidRequest("time_zone_offset_* only apply with time_zone='delta'.")
@@ -489,7 +517,12 @@ def register(reg: ToolRegistrar) -> None:
         m_given = {k: v for k, v in m_fields.items() if v is not None}
         r_given = {
             k: v
-            for k, v in {"rogueDetection": rogue_detection, "rogueDetectionMinRssi": rogue_min_rssi}.items()
+            for k, v in {
+                "rogueDetection": rogue_detection,
+                "rogueDetectionMinRssi": rogue_min_rssi,
+                "rogueDetectionReportInterval": rogue_report_interval,
+                "rogueDetectionTransientInterval": rogue_transient_interval,
+            }.items()
             if v is not None
         }
         top: dict[str, Any] = {
@@ -560,7 +593,15 @@ def register(reg: ToolRegistrar) -> None:
                 if m_new or secrets:
                     body["managementSetting"] = m_new
                 if r_given:
-                    body["rogueDetectionSetting"] = r_given
+                    body["rogueDetectionSetting"] = {**ROGUE_DEFAULTS, **r_given}
+                    filled = [k for k in ROGUE_DEFAULTS if k not in r_given]
+                    if filled:
+                        side.append(
+                            "Rogue detection: the settings not given ("
+                            + ", ".join(f"{k}={ROGUE_DEFAULTS[k]}" for k in filled)
+                            + ") take the factory default-ap-profile values; Catalyst Center refuses a "
+                            "partial rogueDetectionSetting."
+                        )
                 method, path = "POST", AP_PROFILES
                 summary = f"Create AP profile {name}"
                 fingerprint = {"names": sorted(str(p.get("apProfileName")) for p in aps)}
@@ -589,14 +630,30 @@ def register(reg: ToolRegistrar) -> None:
             auth = m_after.get("authType") or "NO-AUTH"
             if auth != "NO-AUTH" and not m_after.get("dot1xUsername"):
                 blockers.append(f"The {auth} supplicant needs dot1x_user.")
-            if auth in ("EAP-FAST", "EAP-PEAP") and dot1x_password is None and rec is None:
-                blockers.append(f"The {auth} supplicant needs dot1x_password.")
-            if (
-                mgmt_user
-                and mgmt_password is None
-                and (rec is None or not current_m.get("managementUserName"))
-            ):
-                blockers.append("mgmt_user needs mgmt_password.")
+            if auth in ("EAP-FAST", "EAP-PEAP") and dot1x_password is None:
+                blockers.append(
+                    f"The {auth} supplicant needs dot1x_password."
+                    if rec is None
+                    else f"The {auth} supplicant needs dot1x_password on every update: Catalyst Center "
+                    "never returns it, and refuses the update without it."
+                )
+            mgmt_given = {
+                "mgmt_user": mgmt_user,
+                "mgmt_password": mgmt_password,
+                "mgmt_enable_password": mgmt_enable_password,
+            }
+            missing = [k for k, v in mgmt_given.items() if v is None]
+            if current_m.get("managementUserName"):
+                need = [k for k in ("mgmt_password", "mgmt_enable_password") if k in missing]
+                if need:
+                    blockers.append(
+                        f"AP profile {rec.get('apProfileName') if rec else name} has management user "
+                        f"{current_m.get('managementUserName')}: give {' and '.join(need)} again with any "
+                        "update. Catalyst Center never returns the passwords (it shows them masked) and "
+                        "refuses an update without them (NCND80157)."
+                    )
+            elif 0 < len(missing) < 3:
+                blockers.append(f"{MGMT_ALL_THREE} (missing: {', '.join(missing)}).")
             if (m_after.get("sshEnabled") or m_after.get("telnetEnabled")) and not m_after.get(
                 "managementUserName"
             ):
@@ -644,6 +701,8 @@ def register(reg: ToolRegistrar) -> None:
                 "cdp": cdp,
                 "rogue_detection": rogue_detection,
                 "rogue_min_rssi": rogue_min_rssi,
+                "rogue_report_interval": rogue_report_interval,
+                "rogue_transient_interval": rogue_transient_interval,
                 "country": country,
                 "time_zone": time_zone,
                 "time_zone_offset_hour": time_zone_offset_hour,
