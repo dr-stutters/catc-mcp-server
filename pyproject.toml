@@ -8,7 +8,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "dr-stutters", email = "drstuttersau@gmail.com" }]
 requires-python = ">=3.12,<3.15"
 dependencies = [
-    # >>> bundled stutters-mcp-core v0.15.0 (scripts/bundle_core.py; do not edit)
+    # >>> bundled stutters-mcp-core v0.19.0 (scripts/bundle_core.py; do not edit)
     "fastmcp>=4.1,<5",
     "httpx>=0.28.1",
     "mcp>=2.0,<3",
@@ -26,8 +26,8 @@ catc-mcp-server = "catc_mcp:main"
 # stutters-mcp-core is bundled into the package as catc_mcp._core (ADR-005 in stutters-mcp-core):
 # python scripts/bundle_core.py vendor   (after a clone or a pin change; then uv lock if deps changed)
 [tool.bundle-core]
-tag = "v0.15.0"
-commit = "df079ab220059272b80051a8ea96ddc02233a6ba"
+tag = "v0.19.0"
+commit = "931acb7c7457056f7bd11d1e42f34ef94fd5fbeb"
 extras = ["tasks"]
 
 [build-system]

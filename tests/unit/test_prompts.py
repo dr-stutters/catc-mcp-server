@@ -104,8 +104,9 @@ async def test_prompt_contract_all_tiers() -> None:
 
 async def test_suite_pack() -> None:
     server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
-    # Peer snapshot tools not shipped yet (ise I82); peers without a committed manifest are not checked.
-    await assert_suite_pack(server, "catc", MANIFESTS, pending=["ise_snapshot", "ise_compare_snapshot"])
+    # The committed ise, fmc, cat-sdwan and cml manifests are checked leg by leg; tools a suite prompt
+    # itself marks pending (core 0.19, stutters-mcp-core#171) are waived by core.
+    await assert_suite_pack(server, "catc", MANIFESTS)
 
 
 async def test_onboard_prompt_renders() -> None:

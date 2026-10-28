@@ -1,12 +1,13 @@
 # suite_change_check
 
 title: Change check across products (pre/post)
-arguments: {"before": "", "change": "shut an access port on mcp-sw1", "phase": "pre", "servers": "catc,ise", "site": "Global/mcp-test-lab/mcp-test-bldg"}
+arguments: {"before": "", "change": "shut an access port on mcp-sw1", "expected": "mcp-banner", "phase": "pre", "servers": "catc,ise", "site": "Global/mcp-test-lab/mcp-test-bldg"}
 
 Did anything else break? Snapshot every connected product before a change (phase=pre), then compare
 after it (phase=post): SD-WAN overlay, ISE authentication, Catalyst Center health and the firewalls, one
-report of what changed by severity, expected effects apart. Skips the products whose server is not
-connected and says so. Read-only: the snapshots are kept in the conversation, never on a server.
+report of what changed by severity, expected effects apart, and configuration objects that changed
+outside the change (snapshot config sections). Skips the products whose server is not connected and says
+so. Read-only: the snapshots are kept in the conversation, never on a server.
 
 ## user
 
