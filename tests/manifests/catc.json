@@ -769,6 +769,10 @@
       "tier": "read",
       "title": "List global credentials"
     },
+    "catc_list_health_score_definitions": {
+      "tier": "read",
+      "title": "List health score definitions"
+    },
     "catc_list_images": {
       "tier": "read",
       "title": "List software images"
@@ -1012,6 +1016,10 @@
     "catc_update_fabric_site": {
       "tier": "dangerous",
       "title": "Update fabric site"
+    },
+    "catc_update_health_score_definition": {
+      "tier": "write",
+      "title": "Update health score definitions"
     },
     "catc_update_issue_definition": {
       "tier": "write",

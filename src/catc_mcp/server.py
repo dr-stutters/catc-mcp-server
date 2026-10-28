@@ -27,6 +27,7 @@ from catc_mcp.tools import (
     discovery,
     external_auth,
     group_policy,
+    health_scores,
     inventory,
     ipam,
     issue_definitions,
@@ -141,6 +142,9 @@ Workflows:
 - Issue settings ("stop paging me about X", "alert when this syslog appears"): catc_list_issue_definitions
   (enabled, priority vs default, threshold) -> catc_update_issue_definition (enable/disable, priority,
   threshold); syslog-pattern issues: catc_create_custom_issue / catc_delete_custom_issue.
+- Health score settings ("why is this router poor at 90% CPU?", tune KPIs per device family):
+  catc_list_health_score_definitions -> catc_update_health_score_definition (threshold, include in overall
+  health, sync to the issue threshold; reset_to_default).
 - Scheduled jobs ("what will Catalyst Center run tonight?", "what ran on its own overnight?"):
   catc_list_activities (upcoming / in progress / recurring / finished, failed first) -> catc_get_activity(id)
   (triggered jobs, failure reason, task id).
@@ -172,6 +176,7 @@ REGISTER = [
     assurance.register,
     assurance_analytics.register,
     issue_definitions.register,
+    health_scores.register,
     network_services.register,
     smart.register,
     snapshot.register,
