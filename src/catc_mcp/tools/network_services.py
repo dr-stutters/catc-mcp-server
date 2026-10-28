@@ -1,9 +1,17 @@
 """Network services health (D68): what Catalyst Center Assurance measured for the AAA (RADIUS), DHCP and DNS
 servers the network devices use, from the data API's aaaServices / dhcpServices / dnsServices (transactions,
 failures, latency per server and per device, EAP vs MAB for AAA) and their trend. "Is it the network or
-ISE/DHCP?" in one call, with one verdict line per server."""
+ISE/DHCP?" in one call, with one verdict line per server.
+
+#259: the data API counts only the transactions a device sent. A switch that has marked its AAA server DEAD
+sends nothing, so a dead-server window shows no failures at all; for AAA the Assurance issues that say so
+(fabric_aaa_server_down_trigger, radius_error_trigger), open or resolved in the window, go into the
+verdict."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import fnmatch
+import re
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -14,6 +22,7 @@ from catc_mcp._core.http import fetch_all
 from catc_mcp.client import CatcApp
 from catc_mcp.common import pick, resolve_site
 from catc_mcp.tools.aaa import policy_servers
+from catc_mcp.tools.assurance import issue_attrs, issue_row, issues_page
 from catc_mcp.tools.assurance_analytics import pick_interval, trend_buckets, utc, window_ms
 
 SERVICES = {"aaa": "aaaServices", "dhcp": "dhcpServices", "dns": "dnsServices"}
@@ -41,6 +50,18 @@ DEVICE_FIELDS = ["deviceName", "deviceId", "deviceFamily", "deviceSiteHierarchy"
 TREND_INTERVALS = [("5MIN", 5), ("15MIN", 15), ("1HR", 60), ("1DAY", 1440)]
 ROW_CAP = 2000
 TOP = 5
+# Assurance issues raised when a device stops reaching its AAA server (#259): what each one says.
+DEAD_ISSUES = {
+    "fabric_aaa_server_down_trigger": "marked {label} DEAD",
+    "radius_error_trigger": "reported {label} not responding",
+}
+DEAD_ISSUE_CAP = 100
+IP_IN_TEXT = re.compile(r"'(\d{1,3}(?:\.\d{1,3}){3})[:']")
+COUNTING_NOTE = (
+    "The data API counts only the AAA transactions a device actually sent: while a switch has marked its "
+    "server DEAD it sends nothing, and a switch without clients sends nothing either, so neither shows any "
+    "failures. Dead-server windows come from the Assurance issues in dead_server_issues."
+)
 
 
 def n(v: Any) -> int:
@@ -96,6 +117,115 @@ def verdict(
         d = failing[0]
         line += f"; {d['failedTransactions']} failures on {d.get('deviceName') or d.get('deviceId')}"
     return line + "."
+
+
+def hhmm(ms: Any) -> str | None:
+    if not isinstance(ms, int | float) or isinstance(ms, bool):
+        return None
+    return datetime.fromtimestamp(ms / 1000, tz=UTC).strftime("%H:%M UTC")
+
+
+def like(value: str, pattern: str) -> bool:
+    """Case-insensitive wildcard match, also on the short host name (sw1 for sw1.example.com)."""
+    v, p = value.lower(), pattern.lower()
+    return fnmatch.fnmatchcase(v, p) or fnmatch.fnmatchcase(v.split(".")[0], p)
+
+
+def dead_row(i: dict[str, Any]) -> dict[str, Any]:
+    """One dead-AAA issue: the issue row plus the server it names and short first/last/resolved times."""
+    row = issue_row(i)
+    attrs = issue_attrs(i)
+    if "device" not in row:
+        dev = re.search(r"device '([^']+)'", str(i.get("summary") or i.get("description") or ""))
+        if dev:
+            row["device"] = dev.group(1)
+    found = IP_IN_TEXT.search(str(i.get("summary") or i.get("description") or ""))
+    server = found.group(1) if found else attrs.get("serverIp") or attrs.get("aaaServerIp")
+    if server:
+        row["server"] = str(server)
+    row["first_at"] = hhmm(i.get("firstOccurredTime"))
+    row["last_at"] = hhmm(i.get("mostRecentOccurredTime"))
+    if str(i.get("status") or "").lower() == "resolved" and (at := hhmm(i.get("updatedTime"))):
+        row["resolved_at"] = at
+    return {k: v for k, v in row.items() if v is not None}
+
+
+def dead_phrase(row: dict[str, Any], names: dict[str, str]) -> str:
+    """'sw1 marked ISE 192.0.2.10 DEAD at 03:44 UTC (P1, resolved 03:47 UTC)'."""
+    ip = row.get("server") or "its AAA server"
+    label = f"{names[ip]} {ip}" if ip in names else ip
+    what = DEAD_ISSUES.get(str(row.get("name")), "reported {label} unreachable").format(label=label)
+    when = f"at {row['first_at']}" if row.get("first_at") else "in the window"
+    if row.get("resolved_at"):
+        state = f"resolved {row['resolved_at']}"
+    elif str(row.get("status") or "").lower() == "active":
+        state = f"still active, last seen {row.get('last_at') or '?'}"
+    else:
+        state = str(row.get("status") or "?")
+    return f"{row.get('device') or 'a device'} {what} {when} ({row.get('priority') or '?'}, {state})"
+
+
+async def dead_server_issues(
+    app: CatcApp,
+    start: int,
+    end: int,
+    *,
+    site: dict[str, Any] | None,
+    server: str | None,
+    device: str | None,
+) -> list[dict[str, Any]]:
+    """The open and resolved dead-AAA issues in the window, filtered to the site, server and device."""
+    params: dict[str, Any] = {
+        "startTime": start,
+        "endTime": end,
+        "name": list(DEAD_ISSUES),
+        "status": ["active", "resolved"],
+        "sortBy": "mostRecentOccurredTime",
+        "order": "desc",
+    }
+    if site is not None:
+        params["siteHierarchy"] = f"{site['nameHierarchy']}*"
+    page = await issues_page(app, params, limit=DEAD_ISSUE_CAP, offset=0)
+    rows = []
+    for i in page.items:
+        if not isinstance(i, dict) or i.get("name") not in DEAD_ISSUES:
+            continue
+        if site is not None:
+            nh, at = str(site["nameHierarchy"]), str(i.get("siteHierarchy") or "")
+            if at and at != nh and not at.startswith(nh + "/"):
+                continue
+        row = dead_row(i)
+        if server and not like(str(row.get("server") or ""), server):
+            continue
+        if device and not like(str(row.get("device") or ""), device):
+            continue
+        rows.append(row)
+    return rows
+
+
+def dead_verdicts(
+    servers: list[dict[str, Any]], dead: list[dict[str, Any]], names: dict[str, str]
+) -> list[str]:
+    """Fold the dead-AAA issues into the per-server verdicts; a server with no transactions at all gets a
+    verdict of its own, so a dead window never reads as 'nothing measured'. Returns those extra lines."""
+    by_ip = {srv["server"]: srv for srv in servers}
+    extra: dict[str, list[str]] = {}
+    for row in dead:
+        ip = str(row.get("server") or "?")
+        phrase = dead_phrase(row, names)
+        if ip in by_ip:
+            by_ip[ip].setdefault("dead_server_issues", []).append(phrase)
+        else:
+            extra.setdefault(ip, []).append(phrase)
+    tail = ": requests in that window never reached the server and are not counted."
+    for srv in servers:
+        if phrases := srv.get("dead_server_issues"):
+            srv["verdict"] += " But " + "; ".join(phrases) + tail
+    lines = []
+    for ip, phrases in extra.items():
+        label = f"{names[ip]} {ip}" if ip in names else ip
+        lines.append(f"{label}: no AAA transactions counted, but " + "; ".join(phrases) + tail)
+    return lines
 
 
 async def trend(
@@ -175,6 +305,16 @@ async def service_health(
             }
         )
     out: dict[str, Any] = {"servers": servers}
+    if service == "aaa":
+        out["counting_note"] = COUNTING_NOTE
+        try:
+            dead = await dead_server_issues(app, start, end, site=site, server=server, device=device)
+        except UpstreamError as e:
+            dead = []
+            out["dead_server_issues_unavailable"] = str(e)[:200]
+        if dead:
+            out["dead_server_issues"] = dead
+            out["dead_verdicts"] = dead_verdicts(servers, dead, names)
     failing = sorted(
         (device_row(service, r) for r in rows if n(r.get("failedTransactions"))),
         key=lambda d: -d.get("failedTransactions", 0),
@@ -217,9 +357,12 @@ def register(reg: ToolRegistrar) -> None:
         measured it: per server the transactions, successful and failed ones, success %, average latency
         (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35
         answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices
-        (NADs) behind it with their own counts, the top failing devices and the trend. Answers "is it the
-        network or ISE/DHCP?" with Catalyst Center's own numbers; the data API lags by minutes. For one
-        login's failure reason use ISE (ise_why_auth_failed)."""
+        (NADs) behind it with their own counts, the top failing devices and the trend. AAA also reads the
+        Assurance issues saying a device marked its AAA server DEAD or not responding (open or resolved in
+        the window) into the verdict: the data API counts only requests a device sent, so a dead-server
+        window or a switch without clients shows no failures. Answers "is it the network or ISE/DHCP?" with
+        Catalyst Center's own numbers; the data API lags by minutes. For one login's failure reason use ISE
+        (ise_why_auth_failed)."""
         app: CatcApp = get_client(ctx)
         s = await resolve_site(app, site) if site else None
         names: dict[str, str] = {}
@@ -245,5 +388,6 @@ def register(reg: ToolRegistrar) -> None:
                 continue
             out[svc] = res
             verdicts += [srv["verdict"] for srv in res["servers"]]
+            verdicts += res.pop("dead_verdicts", [])
         out["verdict"] = verdicts or ["No network-service transactions measured in the window."]
         return out

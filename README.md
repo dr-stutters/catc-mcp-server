@@ -30,7 +30,7 @@ You need: a Catalyst Center API user for the server (read-only is enough to star
 has a wheel with stutters-mcp-core bundled in; it needs only PyPI dependencies.
 
 ```bash
-WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.16.0/catc_mcp_server-0.16.0-py3-none-any.whl
+WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.17.0/catc_mcp_server-0.17.0-py3-none-any.whl
 export CATC_URL=https://catalyst-center.example.com CATC_USERNAME=mcp-catc-ro CATC_PASSWORD='...'
 uvx --from "$WHEEL" catc-mcp-server check           # preflight: login, TLS, role, version, ISE integration
 claude mcp add catc -e CATC_URL=$CATC_URL -e CATC_USERNAME=$CATC_USERNAME -e CATC_PASSWORD="$CATC_PASSWORD" \
@@ -44,7 +44,7 @@ Claude Desktop (`claude_desktop_config.json`), same idea:
   "mcpServers": {
     "catc": {
       "command": "uvx",
-      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.16.0/catc_mcp_server-0.16.0-py3-none-any.whl", "catc-mcp-server"],
+      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.17.0/catc_mcp_server-0.17.0-py3-none-any.whl", "catc-mcp-server"],
       "env": {"CATC_URL": "https://catalyst-center.example.com", "CATC_USERNAME": "mcp-catc-ro", "CATC_PASSWORD": "..."}
     }
   }
@@ -287,8 +287,9 @@ assign → provision → template deploy → verification, preview-first at ever
 archive) → per-device preview → rails (≤ 10 devices, window end) → deploy → deployment status → CLI
 check → config diff → compliance → issue diff → a written rollback plan (negation template or the
 pre-change archive). It offers a maintenance window (`catc_schedule_maintenance`) so the change's own
-alerts stay quiet, and ends it after verification. Without the dangerous tier it stops after the rails with a
-reviewed change plan.
+alerts stay quiet; a started window can't be cancelled or given a new end time (Catalyst Center
+refuses it), so after verification it is ended with `catc_update_maintenance_window(end_now=true)`.
+Without the dangerous tier it stops after the rails with a reviewed change plan.
 `catc_onboard_switch_with_nac` (write tier, uses the **ise** server too) checks the ISE integration
 (`catc_get_policy_servers`), sets the site's client AAA to ISE, onboards and provisions the switch,
 confirms its NAD in ISE (`ise_get_nad`), deploys an IBNS 2.0 MAB/802.1X port template and verifies
@@ -364,7 +365,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (106)
+### Read (107)
 
 | Tool | What it does |
 |---|---|
@@ -424,6 +425,7 @@ got unhealthy.
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
 | `catc_lifecycle_signals` | Every lifecycle and security signal Catalyst Center has for one device or the devices under a site, in one read: EoX alerts, Cisco security advisories (PSIRT), field notices, network bugs and insecure configurations (deprecated or weak CLI such as telnet, SNMPv1/v2c communities, HTTP), with one verdict line per signal and a row per device. |
+| `catc_link_mismatch` | Links whose two ends disagree, from Catalyst Center's Inventory Insight: speed/duplex mismatches and native VLAN / allowed VLAN mismatches at a site (and the sites below it). |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
 | `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
@@ -460,7 +462,7 @@ got unhealthy.
 | `catc_list_template_versions` | Version history of a template: every committed version with its number, commit time, author, comment, size and lines added/removed against the version before, and whether the template has uncommitted changes. |
 | `catc_list_templates` | Configuration templates (Template Editor) with project, language (Jinja/Velocity), software type, device families, committed version count and id. |
 | `catc_list_transit_networks` | SD-Access transit networks, with ids. |
-| `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. |
+| `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. AAA also folds in the Assurance issues saying a device marked its AAA server DEAD or not responding (open or resolved in the window): the data API counts only requests a device sent, so a dead-server window shows no failures. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
 | `catc_recent_activity` | What happened on this device or site recently? Queries Catalyst Center's assurance issues, assurance events (syslog, traps), platform event notifications and the audit log for the same window and scope, and merges them newest first with a `source` column. |

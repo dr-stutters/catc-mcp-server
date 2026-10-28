@@ -231,7 +231,8 @@ with the confirm token. Keep a short log of each step's result for the summary.
    - Maintenance window: {tool_ref("catc_list_maintenance_windows")} for each device. If none covers
      now until {window_end}, offer {tool_ref("catc_schedule_maintenance")} with devices={devs}, start a
      few minutes from now, end {window_end} and the change as description (show the preview: health and
-     issues go dark for those devices, and the window runs to its end time). Wait until it is
+     issues go dark for those devices, and the window runs to its end time: once started it can't be
+     cancelled or moved, only ended now, so pick an end that covers deploy + verification). Wait until it is
      IN_PROGRESS before deploying. Without one, expect the change's own issues in step 9.
 5. Deploy: {tool_ref("catc_deploy_template")} with template "{template}", devices={devs},
    params {params_arg}. Show the preview and wait for approval. If the tool isn't available (the
@@ -257,7 +258,7 @@ with the confirm token. Keep a short log of each step's result for the summary.
    {tool_ref("catc_update_maintenance_window")} with end_now=true (or {tool_ref("catc_cancel_maintenance")}
    if it never started); if Catalyst Center refuses, it ends on its own at its end time. Then
    {tool_ref("catc_list_maintenance_windows")} to see it COMPLETED, and {tool_ref("catc_list_issues")}
-   per device once more after it ends.
+   per device once more.
 10. Rollback plan (always write it, even when everything passed):
 {rollback_plan}
    - Say when it must be started to finish before {window_end}.

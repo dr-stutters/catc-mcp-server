@@ -11,12 +11,16 @@ read-only and `status` only exists inside `maintenanceSchedule` (read-only too):
 `networkDeviceIds` is set at creation only; an update keeps the devices (cancel and schedule again to
 change them). The list filter takes at most 25 device ids.
 
-What the appliance takes on update (3.2.2, live run96 #252/#258): the PUT task ends SUCCESS but the
+A started (IN_PROGRESS) window can be neither cancelled nor changed on 3.2.2: the DELETE task fails with
+"The maintenance window is in progress with ID ... and cannot be deleted." and a PUT answers 400
+"NCIM90982: The maintenance window has already started and cannot be updated." (live, run96, #258). The
+update and cancel previews block on it up front; the apply still maps both refusals for the race where the
+window starts between preview and confirm. If a later release allows it, gate `started_blocker` by version.
+
+What the appliance takes on update (3.2.2, live run96 #252): the PUT task ends SUCCESS but the
 description stays as it was (the spec: "The description for the maintenance schedule cannot be
-updated"), so the update tool re-reads the window and warns about every field that did not change. A
-window that has started can neither be deleted ("... is in progress ... and cannot be deleted") nor given a
-new end time (400 NCIM90982 "The maintenance window has already started and cannot be updated"); the spec's
-one way out of a running window is `endTime: -1` (end it now), which `end_now=true` sends.
+updated"), so the update tool re-reads the window and warns about every field that did not change. The
+spec's one way out of a running window is `endTime: -1` (end it now), which `end_now=true` sends.
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
@@ -59,14 +63,13 @@ GOES_DARK = (
 )
 RUNS_FULL = (
     "A started window runs for its full duration: the devices leave maintenance mode at the end time, not "
-    "when the change is done. Pick an end time that covers the change and its verification, no more."
+    "when the change is done, and once it starts it can't be cancelled or given a new end time (only ended "
+    "now: catc_update_maintenance_window end_now=true). Pick an end time that covers the change and its "
+    "verification, no more."
 )
+# Appliance refusals of a change to a started window (3.2.2, recorded live in run96 for #258).
+STARTED_CODE = "NCIM90982"
 
-LOCKED_ONCE_STARTED = (
-    "Catalyst Center does not let a started window be cancelled or given a new start or end time (3.2.2: "
-    "NCIM90982 'The maintenance window has already started and cannot be updated'; the cancel task fails "
-    "with '... is in progress ... and cannot be deleted')."
-)
 RENAME = "To rename a window, cancel it and schedule it again."
 DESCRIPTION_FIXED = (
     "Catalyst Center keeps a window's description on update (3.2.2: the API says it cannot be updated; the "
@@ -156,6 +159,25 @@ def schedule_blockers(
         elif recurrence_end <= end:
             out.append("recurrence_end must be after the window's end time.")
     return out
+
+
+def started_blocker(end: Any) -> str:
+    """The preview blocker for a running window (Catalyst Center 3.2.2 refuses cancel and update)."""
+    return (
+        "The window is running (IN_PROGRESS): Catalyst Center does not let a started window be cancelled or "
+        f"changed; it ends at {to_iso(end) or 'its end time'} ({STARTED_CODE}), and the devices leave "
+        "maintenance mode then. To end it now: catc_update_maintenance_window(end_now=true) (endTime -1, the "
+        "API's documented exit for a running window)."
+    )
+
+
+def is_started_refusal(err: Exception) -> bool:
+    """True when the appliance refused a change because the window has started (PUT 400 NCIM90982, or a
+    DELETE task 'The maintenance window is in progress ... cannot be deleted')."""
+    text = str(err).lower()
+    return STARTED_CODE.lower() in text or (
+        "maintenance window is in progress" in text and "cannot be deleted" in text
+    )
 
 
 # --- records -------------------------------------------------------------------------------------
@@ -265,13 +287,6 @@ def overlaps(windows: list[dict[str, Any]], start: int, end: int, skip: str | No
                 f"{window_status(w) or 'status unknown'})"
             )
     return hits
-
-
-def running_blocker(end: str | None) -> str:
-    return (
-        f"{LOCKED_ONCE_STARTED} It ends on its own at {end or 'its end time'}. To end it now, call "
-        "catc_update_maintenance_window with end_now=true (the API's documented exit for a running window)."
-    )
 
 
 def not_applied(wanted: dict[str, Any], got: dict[str, Any]) -> list[str]:
@@ -522,9 +537,10 @@ def register(reg: ToolRegistrar) -> None:
         Times are ISO 8601 with an offset. Preview-first: the preview lists every device the window covers
         (the blast radius), the times in UTC and the duration, other windows on those devices that overlap,
         and warns that health and issues go dark for those devices and that a started window runs to its
-        end time. Refused when the start is in the past, the end is before the start, or a recurrence is
-        shorter than the window. Check with catc_list_maintenance_windows; change it with
-        catc_update_maintenance_window, remove it with catc_cancel_maintenance."""
+        end time (it can't be cancelled or shortened once it starts). Refused when the start is in the
+        past, the end is before the start, or a recurrence is shorter than the window. Check with
+        catc_list_maintenance_windows; change it with catc_update_maintenance_window, remove it with
+        catc_cancel_maintenance."""
         app: CatcApp = get_client(ctx)
         start_ms, end_ms = to_ms(start, "start"), to_ms(end, "end")
         until_ms = to_ms(recurrence_end, "recurrence_end") if recurrence_end else None
@@ -549,8 +565,7 @@ def register(reg: ToolRegistrar) -> None:
             body["maintenanceSchedule"]["recurrence"] = rec
         side_effects = [
             GOES_DARK,
-            RUNS_FULL + " Once it starts it can't be cancelled or given a new end time; it can only be ended "
-            "now (catc_update_maintenance_window end_now=true).",
+            RUNS_FULL,
             "Nothing changes in the devices' configuration.",
         ]
         if rec:
@@ -692,12 +707,12 @@ def register(reg: ToolRegistrar) -> None:
         rec = recurrence_body(days, until)
         renames = description is not None and description != cur_desc
         schedule_changes = (new_start, new_end, rec) != (cur_start, cur_end, current_recurrence(cur_rec))
-        blockers = schedule_blockers(new_start, new_end, days, until, started=started)
-        if started:
-            blockers.append(running_blocker(before.get("end")))
+        blockers = (
+            [started_blocker(cur_end)] if started else schedule_blockers(new_start, new_end, days, until)
+        )
         if status in ("COMPLETED", "FAILED") and not cur_rec:
             blockers.append(f"The window is {status}; schedule a new one instead.")
-        if renames and not schedule_changes:
+        if renames and not schedule_changes and not started:
             blockers.append(f"{DESCRIPTION_FIXED} Nothing else would change, so there is nothing to send.")
         existing = await windows_for(app, ids) if ids else []
         clash = overlaps(existing, new_start, new_end, skip=wid)
@@ -748,9 +763,14 @@ def register(reg: ToolRegistrar) -> None:
         )
 
         async def apply() -> Any:
-            job = await app.run_job(
-                "PUT", f"{PATH}/{safe_id(wid, 'maintenance window id')}", body, ctx=ctx, what="update"
-            )
+            try:
+                job = await app.run_job(
+                    "PUT", f"{PATH}/{safe_id(wid, 'maintenance window id')}", body, ctx=ctx, what="update"
+                )
+            except UpstreamError as err:
+                if is_started_refusal(err):
+                    raise InvalidRequest(f"{started_blocker(cur_end)} Catalyst Center said: {err}") from err
+                raise
             out: dict[str, Any] = {"task": job}
             try:
                 row = window_row(await get_window(app, wid), names)
@@ -810,7 +830,7 @@ def register(reg: ToolRegistrar) -> None:
                 "The devices won't be in maintenance mode at that time: a change made then raises issues and "
                 "health alerts as usual.",
             )
-        blockers = [running_blocker(row.get("end"))] if status == "IN_PROGRESS" else []
+        blockers = [started_blocker(sched(w).get("endTime"))] if status == "IN_PROGRESS" else []
         if row.get("repeats_every_days"):
             side_effects.append("Every future occurrence of this recurring window goes too.")
         plan = Plan(
@@ -824,12 +844,19 @@ def register(reg: ToolRegistrar) -> None:
         )
 
         async def apply() -> Any:
-            job = await app.run_job(
-                "DELETE",
-                f"{PATH}/{safe_id(wid, 'maintenance window id')}",
-                ctx=ctx,
-                what="cancel maintenance",
-            )
+            try:
+                job = await app.run_job(
+                    "DELETE",
+                    f"{PATH}/{safe_id(wid, 'maintenance window id')}",
+                    ctx=ctx,
+                    what="cancel maintenance",
+                )
+            except UpstreamError as err:
+                if is_started_refusal(err):
+                    raise InvalidRequest(
+                        f"{started_blocker(sched(w).get('endTime'))} Catalyst Center said: {err}"
+                    ) from err
+                raise
             return {"cancelled": wid, "description": w.get("description"), "task": job}
 
         return await preview_or_apply(

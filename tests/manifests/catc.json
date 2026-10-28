@@ -170,6 +170,18 @@
         "ise"
       ]
     },
+    "catc_site_health_review": {
+      "arguments": [
+        "site",
+        "hours"
+      ],
+      "references": [],
+      "rendered": false,
+      "tier": "read",
+      "uses": [
+        "catc"
+      ]
+    },
     "suite_change_check": {
       "arguments": [
         "site",
@@ -317,6 +329,10 @@
       "tier": "write",
       "title": "Create compliance policy"
     },
+    "catc_create_custom_issue": {
+      "tier": "write",
+      "title": "Create custom issue"
+    },
     "catc_create_discovery": {
       "tier": "write",
       "title": "Create discovery"
@@ -380,6 +396,10 @@
     "catc_delete_compliance_policy": {
       "tier": "dangerous",
       "title": "Delete compliance policy"
+    },
+    "catc_delete_custom_issue": {
+      "tier": "write",
+      "title": "Delete custom issue"
     },
     "catc_delete_device": {
       "tier": "dangerous",
@@ -480,6 +500,10 @@
     "catc_distribute_image": {
       "tier": "dangerous",
       "title": "Distribute software image"
+    },
+    "catc_eox_report": {
+      "tier": "read",
+      "title": "EoX report"
     },
     "catc_export_config": {
       "tier": "read",
@@ -661,6 +685,14 @@
       "tier": "read",
       "title": "Issue recurrence"
     },
+    "catc_lifecycle_signals": {
+      "tier": "read",
+      "title": "Lifecycle and security signals"
+    },
+    "catc_link_mismatch": {
+      "tier": "read",
+      "title": "Link mismatches (speed/duplex, VLAN)"
+    },
     "catc_list_audit_logs": {
       "tier": "read",
       "title": "List audit logs"
@@ -736,6 +768,10 @@
     "catc_list_ip_pools": {
       "tier": "read",
       "title": "List IP pools"
+    },
+    "catc_list_issue_definitions": {
+      "tier": "read",
+      "title": "List issue definitions"
     },
     "catc_list_issues": {
       "tier": "read",
@@ -861,6 +897,10 @@
       "tier": "read",
       "title": "Search the Cisco Catalyst Center API spec"
     },
+    "catc_security_advisories": {
+      "tier": "read",
+      "title": "Security advisories (PSIRT)"
+    },
     "catc_set_device_role": {
       "tier": "write",
       "title": "Set device role"
@@ -941,6 +981,10 @@
       "tier": "read",
       "title": "Top problem devices or clients"
     },
+    "catc_trigger_lifecycle_scan": {
+      "tier": "write",
+      "title": "Trigger lifecycle scan"
+    },
     "catc_unassign_profile_from_sites": {
       "tier": "write",
       "title": "Unassign network profile from sites"
@@ -960,6 +1004,10 @@
     "catc_update_fabric_site": {
       "tier": "dangerous",
       "title": "Update fabric site"
+    },
+    "catc_update_issue_definition": {
+      "tier": "write",
+      "title": "Update issue definition"
     },
     "catc_update_issue_status": {
       "tier": "write",
@@ -1002,5 +1050,5 @@
       "title": "Write memory"
     }
   },
-  "version": "0.16.0"
+  "version": "0.17.0"
 }

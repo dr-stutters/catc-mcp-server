@@ -13,8 +13,16 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from catc_mcp._core import InvalidRequest
+from catc_mcp._core.errors import TaskFailed, ValidationFailed
 from catc_mcp.server import create_server
-from catc_mcp.tools.maintenance import duration_text, schedule_blockers, to_iso, to_ms
+from catc_mcp.tools.maintenance import (
+    duration_text,
+    is_started_refusal,
+    schedule_blockers,
+    started_blocker,
+    to_iso,
+    to_ms,
+)
 
 from .conftest import make_settings
 from .test_read_tools import BLDG, DEV_ID, DEVICE, GLOBAL, mock_device_lookup
@@ -186,6 +194,7 @@ async def test_schedule_preview_then_apply(api: respx.MockRouter) -> None:
     assert p["start"] == "2099-01-10T11:00:00Z"
     effects = " ".join(preview["side_effects"])
     assert "no health" in effects and "full duration" in effects
+    assert "can't be cancelled or given a new end time" in effects and "end_now=true" in effects
     assert preview.get("blast_radius") == 1
     sent = json.loads(post.calls.last.request.content)
     assert sent == {
@@ -266,16 +275,63 @@ async def test_update_moves_end_and_keeps_devices(api: respx.MockRouter) -> None
     assert done is not None and done["status"] == "applied"
 
 
-async def test_update_running_window_is_blocked(api: respx.MockRouter) -> None:
-    # Recorded refusal (3.2.2, run96 #258): a new end on an IN_PROGRESS window -> 400 NCIM90982.
+# The two refusals recorded live on Catalyst Center 3.2.2 (run96, #258) for a started window.
+DELETE_REFUSAL = f"The maintenance window is in progress with ID {WIN_ID} and cannot be deleted."
+PUT_REFUSAL = (
+    "Invalid input request: NCIM90982: The maintenance window has already started and cannot be updated."
+)
+RULE = (
+    "Catalyst Center does not let a started window be cancelled or changed; it ends at 2099-01-10T13:00:00Z"
+)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"end": "2099-01-10T23:30+11:00"},  # shorten: the case that failed live
+        {"end": "2099-01-11T01:00+11:00"},  # extend
+        {"start": START_ISO},
+        {"description": "mcp-renamed"},
+    ],
+)
+async def test_update_running_window_is_blocked(api: respx.MockRouter, args: dict[str, Any]) -> None:
     mock_device_lookup(api)
     mock_windows(api, [window("IN_PROGRESS", start=1_000, end=END_MS)])
     put = api.put(f"{PATH}/{WIN_ID}")
-    for change in ({"start": START_ISO}, {"end": "2099-01-10T23:30+11:00"}):
-        preview, _ = await flow("catc_update_maintenance_window", {"window": WIN_ID, **change})
-        assert preview["status"] == "blocked" and not put.called
-        text = " ".join(preview["blockers"])
-        assert "NCIM90982" in text and "end_now=true" in text and "2099-01-10T13:00:00Z" in text
+    preview, _ = await flow("catc_update_maintenance_window", {"window": WIN_ID, **args})
+    assert preview["status"] == "blocked" and not put.called
+    assert len(preview["blockers"]) == 1 and RULE in preview["blockers"][0]
+    assert "NCIM90982" in preview["blockers"][0] and "end_now=true" in preview["blockers"][0]
+    assert "instead of" not in " ".join(preview.get("side_effects") or [])
+
+
+async def test_update_maps_the_started_refusal(api: respx.MockRouter) -> None:
+    """The window started between preview and confirm: the 400 NCIM90982 comes back in plain words."""
+    mock_device_lookup(api)
+    mock_windows(api, [window()])
+    api.put(f"{PATH}/{WIN_ID}").respond(
+        400, json={"response": {"errorCode": "Bad request", "message": PUT_REFUSAL}, "version": "1.0"}
+    )
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        args = {"window": WIN_ID, "end": "2099-01-11T01:00+11:00"}
+        preview = await run(c, "catc_update_maintenance_window", args)
+        with pytest.raises(ToolError) as exc:
+            await run(c, "catc_update_maintenance_window", {**args, "confirm": preview["confirm"]})
+    assert RULE in str(exc.value) and "NCIM90982: The maintenance window has already started" in str(
+        exc.value
+    )
+
+
+async def test_update_other_errors_pass_through(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [window()])
+    api.put(f"{PATH}/{WIN_ID}").respond(400, json={"response": {"message": "bad endTime"}})
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        args = {"window": WIN_ID, "end": "2099-01-11T01:00+11:00"}
+        preview = await run(c, "catc_update_maintenance_window", args)
+        with pytest.raises(ToolError) as exc:
+            await run(c, "catc_update_maintenance_window", {**args, "confirm": preview["confirm"]})
+    assert "bad endTime" in str(exc.value) and "started window" not in str(exc.value)
 
 
 async def test_update_end_now_sends_minus_one(api: respx.MockRouter) -> None:
@@ -427,7 +483,30 @@ async def test_cancel_running_is_blocked(api: respx.MockRouter) -> None:
     delete = api.delete(f"{PATH}/{WIN_ID}")
     preview, _ = await flow("catc_cancel_maintenance", {"window": WIN_ID})
     assert preview["status"] == "blocked" and not delete.called
-    assert "end_now=true" in preview["blockers"][0] and "2099-01-10T13:00:00Z" in preview["blockers"][0]
+    assert len(preview["blockers"]) == 1 and RULE in preview["blockers"][0]
+    assert "end_now=true" in preview["blockers"][0]
+
+
+async def test_cancel_maps_the_started_refusal(api: respx.MockRouter) -> None:
+    """The window started between preview and confirm: the DELETE task's refusal comes back in plain words."""
+    mock_device_lookup(api)
+    mock_windows(api, [window()])
+    api.delete(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t6"}})
+    api.get("/dna/intent/api/v1/task/t6").respond(
+        json={"response": {"isError": True, "endTime": 1, "failureReason": DELETE_REFUSAL}}
+    )
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        preview = await run(c, "catc_cancel_maintenance", {"window": WIN_ID})
+        with pytest.raises(ToolError) as exc:
+            await run(c, "catc_cancel_maintenance", {"window": WIN_ID, "confirm": preview["confirm"]})
+    assert RULE in str(exc.value) and "cannot be deleted" in str(exc.value)
+
+
+def test_started_refusal_matching() -> None:
+    assert is_started_refusal(TaskFailed(f"cancel maintenance failed: {DELETE_REFUSAL} (task id t6)"))
+    assert is_started_refusal(ValidationFailed(f"Bad request: {PUT_REFUSAL}", 400))
+    assert not is_started_refusal(TaskFailed("NCSP10011: device unreachable"))
+    assert "it ends at its end time" in started_blocker(None)
 
 
 async def test_schedule_says_a_started_window_is_locked(api: respx.MockRouter) -> None:

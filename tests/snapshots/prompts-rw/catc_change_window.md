@@ -38,7 +38,8 @@ with the confirm token. Keep a short log of each step's result for the summary.
    - Maintenance window: `catc_list_maintenance_windows` for each device. If none covers
      now until 2099-01-01T23:00+11:00, offer `catc_schedule_maintenance` with devices=["r1.mcp.lab", "r2.mcp.lab"], start a
      few minutes from now, end 2099-01-01T23:00+11:00 and the change as description (show the preview: health and
-     issues go dark for those devices, and the window runs to its end time). Wait until it is
+     issues go dark for those devices, and the window runs to its end time: once started it can't be
+     cancelled or moved, only ended now, so pick an end that covers deploy + verification). Wait until it is
      IN_PROGRESS before deploying. Without one, expect the change's own issues in step 9.
 5. Deploy: `catc_deploy_template` with template "mcp-test-dayn/mcp-test-loopback", devices=["r1.mcp.lab", "r2.mcp.lab"],
    params {"loopback_id": 77}. Show the preview and wait for approval. If the tool isn't available (the
@@ -64,7 +65,7 @@ with the confirm token. Keep a short log of each step's result for the summary.
    `catc_update_maintenance_window` with end_now=true (or `catc_cancel_maintenance`
    if it never started); if Catalyst Center refuses, it ends on its own at its end time. Then
    `catc_list_maintenance_windows` to see it COMPLETED, and `catc_list_issues`
-   per device once more after it ends.
+   per device once more.
 10. Rollback plan (always write it, even when everything passed):
    - Write the negation: for every line the template added (step 7's diff, '+'
      lines; if the deploy failed before step 7, use the rendered CLI from step 3), the
