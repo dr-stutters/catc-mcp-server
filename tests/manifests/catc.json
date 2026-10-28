@@ -1211,6 +1211,10 @@
       "tier": "read",
       "title": "List transit networks"
     },
+    "catc_list_udfs": {
+      "tier": "read",
+      "title": "List user-defined fields"
+    },
     "catc_mark_device_for_replacement": {
       "tier": "write",
       "title": "Mark a device for replacement"
@@ -1287,6 +1291,10 @@
       "tier": "write",
       "title": "Set device role"
     },
+    "catc_set_device_udfs": {
+      "tier": "write",
+      "title": "Set user-defined field values on devices"
+    },
     "catc_set_external_authentication": {
       "tier": "dangerous",
       "title": "Turn external authentication on or off"
@@ -1326,6 +1334,10 @@
     "catc_set_rf_profile": {
       "tier": "write",
       "title": "Set RF profile"
+    },
+    "catc_set_udf": {
+      "tier": "write",
+      "title": "Create, update or delete a user-defined field"
     },
     "catc_set_wlan_security": {
       "tier": "write",
