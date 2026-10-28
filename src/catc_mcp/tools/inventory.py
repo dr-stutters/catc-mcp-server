@@ -2,6 +2,7 @@
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
 import asyncio
+import contextlib
 import re
 from typing import Annotated, Any, Literal
 
@@ -22,6 +23,7 @@ from catc_mcp._core.http import fetch_all, page_of
 from catc_mcp.client import CatcApp
 from catc_mcp.common import DEVICE_FIELDS, ensure_list, pick, resolve_device, resolve_site
 from catc_mcp.safety import ASSIGNED, devices_by_id, site_assignments
+from catc_mcp.tools.udfs import device_udfs
 
 DeviceRef = Annotated[str, Field(description="Device hostname, management IP, serial number or id")]
 
@@ -200,10 +202,14 @@ def register(reg: ToolRegistrar) -> None:
     @reg.read(title="Get network device")
     async def catc_get_device(ctx: Context, device: DeviceRef) -> ToolResult:
         """Full inventory record for one network device: platform, serial, software, role, uptime,
-        reachability and collection status (with failure reason), management IP, MAC, location.
+        reachability and collection status (with failure reason), management IP, MAC, location, and
+        the user-defined fields it carries (userDefinedFields: {name: value}; see catc_list_udfs).
         Use catc_device_360 for health, issues, interfaces and compliance in one call."""
         app: CatcApp = get_client(ctx)
-        return object_result(await resolve_device(app, device))
+        dev = await resolve_device(app, device)
+        with contextlib.suppress(UpstreamError):  # releases without the USER_DEFINED_FIELDS view
+            dev["userDefinedFields"] = await device_udfs(app, str(dev["id"]))
+        return object_result(dev)
 
     @reg.read(title="List device interfaces")
     async def catc_list_device_interfaces(

@@ -219,8 +219,11 @@ async def test_list_devices_by_site(api: respx.MockRouter) -> None:
 
 async def test_get_device_by_short_hostname(api: respx.MockRouter) -> None:
     mock_device_lookup(api)
+    api.get(f"/dna/intent/api/v1/networkDevices/{DEV_ID}").respond(
+        json={"response": {"id": DEV_ID, "userDefinedFields": {"asset-tag": "A-1001"}}, "version": "1.0"}
+    )
     out = await call("catc_get_device", {"device": "edge-sw1"})
-    assert out["id"] == DEV_ID
+    assert out["id"] == DEV_ID and out["userDefinedFields"] == {"asset-tag": "A-1001"}
     out = await call("catc_get_device", {"device": "10.0.0.11"})
     assert out["serialNumber"] == "FOC1234X0AB"
     with pytest.raises(ToolError, match="No network device"):

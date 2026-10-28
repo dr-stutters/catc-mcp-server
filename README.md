@@ -369,7 +369,9 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
   the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
   When the enterprise CA is renewed or replaced, `catc_import_trusted_certificate` puts the new CA chain in
   Catalyst Center's trust store (root first; leaf, expired and key-carrying PEMs refused in the preview)
-  before ISE's leaves are re-issued.
+  before ISE's leaves are re-issued. There is no API read of the trust store, so the preview names earlier
+  imports of the same serial from the audit log (a re-import overwrites the entry, harmless), and the result
+  reads the audit log back for the subject, issuer and serial Catalyst Center recorded.
 - **SD-Access fabric AAA:** `catc_check_fabric_aaa(fabric_site)` reads every fabric device live (one command
   runner request): the RLOC its RADIUS comes from (Loopback0), each RADIUS server's state (DEAD, dead count,
   automate-tester), TrustSec environment data and PAC, with a verdict and the fix per device. Pass the ise
@@ -396,7 +398,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (113)
+### Read (114)
 
 | Tool | What it does |
 |---|---|
@@ -408,7 +410,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_compare_snapshot` | Compare a catc_snapshot blob from before a change with one from after it (or, when `after` is empty, a fresh snapshot of the same scope taken now) and name what changed, most severe first: major = got unhealthy (session down, metric past its limit, healthy item gone), minor = changed but not clearly bad, info = recovered or improved. |
 | `catc_compliance_report` | Which devices are out of standard: compliance at a site (and below) from the last compliance runs, counted by site, category (startup vs running config, image, PSIRT, EoX, network settings, your compliance policies as NETWORK_RULES...) and severity, with the non-compliant devices and their failing categories and policy rule violations (worst first). |
 | `catc_config_drift` | Config drift across sites: which devices' running configuration differs from a golden device (lines missing compared with it, and extra lines) or no longer contains what a template renders to (lines missing; a 'no X' template line counts as present when X is absent). |
-| `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
+| `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts, and a maintenance note when the device is in a running maintenance window (no issues or health while it runs) or one starts within 24h. |
 | `catc_diff_config` | Compare two config exports, or an export with live Catalyst Center: items added or removed and, for changed items, each field that differs (before and after values). |
 | `catc_diff_template_versions` | Unified diff between two versions of a template (or a version and the uncommitted draft), with lines added and removed. |
 | `catc_eox_report` | End-of-life (EoX) report from Catalyst Center: the network summary (hardware, software and module alerts), each device's scan status, alert count and alert types, and the bulletins behind them (end of sale, end of software maintenance and vulnerability support, last date of support, flagged when already past, with the Cisco link). |
@@ -424,7 +426,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_get_compliance_policy` | One compliance policy: its rules (device families, software type, suggested fix) with their conditions (what is tested, whether a match or a non-match is the violation, severity) and the sites it is assigned to, by name (including the sites below the assigned ones). |
 | `catc_get_compliance_summary` | Fleet compliance at a glance: how many devices are compliant, non-compliant, in progress, not available or in error, and which devices are non-compliant (with hostname). |
 | `catc_get_definition` | Describe a Cisco Catalyst Center API operation (parameters, request fields, required fields) or a schema (fields with types and enums). |
-| `catc_get_device` | Full inventory record for one network device: platform, serial, software, role, uptime, reachability and collection status (with failure reason), management IP, MAC, location. |
+| `catc_get_device` | Full inventory record for one network device: platform, serial, software, role, uptime, reachability and collection status (with failure reason), management IP, MAC, location, and the user-defined fields it carries (userDefinedFields: {name: value}; see catc_list_udfs). |
 | `catc_get_device_config` | The device's running configuration as last collected by Catalyst Center (not live: run catc_run_show_commands for that). |
 | `catc_get_device_hardware` | Hardware and licensing of one device in one call: stack members (role, state, priority, serial, platform, software) and StackWise Virtual links, PoE budget (allocated / consumed / remaining watts) and the PoE ports drawing power, module count, and smart-licensing state with the licences in use. |
 | `catc_get_external_authentication` | How Catalyst Center admins log in: whether external authentication (System > Users & Roles > External Authentication) is on, the AAA attribute it reads the role from (empty = the default, Cisco-AVPair for RADIUS / cisco-av-pair for TACACS+), the AAA servers it asks (from the authentication and policy servers, e.g. the integrated ISE), the roles an external user can be given (the value the AAA server must return: 'Role=<name>'), and the external users that have logged in so far. |
@@ -499,6 +501,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_list_template_versions` | Version history of a template: every committed version with its number, commit time, author, comment, size and lines added/removed against the version before, and whether the template has uncommitted changes. |
 | `catc_list_templates` | Configuration templates (Template Editor) with project, language (Jinja/Velocity), software type, device families, committed version count and id. |
 | `catc_list_transit_networks` | SD-Access transit networks, with ids. |
+| `catc_list_udfs` | User-defined fields (UDFs): the global field definitions Catalyst Center devices can carry (asset tag, owner, contract, CMDB id...) with name, description and id. |
 | `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. AAA also folds in the Assurance issues saying a device marked its AAA server DEAD or not responding (open or resolved in the window): the data API counts only requests a device sent, so a dead-server window shows no failures. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
@@ -514,7 +517,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (62)
+### Write (64)
 
 | Tool | What it does |
 |---|---|
@@ -562,8 +565,10 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_set_ap_power_profile` | Create, update or delete an AP power profile: ordered rules that turn an Ethernet port down to a speed, a radio down to fewer spatial streams, or a radio or the USB port off when the switch gives the AP too little PoE. |
 | `catc_set_ap_profile` | Create, update or delete an AP join profile: SSH/Telnet with the AP management credentials, the AP's 802.1X supplicant (EAP-FAST, EAP-TLS or EAP-PEAP) for closed-auth switch ports, CDP, rogue detection (minimum RSSI, report and transient intervals), country, time zone and power profile. Management credentials go as a set (user, password, enable password), and an update of a profile with them, or with an EAP-FAST/PEAP supplicant, takes the passwords again (Catalyst Center never returns them). |
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
+| `catc_set_device_udfs` | Set or clear user-defined field values on network devices (e.g. asset tag, owner, CMDB id from the source of truth). |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
 | `catc_set_wired_feature` | Store a change to a switch's per-device intended layer-2 configuration (Per Device Configuration enabled): add or change VLANs, STP/VTP/CDP/LLDP/snooping globals, or per-interface switchport, trunk, 802.1X/MAB settings. |
+| `catc_set_udf` | Create a global user-defined field (asset tag, owner, CMDB id...) that devices can then carry, change its description or name, or delete it. |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
 | `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
