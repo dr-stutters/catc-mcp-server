@@ -107,7 +107,7 @@ def split_applicable(
 UNSAVED_NOTE = (
     "Catalyst Center does not save the configuration after a template deploy: the change is lost on "
     "reload, and RUNNING_CONFIG compliance shows it as drift. See the unsaved lines with "
-    "catc_compare_device_configs(compare='startup'), and save it on the device (write memory) if it "
+    "catc_compare_device_configs(compare='startup'), and save it with catc_write_memory(devices) if it "
     "must persist."
 )
 
@@ -231,7 +231,8 @@ def register(reg: ToolRegistrar) -> None:
             },
             side_effects=[
                 "Changes the running configuration of every listed device.",
-                "The change is not saved to the startup config (Catalyst Center doesn't write memory).",
+                "The change is not saved to the startup config (Catalyst Center doesn't write memory): "
+                "run catc_write_memory(devices) afterwards to keep it.",
             ],
             fingerprint={
                 "template": tid,
