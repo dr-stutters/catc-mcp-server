@@ -353,7 +353,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (101)
+### Read (103)
 
 | Tool | What it does |
 |---|---|
@@ -396,7 +396,7 @@ got unhealthy.
 | `catc_get_policy_servers` | Authentication and policy servers known to Catalyst Center (System > Settings > Authentication and Policy Servers): plain RADIUS/TACACS servers and integrated Cisco ISE, with protocol, ports, state, pxGrid, and per ISE node its role (PRIMARY/SECONDARY/PXGRID), FQDN and certificate trust state; plus the ISE integration status (each step, and the certificate waiting to be accepted, if any). |
 | `catc_get_report_content` | Download a report execution's content (CSV or JSON reports only; PDF/TDE are binary). |
 | `catc_get_report_view` | A report view's formats, filters (name, type) and field groups, i.e. |
-| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge) and border settings, layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs, border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet policies. |
+| `catc_get_sda_fabric` | SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the fabric devices at each with their roles (control plane, border, edge), and per border its BGP AS and handoff counts (IP transit, SD-Access transit, layer 2; detail in catc_list_l3_handoffs), layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs, border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet policies. |
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
 | `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the device credentials the site uses (shown as 'TYPE:description', never secrets). |
@@ -433,6 +433,7 @@ got unhealthy.
 | `catc_list_issue_definitions` | Assurance issue definitions: for each built-in (system) one its name and display name, whether it is enabled, its priority next to the factory default, the threshold where it has one (e.g. minutes BGP may be down), device type and category; for custom ones the syslog rule in words (severity, %FACILITY-SEV-MNEMONIC, text regex, N times in M minutes), priority and whether it notifies. |
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, the device they are about, summary, status, site and how long ago each last occurred, newest first. |
 | `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
+| `catc_list_l3_handoffs` | Layer 3 handoffs of a fabric site's borders: how each VN leaves the fabric. |
 | `catc_list_maintenance_windows` | Catalyst Center device maintenance windows: description, status (UPCOMING, IN_PROGRESS, COMPLETED, FAILED), start and end in ISO 8601 UTC, duration, recurrence (every N days until a date), and the devices by hostname. |
 | `catc_list_network_profiles` | Network profiles (Design > Network Profiles) with their type, the sites they are assigned to and the Day-N CLI templates attached to them. |
 | `catc_list_pending_fabric_events` | SD-Access fabric intent still to push: the pending fabric events Catalyst Center has queued, per fabric site. |

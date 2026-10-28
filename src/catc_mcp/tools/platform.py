@@ -31,6 +31,11 @@ EXTRA_SECTIONS = {
     "multicast": "multicast",
     "multicast_virtual_networks": "multicast/virtualNetworks",
 }
+HANDOFF_COUNTS = {
+    "ip_transit": "layer3_handoffs_ip",
+    "sda_transit": "layer3_handoffs_sda",
+    "layer2": "layer2_handoffs",
+}
 
 
 def _inside(path: Any, root: Any) -> bool:
@@ -201,7 +206,8 @@ def register(reg: ToolRegistrar) -> None:
         ] = None,
     ) -> ToolResult:
         """SD-Access fabric overview in one call: fabric sites (authentication profile, pub/sub), the
-        fabric devices at each with their roles (control plane, border, edge) and border settings,
+        fabric devices at each with their roles (control plane, border, edge), and per border its BGP AS
+        and handoff counts (IP transit, SD-Access transit, layer 2; detail in catc_list_l3_handoffs),
         layer 3 virtual networks, anycast gateways (VN, IP pool, VLAN) and edge port assignments, with the
         ids catc_delete_sda_object takes; when present also fabric zones, port channels, layer 2 VNs,
         border handoffs (IP transit, SD-Access transit, layer 2), multicast, transit networks and extranet
@@ -277,15 +283,31 @@ def register(reg: ToolRegistrar) -> None:
                 "id": fid,
             }
             if "devices" in sec:
-                entry["devices"] = [
-                    {
+                entry["devices"] = []
+                for d in sec["devices"].items:
+                    if not isinstance(d, dict):
+                        continue
+                    row: dict[str, Any] = {
                         "networkDeviceId": d.get("networkDeviceId"),
                         "roles": d.get("deviceRoles"),
                         "id": d.get("id"),
                     }
-                    for d in sec["devices"].items
-                    if isinstance(d, dict)
-                ]
+                    if "BORDER_NODE" in (d.get("deviceRoles") or []):
+                        l3 = (d.get("borderDeviceSettings") or {}).get("layer3Settings") or {}
+                        if l3.get("localAutonomousSystemNumber"):
+                            row["local_as"] = l3["localAutonomousSystemNumber"]
+                        # Handoffs per border (D116); the detail is catc_list_l3_handoffs.
+                        row["handoffs"] = {
+                            kind: sum(
+                                1
+                                for h in sec[key].items
+                                if isinstance(h, dict)
+                                and h.get("networkDeviceId") == d.get("networkDeviceId")
+                            )
+                            for kind, key in HANDOFF_COUNTS.items()
+                            if key in sec
+                        }
+                    entry["devices"].append(row)
             if "gateways" in sec:
                 entry["anycast_gateways"] = [
                     pick(g, ["virtualNetworkName", "ipPoolName", "vlanId", "vlanName", "trafficType", "id"])

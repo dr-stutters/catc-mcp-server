@@ -686,7 +686,7 @@ async def test_sda_fabric_part_f_sections(api: respx.MockRouter) -> None:
     )
     mock_sites(api, [GLOBAL, AREA, BLDG, floor])
     mock_device_lookup(api)
-    for path in ("fabricDevices", "anycastGateways", "portAssignments", "layer3VirtualNetworks"):
+    for path in ("anycastGateways", "portAssignments", "layer3VirtualNetworks"):
         api.get(f"/dna/intent/api/v1/sda/{path}").respond(json={"response": []})
     mock_sda_extra(
         api,
@@ -700,13 +700,31 @@ async def test_sda_fabric_part_f_sections(api: respx.MockRouter) -> None:
                 {"id": "l1", "fabricId": fid, "vlanName": "MCP_PRINTERS", "vlanId": 1031}
             ],
             "fabricDevices/layer3Handoffs/ipTransits": [
-                {"id": "h1", "fabricId": fid, "virtualNetworkName": "MCP_VN"}
+                {"id": "h1", "fabricId": fid, "networkDeviceId": DEV_ID, "virtualNetworkName": "MCP_VN"}
             ],
             "multicast": [{"fabricId": fid, "replicationMode": "HEADEND_REPLICATION"}],
         },
     )
+    api.get("/dna/intent/api/v1/sda/fabricDevices").respond(
+        json={
+            "response": [
+                {
+                    "id": "fd1",
+                    "networkDeviceId": DEV_ID,
+                    "fabricId": fid,
+                    "deviceRoles": ["BORDER_NODE", "CONTROL_PLANE_NODE"],
+                    "borderDeviceSettings": {"layer3Settings": {"localAutonomousSystemNumber": "65010"}},
+                },
+                {"id": "fd2", "networkDeviceId": "edge-id", "fabricId": fid, "deviceRoles": ["EDGE_NODE"]},
+            ]
+        }
+    )
     out = await call("catc_get_sda_fabric")
     site = out["fabric_sites"][0]
+    border, edge = site["devices"]
+    assert border["local_as"] == "65010"
+    assert border["handoffs"] == {"ip_transit": 1, "sda_transit": 0, "layer2": 0}  # D116
+    assert "handoffs" not in edge
     assert site["fabric_zones"] == [
         {"site": floor["nameHierarchy"], "authentication_profile": "Closed Authentication", "id": "z1"}
     ]
