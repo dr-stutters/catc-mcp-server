@@ -1,5 +1,7 @@
 """Workflow prompts: core prompt contract, rendering and tier gating (D6)."""
 
+import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -111,6 +113,25 @@ async def test_prompt_contract_all_tiers() -> None:
         known_prefixes={"cml", "ise", "fmc", "catc", "win"},
         external_tools={k: v for k, v in manifests.items() if k != "catc"},
     )
+
+
+async def test_manifest_renders_every_prompt(caplog: pytest.LogCaptureFixture) -> None:
+    # `catc-mcp-server tools` renders each prompt with its registered example (else placeholders);
+    # one without a valid example is listed as "did not render" and FastMCP logs a traceback (#287).
+    from catc_mcp._core.manifest import build_manifest
+
+    server = create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))
+    with caplog.at_level(logging.ERROR):
+        manifest = await build_manifest(server, server="catc-mcp-server", prefix="catc")
+    unrendered = sorted(n for n, meta in manifest["prompts"].items() if not meta["rendered"])
+    assert unrendered == []
+    assert not [r for r in caplog.records if "Error rendering prompt" in r.getMessage()]
+    # The committed manifest other servers check against must match (regenerate with
+    # `catc-mcp-server tools --json --out tests/manifests/catc.json`).
+    committed = json.loads((MANIFESTS / "catc.json").read_text())
+    assert {n: m["rendered"] for n, m in committed["prompts"].items()} == {
+        n: True for n in manifest["prompts"]
+    }
 
 
 async def test_suite_pack() -> None:
