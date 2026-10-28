@@ -229,6 +229,11 @@ Typical flows:
 - **Troubleshoot:** `catc_device_360` / `catc_client_360` → `catc_list_issues` → `catc_get_issue`
   (Catalyst Center's suggested commands) → `catc_run_show_commands`; `catc_path_trace` (needs CDP or
   LLDP between devices); `catc_list_events`.
+- **One port** (contain or fix a client port; dangerous tier): `catc_set_interface(device, interface,
+  action=shut|no_shut|access_vlan|voice_vlan|description)` through Catalyst Center's interface API. Uplinks
+  (physical topology), trunks, port channels and virtual interfaces are refused unless `allow_uplink`; the
+  management port is never shut. The preview shows the port row, Catalyst Center's dry run
+  (`deploymentMode=Preview`) and the undo call; one device for `CATC_MAX_DEVICES_PER_CHANGE`.
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
   called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
@@ -298,6 +303,12 @@ auth record and an undo list; by default it switches external authentication off
 `catc_client_troubleshoot` (read tier, uses **ise**) takes a client by MAC, IP or username through Catalyst
 Center (360, issues, live CLI, path trace), ISE (auth history, failure reason, NAD) and the switch's AAA health to a
 diagnosis and a previewed-only fix.
+`catc_site_health_review` (read tier) is the weekly review of one site as a single ranked report: maintenance
+windows first (`catc_list_maintenance_windows`: devices under maintenance are listed apart, never as findings),
+health now and over the window (`catc_site_health_report`, `catc_health_trend`, network, device and client
+health), open and recurring issues, compliance (`catc_compliance_report`), image currency against the golden image
+(`catc_list_device_images`) and template drift (`catc_template_drift`), ranked most severe first and ending with
+next steps that name the tools to run.
 `catc_build_fabric_site` (dangerous tier, uses **ise** for the AAA check) builds an SD-Access fabric site from
 switches to a client in the fabric: SD-Access availability and the account's tier, devices onboarded and provisioned
 at the building, the client pool, the fabric site, border and control plane before the edges, the VN, the anycast
@@ -522,7 +533,7 @@ got unhealthy.
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 | `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
-### Dangerous (44)
+### Dangerous (45)
 
 | Tool | What it does |
 |---|---|
@@ -563,6 +574,7 @@ got unhealthy.
 | `catc_set_fabric_authentication_profile` | Set an SD-Access fabric site's authentication template and/or edit that template's settings. |
 | `catc_set_fabric_multicast` | Set multicast at an SD-Access fabric site. |
 | `catc_set_fabric_port_channel` | Create, change or delete a port channel on an SD-Access fabric device. |
+| `catc_set_interface` | Change one switch port through Catalyst Center: shut / no shut, the access VLAN, the voice VLAN or the description (containment or remediation without writing a template). |
 | `catc_set_l2_handoff` | Set or remove a layer 2 handoff: a fabric VLAN extended out of a border port into a VLAN of a traditional network. |
 | `catc_set_l2_virtual_network` | Create, change or delete a layer 2 virtual network at an SD-Access fabric site. |
 | `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
