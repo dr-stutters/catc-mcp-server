@@ -12,6 +12,11 @@ minutes) arrives from a device.
 Both APIs are synchronous (no task) and page with a one-based offset. On the 3.2.2 lab appliance the
 custom list answers {"response": [], "page": {"limit": 3, "offset": 1, "count": 0, "sortBy": [...]}}
 and `page.count` is the size of the page, not the total, so it isn't used as one.
+
+The system list without `issueEnabled` returns only the ENABLED definitions on 3.2.2 (a disabled one is
+missing even with `name=` set; six 2.4 GHz radio definitions ship disabled), so every lookup or listing
+that isn't filtered on enabled asks twice, issueEnabled=true and issueEnabled=false, and merges by id.
+Custom rules come back with `severity` as a string ("5") although the spec says integer.
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
@@ -76,9 +81,20 @@ def system_row(d: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in row.items() if v is not None}
 
 
+def _severity(value: Any) -> int | None:
+    """A rule's syslog severity: the appliance returns it as a string ("5"), the spec as an integer."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 def rule_text(r: dict[str, Any]) -> str:
-    sev = r.get("severity")
-    parts = [f"severity {sev} ({SEVERITIES.get(int(sev), '?')})" if isinstance(sev, int) else "any severity"]
+    sev = _severity(r.get("severity"))
+    parts = [f"severity {sev} ({SEVERITIES.get(sev, '?')})" if sev is not None else "any severity"]
     if r.get("facility") or r.get("mnemonic"):
         parts.append(
             f"%{r.get('facility') or '*'}-{sev if sev is not None else '*'}-{r.get('mnemonic') or '*'}"
@@ -112,6 +128,29 @@ def _matches(d: dict[str, Any], search: str) -> bool:
     return any(s in str(d.get(k) or "").lower() for k in ("name", "displayName", "description"))
 
 
+async def fetch_system(app: CatcApp, params: dict[str, Any], enabled: bool | None = None) -> Page:
+    """System definitions matching `params`. With `enabled` None both states are asked for and merged by id
+    (the unfiltered GET leaves out disabled definitions on 3.2.2)."""
+    states = [enabled] if enabled is not None else [True, False]
+    rows: list[Any] = []
+    seen: set[str] = set()
+    complete = True
+    for state in states:
+        page = await fetch_all(
+            app.pager, app.api, SYSTEM, {**params, "issueEnabled": str(state).lower()}, cap=2000
+        )
+        complete = complete and page.complete
+        for d in page.items:
+            if not isinstance(d, dict):
+                continue
+            key = str(d.get("id") or d.get("name"))
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(d)
+    return Page(items=rows, offset=0, total=len(rows) if complete else None, more=not complete)
+
+
 async def find_system(app: CatcApp, definition: str, profile: str) -> dict[str, Any]:
     """A system definition by id, name (e.g. BGP_Down) or display name, in one Assurance profile."""
     key = definition.strip()
@@ -121,12 +160,11 @@ async def find_system(app: CatcApp, definition: str, profile: str) -> dict[str, 
         if isinstance(d, dict) and d.get("id"):
             return d
         raise NotFound(f"No system issue definition {key}.")
-    data = await app.api.get(SYSTEM, {"name": key, "profileId": profile})
-    rows = [d for d in ensure_list((data or {}).get("response")) if isinstance(d, dict)]
-    exact = [d for d in rows if d.get("name") == key]
+    rows = (await fetch_system(app, {"name": key, "profileId": profile})).items
+    exact = [d for d in rows if isinstance(d, dict) and d.get("name") == key]
     if exact:
         return exact[0]
-    everything = await fetch_all(app.pager, app.api, SYSTEM, {"profileId": profile}, cap=2000)
+    everything = await fetch_system(app, {"profileId": profile})
     by_display = [
         d
         for d in everything.items
@@ -203,8 +241,6 @@ def register(reg: ToolRegistrar) -> None:
             params["priority"] = priority
         if kind == "system":
             path = SYSTEM
-            if enabled is not None:
-                params["issueEnabled"] = str(enabled).lower()
             if device_type:
                 params["deviceType"] = device_type
         else:
@@ -213,7 +249,19 @@ def register(reg: ToolRegistrar) -> None:
             path = CUSTOM
             if enabled is not None:
                 params["isEnabled"] = str(enabled).lower()
-        if search:
+        if kind == "system":
+            # Both enabled states unless filtered: the unfiltered GET hides disabled definitions.
+            everything = await fetch_system(app, params, enabled)
+            rows = [
+                d for d in everything.items if isinstance(d, dict) and (not search or _matches(d, search))
+            ]
+            page = Page(
+                items=rows[offset : offset + limit],
+                offset=offset,
+                total=len(rows) if everything.complete else None,
+                more=not everything.complete,
+            )
+        elif search:
             everything = await fetch_all(app.pager, app.api, path, params, cap=2000)
             rows = [d for d in everything.items if isinstance(d, dict) and _matches(d, search)]
             page = Page(items=rows[offset : offset + limit], offset=offset, total=len(rows))
