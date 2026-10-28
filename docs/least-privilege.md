@@ -58,6 +58,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 | Network Operations.LAN Automation | Read | LAN automation sessions and status (exists once `sda` is deployed; 403 without it) |
 | Security.Audit Log | Read | `catc_list_audit_logs`, `catc_recent_activity` |
 | Security.SSI | Read | `catc_get_ssi_readiness` (Security Service Insertion readiness). On 3.2.2 custom roles get 403 on the SSI API even with this (Read is its maximum); only a SUPER-ADMIN-ROLE account read it in the live test |
+| Security.Security Advisory | Read | `catc_security_advisories` and the PSIRT part of `catc_lifecycle_signals` (403 without it) |
 | System.System Settings | Read | `catc_get_policy_servers` (ISE integration) |
 | System.System Administration | Read | `catc_get_system_health`, `catc_list_backups`, `catc_get_backup_status`, the account check in `catc_status` |
 | Utilities.Command Runner | Read | `catc_run_show_commands` (Read is enough for show commands) |
@@ -65,7 +66,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 
 **Denied** (not used by any read tool): Extensions.ITSM, Network Design.Wireless Maps (floor writes only), Policy.Application
 Policy, Policy.IP Based Access Control, Security.Rogue and aWIPS,
-Security Advisory, Stealthwatch, Umbrella, Utilities.Bonjour, Utilities.Remote Support Authorization.
+Stealthwatch, Umbrella, Utilities.Bonjour, Utilities.Remote Support Authorization.
 
 **Expected denial in the read tier:** `catc_preview_template`. The template preview API is a `PUT` that needs
 *Network Design.Profiles & Settings* **Write**; the read-only role doesn't get it. Use the rw account to preview
@@ -83,7 +84,9 @@ Everything in `mcp-catc-ro`, plus Write on:
 | Network Management.Discovery | `catc_create_discovery` |
 | Network Management.Hierarchy | `catc_create_site`, `catc_update_site`, `catc_assign_devices_to_site` |
 | Network Management.Inventory | `catc_resync_devices`, `catc_set_device_role` (`PUT network-device/brief`), tags and tag members |
-| Network Operations.Compliance | `catc_run_compliance`, compliance policies |
+| Network Operations.Compliance | `catc_run_compliance`, compliance policies, the field notice scan of `catc_trigger_lifecycle_scan` |
+| Security.Security Advisory | the security advisory scan of `catc_trigger_lifecycle_scan` |
+| Utilities.Machine Reasoner | the network bug scan of `catc_trigger_lifecycle_scan` (the permission that scans for Cisco bugs) |
 | Network Operations.Device Replacement & Refresh | `catc_mark_device_for_replacement` |
 | Network Operations.SWIM | `catc_tag_golden_image` |
 

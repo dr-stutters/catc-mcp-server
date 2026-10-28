@@ -364,7 +364,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (102)
+### Read (105)
 
 | Tool | What it does |
 |---|---|
@@ -379,6 +379,7 @@ got unhealthy.
 | `catc_device_360` | Everything about one network device in one call: inventory record, site, assurance health (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped, with how long ago each last occurred), interface counts and the ports that are down while admin-up, compliance status and end-of-life (EoX) alerts. |
 | `catc_diff_config` | Compare two config exports, or an export with live Catalyst Center: items added or removed and, for changed items, each field that differs (before and after values). |
 | `catc_diff_template_versions` | Unified diff between two versions of a template (or a version and the uncommitted draft), with lines added and removed. |
+| `catc_eox_report` | End-of-life (EoX) report from Catalyst Center: the network summary (hardware, software and module alerts), each device's scan status, alert count and alert types, and the bulletins behind them (end of sale, end of software maintenance and vulnerability support, last date of support, flagged when already past, with the Cisco link). |
 | `catc_export_config` | Export Catalyst Center design intent as YAML, by name and in a stable order: the site hierarchy, network settings set at each site (not inherited), credentials (type, description and username only: secrets are never exported), template projects and templates (secrets in template bodies masked), network profiles with their templates and sites, global IP pools and site reservations, SSIDs (passphrases masked), wireless profiles, tags with their dynamic rules, and compliance policies with their rules and sites. |
 | `catc_export_templates` | Export a template project, or one template, as a JSON document: content, variables, device types and every committed version with its comment, author and time. |
 | `catc_fabric_health` | SD-Access health as Catalyst Center Assurance scores it. |
@@ -422,6 +423,7 @@ got unhealthy.
 | `catc_get_wlc_deployments` | Configuration deployments Catalyst Center ran on a Catalyst 9800 WLC, newest first: per config group (WLAN, policy and RF groups, or the site settings of a site-based provision), its status, when it ran and Catalyst Center's error and remedy when it failed. |
 | `catc_health_trend` | Health over a time window: min, average, latest, the worst moment and the dips (when each started, how long it lasted, how low it went), whether it is getting worse, and a short series of points. |
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
+| `catc_lifecycle_signals` | Every lifecycle and security signal Catalyst Center has for one device or the devices under a site, in one read: EoX alerts, Cisco security advisories (PSIRT), field notices, network bugs and insecure configurations (deprecated or weak CLI such as telnet, SNMPv1/v2c communities, HTTP), with one verdict line per signal and a row per device. |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
 | `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
@@ -463,6 +465,7 @@ got unhealthy.
 | `catc_recent_activity` | What happened on this device or site recently? Queries Catalyst Center's assurance issues, assurance events (syslog, traps), platform event notifications and the audit log for the same window and scope, and merges them newest first with a `source` column. |
 | `catc_run_show_commands` | Run read-only `show` commands live on managed devices through Catalyst Center's command runner and return each device's output. |
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
+| `catc_security_advisories` | Cisco security advisories (PSIRTs) Catalyst Center matched against the devices: per device the scan status, scan mode and advisory count, and the advisories themselves (id, impact rating, CVSS, CVEs, first fixed releases per vulnerable version, Cisco link, affected devices), highest CVSS first. |
 | `catc_site_health_report` | One report on a site over a window: health now, the device and client trends with their dips and direction, when issues were raised, the worst devices and clients with the issue behind each, issues that keep coming back, AI-driven insights where available, and a one-line verdict. |
 | `catc_snapshot` | Take a compact, versioned snapshot of Cisco Catalyst Center health for a pre/post change check: device reachability, health score and software version, health per site, compliance per device and type, open P1/P2 Assurance issues. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
@@ -471,7 +474,7 @@ got unhealthy.
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (53)
+### Write (54)
 
 | Tool | What it does |
 |---|---|
@@ -518,6 +521,7 @@ got unhealthy.
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
 | `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
+| `catc_trigger_lifecycle_scan` | Start Catalyst Center's field notice, network bug and/or security advisory scans now instead of waiting for the scheduled run (EoX has no on-demand scan). |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
