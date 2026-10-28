@@ -801,8 +801,10 @@ say so in that section of the report ("not available: <reason>") and carry on; a
 healthy one.
 
 1. Scope. {tool_ref("catc_get_site")} for "{path}" (it must exist; stop and say so if it doesn't), then
-   {tool_ref("catc_list_devices")} with site "{path}" (all pages): hostname, IP, role, platform, software
-   version, reachability. This device list is the scope of every later step.
+   {tool_ref("catc_list_devices")} with site "{path}" (all pages; it includes the devices on every site below
+   "{path}", such as a building's floors, and names each device's assigned site): hostname, IP, role,
+   platform, software version, reachability, site. This device list is the scope of every later step; if
+   it is empty while the site has child sites, say so instead of reporting an empty site as healthy.
 2. Maintenance first. {tool_ref("catc_list_maintenance_windows")} with site "{path}": note each window that is
    IN_PROGRESS now or overlapped the last {w} h (start, end, devices). Devices in maintenance mode raise no
    issues and get no health, and a change inside a window is expected: a device's health dip, issue or
@@ -817,8 +819,8 @@ healthy one.
    {tool_ref("catc_get_client_health")}. Per device: {tool_ref("catc_list_device_health")} with site "{path}"
    (POOR and FAIR devices, CPU/memory, link errors, reachability); trend a POOR device with
    {tool_ref("catc_health_trend")} scope "device" to see whether it is new or chronic.
-4. Issues. {tool_ref("catc_list_issues")} with site "{path}", status "active" and hours {w}, and again with
-   site "{path}/*" (the filter matches the site exactly; the wildcard adds its child sites); for each P1/P2
+4. Issues. {tool_ref("catc_list_issues")} with site "{path}", status "active" and hours {w} (the issues of
+   "{path}" and its child sites, floors included); for each P1/P2
    {tool_ref("catc_get_issue")} (root cause, suggested actions). Issues stay active for hours after they
    clear: compare last_seen with now and with the device's live reachability before calling one current.
    What keeps coming back: {tool_ref("catc_issue_recurrence")} with site "{path}" and hours {w}.
@@ -838,11 +840,16 @@ healthy one.
 8. Rank the findings, most severe first, one line each: the device (or the site), what is wrong, the
    evidence (value and time), and the step that found it. Order:
    1. unreachable devices and P1 issues that are still current;
-   2. POOR health (device or site) and P2 issues; a site or device trend that is getting worse;
+   2. POOR health (device or site) and P2 issues; a site or device trend that is still getting worse.
+      direction "worse" compares the first and second half of the window, so a dip that has ended reads
+      as worse too: before ranking it here, check the trend's latest value and its dips (a dip with an
+      end and latest back above the dip threshold is recovered: rank it 6 as a past dip, with its
+      start, end and lowest value; an ongoing dip or a latest still low stays here);
    3. compliance failures (security advisories and your compliance policies before startup vs running);
    4. devices not on the golden image;
    5. template drift (failed before behind);
-   6. FAIR health, P3/P4 issues, recurring issues that are cleared now, no golden image tagged.
+   6. FAIR health, P3/P4 issues, recurring issues that are cleared now, recovered dips, no golden image
+      tagged.
    Merge duplicates (a down link raising an issue and a POOR score is one finding). Devices under
    maintenance (step 2) never appear in the ranking.
 9. Report: a one-line verdict for {path} (healthy, watch, or act now) with the counts per rank; the ranked

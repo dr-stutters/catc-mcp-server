@@ -431,14 +431,21 @@ async def test_site_health_review_renders_every_section() -> None:
     ):
         assert f"`{tool}`" in text, tool
     assert 'site "Global/mcp-test-lab/mcp-test-bldg"' in text and "hours 168" in text
-    # The violations tool refuses a bare site; issues need the wildcard for child sites.
+    # The violations tool refuses a bare site.
     assert "with device set to each\n   non-compliant device" in text
-    assert 'site "Global/mcp-test-lab/mcp-test-bldg/*"' in text
+    # #264: the scope includes the building's floors (catc_list_devices includes child sites), and the
+    # issues site filter already covers them, so there is no second wildcard call.
+    scope = text[text.index("1. Scope") : text.index("2. Maintenance")]
+    assert "includes the devices on every site below" in scope and "floors" in scope
+    assert 'site "Global/mcp-test-lab/mcp-test-bldg/*"' not in text
+    # #264: a "worse" trend whose dip has ended is a recovered dip, not a current finding.
     # D73: maintenance comes before any finding and its devices stay out of the ranking.
     assert text.index("catc_list_maintenance_windows") < text.index("catc_site_health_report")
     assert "is NOT a finding" in text and "never appear in the ranking" in text
     ranking = text[text.index("8. Rank") : text.index("9. Report")]
     assert ranking.index("unreachable") < ranking.index("golden image") < ranking.index("template drift")
+    # #264: a "worse" trend whose dip has ended is a recovered dip, not a current finding.
+    assert "check the trend's latest value and its dips" in ranking and "recovered dips" in ranking
     assert "next steps" in text[text.index("9. Report") :]
     # Read tier: the next steps name write tools without running them.
     assert "Run nothing from the next steps here" in text

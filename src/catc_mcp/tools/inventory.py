@@ -21,6 +21,7 @@ from catc_mcp._core import (
 from catc_mcp._core.http import fetch_all, page_of
 from catc_mcp.client import CatcApp
 from catc_mcp.common import DEVICE_FIELDS, ensure_list, pick, resolve_device, resolve_site
+from catc_mcp.safety import ASSIGNED, devices_by_id, site_assignments
 
 DeviceRef = Annotated[str, Field(description="Device hostname, management IP, serial number or id")]
 
@@ -129,15 +130,25 @@ def register(reg: ToolRegistrar) -> None:
         serial: Annotated[str | None, Field(description="Serial number")] = None,
         software_version: Annotated[str | None, Field(description="Software version, e.g. '17.9.4'")] = None,
         site: Annotated[
-            str | None, Field(description="Only devices assigned to this site (id or name hierarchy)")
+            str | None,
+            Field(
+                description="Only devices at this site (id or name hierarchy) and, by default, every site "
+                "below it (a building's floors, an area's buildings)"
+            ),
         ] = None,
+        include_children: Annotated[
+            bool,
+            Field(description="With site: also devices at its child sites; false = the exact site only"),
+        ] = True,
         limit: Annotated[int, Field(ge=1, le=500)] = 50,
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """List network devices in the Catalyst Center inventory with hostname, management IP,
-        platform, software version, role, reachability and serial. Filters combine (AND). Use the
-        hostname/IP/id with catc_get_device or catc_device_360 for details."""
+        platform, software version, role, reachability and serial. Filters combine (AND). With `site`, a
+        building includes the devices on its floors (each row names its assigned site); pass
+        include_children=false for that site's own devices only. Use the hostname/IP/id with
+        catc_get_device or catc_device_360 for details."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {
             k: v
@@ -157,31 +168,26 @@ def register(reg: ToolRegistrar) -> None:
         if site:
             s = await resolve_site(app, site)
             extra["site"] = s.get("nameHierarchy")
-            if s.get("type") == "global":
-                pass
-            else:
-                assigned = await fetch_all(
-                    app.pager,
-                    app.api,
-                    "/dna/intent/api/v1/networkDevices/assignedToSite",
-                    {"siteId": s["id"]},
-                )
-                ids = [a["deviceId"] for a in assigned.items if isinstance(a, dict) and a.get("deviceId")]
-                if not ids:
+            if s.get("type") != "global":
+                if include_children:
+                    extra["includes_child_sites"] = True
+                    assignments = await site_assignments(app, s)
+                else:
+                    assigned = await fetch_all(app.pager, app.api, ASSIGNED, {"siteId": s["id"]})
+                    assignments = [
+                        {"siteNameHierarchy": s.get("nameHierarchy"), **a}
+                        for a in assigned.items
+                        if isinstance(a, dict) and a.get("deviceId")
+                    ]
+                where = {str(a["deviceId"]): a.get("siteNameHierarchy") for a in assignments}
+                if not where:
                     return list_result(
                         page_of([], limit=limit, offset=offset), fmt=response_format, extra=extra
                     )
                 # id= ignores other filters, so filter client-side when both are given.
-                devices = []
-                for i in range(0, len(ids), 100):
-                    chunk = ensure_list(
-                        await app.get_response(
-                            "/dna/intent/api/v1/network-device", {"id": ",".join(ids[i : i + 100])}
-                        )
-                    )
-                    devices += [d for d in chunk if isinstance(d, dict)]
-                devices = [d for d in devices if _matches(d, params)]
-                rows = [pick(d, DEVICE_FIELDS) for d in devices]
+                devices = [d for d in await devices_by_id(app, sorted(where)) if _matches(d, params)]
+                rows = [{**pick(d, DEVICE_FIELDS), "site": where.get(str(d.get("id")))} for d in devices]
+                rows.sort(key=lambda r: (str(r.get("site") or ""), str(r.get("hostname") or "")))
                 return list_result(
                     page_of(rows, limit=limit, offset=offset), fmt=response_format, extra=extra
                 )
