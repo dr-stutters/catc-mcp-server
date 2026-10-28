@@ -363,7 +363,9 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
   the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
   When the enterprise CA is renewed or replaced, `catc_import_trusted_certificate` puts the new CA chain in
   Catalyst Center's trust store (root first; leaf, expired and key-carrying PEMs refused in the preview)
-  before ISE's leaves are re-issued.
+  before ISE's leaves are re-issued. There is no API read of the trust store, so the preview names earlier
+  imports of the same serial from the audit log (a re-import overwrites the entry, harmless), and the result
+  reads the audit log back for the subject, issuer and serial Catalyst Center recorded.
 - **SD-Access fabric AAA:** `catc_check_fabric_aaa(fabric_site)` reads every fabric device live (one command
   runner request): the RLOC its RADIUS comes from (Loopback0), each RADIUS server's state (DEAD, dead count,
   automate-tester), TrustSec environment data and PAC, with a verdict and the fix per device. Pass the ise
