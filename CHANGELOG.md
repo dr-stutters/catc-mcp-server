@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.17.0 (2026-10-28)
+
+Lifecycle and security signals, Assurance issue definitions, port actions, bulk provisioning by site and the weekly
+site review. Core 0.15.0 (0.17.0's `suite_access_review` needs `catc_list_users` and ISE admin tools not built yet).
+208 tools (106 read, 57 write, 45 dangerous) and ten prompts.
+
+### Added
+- `catc_eox_report`, `catc_security_advisories`, `catc_lifecycle_signals` (EoX, PSIRT, field notices, bugs, insecure
+  configurations) and the write-tier `catc_trigger_lifecycle_scan` (D56, #256); least-privilege roles gain Security
+  Advisory and Machine Reasoner.
+- `catc_list_issue_definitions`, `catc_update_issue_definition`, `catc_create_custom_issue` and
+  `catc_delete_custom_issue` (D53, #255): Assurance issue settings (enable/disable, priority, threshold) and
+  syslog-pattern custom issues.
+- `catc_set_interface` (dangerous; D48, #253): shut/no shut, access VLAN, voice VLAN or description on one switch
+  port through Catalyst Center's interface API, with Catalyst Center's dry run, an uplink/trunk guard and the undo in
+  the preview.
+- `catc_write_memory(devices)` (D65, #254) saves running to startup config on devices as one task with a per-device
+  result; the template-deploy warning names it.
+- `catc_provision_site` (D50, #250) provisions every assigned, unprovisioned device at a site in one previewed change,
+  with a result per device.
+- Prompt `catc_site_health_review` (read tier; D42, #251): one ranked weekly site report (health and trends, issues,
+  compliance, golden-image currency, template drift), with devices under a maintenance window kept out of the
+  findings, and next steps.
+- `catc_list_l3_handoffs` (D116, #249): border L3 handoffs per VN (VLAN, IPs, local/peer BGP AS, transit);
+  `catc_list_transit_networks` shows kind, control plane names and usage; `catc_get_sda_fabric` shows per-border BGP
+  AS and handoff counts.
+
+### Testing
+- Spec-conformance contract test (D52, #257): the unit suite checks every request against the bundled Catalyst
+  Center spec; `scripts/spec_audit.py` prints the report after a spec refresh.
+
 ## 0.16.0 (2026-10-28)
 
 Device maintenance windows and the client timeline. Core 0.15.0 (0.16.1 needs peer tools the suite pack's
