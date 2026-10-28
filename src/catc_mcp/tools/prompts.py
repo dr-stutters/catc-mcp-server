@@ -159,7 +159,7 @@ user's approval, then repeat the call with the confirm token. Stop and report if
         """Run a safe Day-N change with Catalyst Center: baseline (issues, compliance, config archive),
         per-device preview, safety-rail checks (device limit, window end), deploy, deployment status,
         CLI verification, a compliance run, the config diff, a post-change issue diff, and a written
-        rollback plan. Offers a maintenance window so the change doesn't page anyone (it ends on its own).
+        rollback plan. Offers a maintenance window so the change doesn't page anyone, and ends it after.
         Deploying is dangerous-tier; without it the prompt stops at a reviewed plan."""
         devices = [t.strip() for t in targets.split(",") if t.strip()]
         if any(ord(ch) < 32 for ch in template + targets + window_end + params):
@@ -232,7 +232,7 @@ with the confirm token. Keep a short log of each step's result for the summary.
      now until {window_end}, offer {tool_ref("catc_schedule_maintenance")} with devices={devs}, start a
      few minutes from now, end {window_end} and the change as description (show the preview: health and
      issues go dark for those devices, and the window runs to its end time: once started it can't be
-     cancelled or shortened, so pick an end that covers deploy + verification). Wait until it is
+     cancelled or moved, only ended now, so pick an end that covers deploy + verification). Wait until it is
      IN_PROGRESS before deploying. Without one, expect the change's own issues in step 9.
 5. Deploy: {tool_ref("catc_deploy_template")} with template "{template}", devices={devs},
    params {params_arg}. Show the preview and wait for approval. If the tool isn't available (the
@@ -254,9 +254,9 @@ with the confirm token. Keep a short log of each step's result for the summary.
 9. Issue diff: {tool_ref("catc_list_issues")} per device again (and
    {tool_ref("catc_recent_activity")} for the window) and report new issues since step 1. Inside a
    maintenance window the devices raise no issues: a quiet list proves nothing, so rely on steps 6-8.
-   The maintenance window ends on its own at its end time: Catalyst Center does not let a started
-   window be cancelled or shortened (NCIM90982), so make no cancel or update call for it. (One that
-   never started can still go: {tool_ref("catc_cancel_maintenance")}.) After the end time,
+   Once verified, end the silence: a started window can't be cancelled or given a new end time, so
+   {tool_ref("catc_update_maintenance_window")} with end_now=true (or {tool_ref("catc_cancel_maintenance")}
+   if it never started); if Catalyst Center refuses, it ends on its own at its end time. Then
    {tool_ref("catc_list_maintenance_windows")} to see it COMPLETED, and {tool_ref("catc_list_issues")}
    per device once more.
 10. Rollback plan (always write it, even when everything passed):

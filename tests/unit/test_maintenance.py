@@ -194,7 +194,7 @@ async def test_schedule_preview_then_apply(api: respx.MockRouter) -> None:
     assert p["start"] == "2099-01-10T11:00:00Z"
     effects = " ".join(preview["side_effects"])
     assert "no health" in effects and "full duration" in effects
-    assert "can't be cancelled or shortened once it starts" in effects
+    assert "can't be cancelled or given a new end time" in effects and "end_now=true" in effects
     assert preview.get("blast_radius") == 1
     sent = json.loads(post.calls.last.request.content)
     assert sent == {
@@ -301,7 +301,7 @@ async def test_update_running_window_is_blocked(api: respx.MockRouter, args: dic
     preview, _ = await flow("catc_update_maintenance_window", {"window": WIN_ID, **args})
     assert preview["status"] == "blocked" and not put.called
     assert len(preview["blockers"]) == 1 and RULE in preview["blockers"][0]
-    assert "NCIM90982" in preview["blockers"][0]
+    assert "NCIM90982" in preview["blockers"][0] and "end_now=true" in preview["blockers"][0]
     assert "instead of" not in " ".join(preview.get("side_effects") or [])
 
 
@@ -334,6 +334,128 @@ async def test_update_other_errors_pass_through(api: respx.MockRouter) -> None:
     assert "bad endTime" in str(exc.value) and "started window" not in str(exc.value)
 
 
+async def test_update_end_now_sends_minus_one(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    ended = window("COMPLETED", start=1_000, end=2_000)
+    put = api.put(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t6"}})
+
+    def reread(request: httpx.Request) -> httpx.Response:
+        w = ended if put.called else window("IN_PROGRESS", start=1_000, end=END_MS)
+        return httpx.Response(200, json={"response": w, "version": "1.0"})
+
+    api.get(f"{PATH}/{WIN_ID}").mock(side_effect=reread)
+    task_ok(api, "t6")
+    preview, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end_now": True})
+    assert preview["status"] == "preview" and "leave maintenance mode now" in preview["side_effects"][0]
+    sent = json.loads(put.calls.last.request.content)
+    assert sent["maintenanceSchedule"] == {"startTime": 1_000, "endTime": -1}
+    assert sent["description"] == "mcp-chg1 uplink swap" and sent["networkDeviceIds"] == [DEV_ID]
+    assert done is not None and done["status"] == "applied"
+    assert done["result"]["window"]["status"] == "COMPLETED" and "warnings" not in done["result"]
+
+
+async def test_update_end_now_only_for_running(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [window()])
+    put = api.put(f"{PATH}/{WIN_ID}")
+    preview, _ = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end_now": True})
+    assert preview["status"] == "blocked" and not put.called
+    assert "catc_cancel_maintenance" in preview["blockers"][0]
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        with pytest.raises(ToolError, match="nothing else"):
+            await run(
+                c, "catc_update_maintenance_window", {"window": WIN_ID, "end_now": True, "end": END_ISO}
+            )
+
+
+def update_routes(api: respx.MockRouter, kept_description: str) -> respx.Route:
+    """The window, then (after the PUT) the window as Catalyst Center 3.2.2 keeps it: the end moved to
+    14:30Z and a weekly repeat, the description as `kept_description`."""
+    rec = {"interval": 7, "recurrenceEndTime": END_MS + 30 * DAY}
+    put = api.put(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t7"}})
+
+    def reread(request: httpx.Request) -> httpx.Response:
+        w = (
+            window(end=END_MS + 5_400_000, recurrence=rec, description=kept_description)
+            if put.called
+            else window()
+        )
+        return httpx.Response(200, json={"response": w, "version": "1.0"})
+
+    api.get(f"{PATH}/{WIN_ID}").mock(side_effect=reread)
+    api.get(PATH).respond(json={"response": [], "version": "1.0"})
+    task_ok(api, "t7")
+    return put
+
+
+UPDATE_ARGS = {
+    "window": WIN_ID,
+    "end": "2099-01-10T14:30Z",
+    "description": "mcp-chg1 uplink swap (updated)",
+    "recurrence_days": 7,
+    "recurrence_end": "2099-02-09T13:00Z",
+}
+
+
+async def test_update_warns_when_description_is_kept(api: respx.MockRouter) -> None:
+    # The recorded case (3.2.2, run96 #252): task SUCCESS, end + recurrence applied, old description kept.
+    mock_device_lookup(api)
+    put = update_routes(api, kept_description="mcp-chg1 uplink swap")
+    preview, done = await flow("catc_update_maintenance_window", UPDATE_ARGS)
+    assert preview["status"] == "preview"  # a note, not a blocker: the times still change
+    assert "cancel it and schedule it again" in preview["side_effects"][0]
+    assert json.loads(put.calls.last.request.content)["description"] == "mcp-chg1 uplink swap (updated)"
+    assert done is not None and done["status"] == "applied"
+    [warning] = done["result"]["warnings"]
+    assert "did not apply the description" in warning and "mcp-chg1 uplink swap (updated)" in warning
+    assert done["result"]["window"]["end"] == "2099-01-10T14:30:00Z"
+
+
+async def test_update_no_warning_when_everything_applied(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    update_routes(api, kept_description="mcp-chg1 uplink swap (updated)")
+    _, done = await flow("catc_update_maintenance_window", UPDATE_ARGS)
+    assert done is not None and done["status"] == "applied" and "warnings" not in done["result"]
+
+
+async def test_update_warns_when_the_end_is_kept(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [window()])  # the re-read shows the old end
+    api.put(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t8"}})
+    task_ok(api, "t8")
+    _, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end": "2099-01-11T00:30Z"})
+    assert done is not None
+    [warning] = done["result"]["warnings"]
+    assert "end time" in warning and "2099-01-11T00:30:00Z" in warning
+
+
+async def test_update_no_false_warning_without_a_description(api: respx.MockRouter) -> None:
+    # A window with no description reads back as None; the body sends "": not a dropped rename.
+    mock_device_lookup(api)
+    w = window()
+    del w["description"]
+    put = api.put(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t9"}})
+
+    def reread(request: httpx.Request) -> httpx.Response:
+        got = dict(w, maintenanceSchedule=dict(w["maintenanceSchedule"], endTime=END_MS + 5_400_000))
+        return httpx.Response(200, json={"response": got if put.called else w, "version": "1.0"})
+
+    api.get(f"{PATH}/{WIN_ID}").mock(side_effect=reread)
+    api.get(PATH).respond(json={"response": [], "version": "1.0"})
+    task_ok(api, "t9")
+    _, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end": "2099-01-10T14:30Z"})
+    assert done is not None and done["status"] == "applied" and "warnings" not in done["result"]
+
+
+async def test_update_description_only_is_blocked(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [window()])
+    put = api.put(f"{PATH}/{WIN_ID}")
+    preview, _ = await flow("catc_update_maintenance_window", {"window": WIN_ID, "description": "mcp-new"})
+    assert preview["status"] == "blocked" and not put.called
+    assert any("cannot be updated" in b and "nothing to send" in b for b in preview["blockers"])
+
+
 async def test_update_stop_repeating_drops_recurrence(api: respx.MockRouter) -> None:
     mock_device_lookup(api)
     mock_windows(api, [window(recurrence={"interval": 7, "recurrenceEndTime": END_MS + 60 * DAY})])
@@ -355,12 +477,14 @@ async def test_cancel_upcoming(api: respx.MockRouter) -> None:
 
 
 async def test_cancel_running_is_blocked(api: respx.MockRouter) -> None:
+    # Recorded refusal (3.2.2, run96 #258): "The maintenance window is in progress ... cannot be deleted."
     mock_device_lookup(api)
     mock_windows(api, [window("IN_PROGRESS")])
     delete = api.delete(f"{PATH}/{WIN_ID}")
     preview, _ = await flow("catc_cancel_maintenance", {"window": WIN_ID})
     assert preview["status"] == "blocked" and not delete.called
     assert len(preview["blockers"]) == 1 and RULE in preview["blockers"][0]
+    assert "end_now=true" in preview["blockers"][0]
 
 
 async def test_cancel_maps_the_started_refusal(api: respx.MockRouter) -> None:
@@ -383,6 +507,15 @@ def test_started_refusal_matching() -> None:
     assert is_started_refusal(ValidationFailed(f"Bad request: {PUT_REFUSAL}", 400))
     assert not is_started_refusal(TaskFailed("NCSP10011: device unreachable"))
     assert "it ends at its end time" in started_blocker(None)
+
+
+async def test_schedule_says_a_started_window_is_locked(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [])
+    args = {"devices": ["edge-sw1"], "start": START_ISO, "end": END_ISO, "description": "mcp-chg3"}
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        preview = await run(c, "catc_schedule_maintenance", args)
+    assert any("can't be cancelled or given a new end time" in e for e in preview["side_effects"])
 
 
 async def test_ambiguous_description(api: respx.MockRouter) -> None:
