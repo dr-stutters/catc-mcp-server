@@ -70,6 +70,17 @@ SAMPLES = {
         "policy": "deny",
         "client_ips": "10.10.40.100, 10.10.40.101",
     },
+    "catc_guest_wireless_with_ise": {
+        "site": "Global/mcp-test-lab/mcp-test-bldg/Floor 1",
+        "wlc": "mcp-catc-wlc",
+        "ssid": "mcp-guest",
+        "portal": "Sponsored Guest Portal (default)",
+        "redirect_acl": "ACL_WEBAUTH_REDIRECT",
+        "guest_type": "Daily (default)",
+        "sponsor_group": "mcp-guest-sponsors",
+        "policy_set": "",
+        "keep": "false",
+    },
     "suite_change_check": {
         "site": "Global/mcp-test-lab/mcp-test-bldg",
         "phase": "pre",
@@ -467,3 +478,28 @@ async def test_site_health_review_validates(bad: dict[str, str], match: str) -> 
     async with Client(create_server(make_settings())) as c:
         with pytest.raises(Exception, match=match):
             await c.get_prompt("catc_site_health_review", bad)
+
+
+async def test_guest_wireless_prompt_renders() -> None:
+    args = SAMPLES["catc_guest_wireless_with_ise"]
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        text = (await c.get_prompt("catc_guest_wireless_with_ise", args)).messages[0].content.text  # type: ignore[union-attr]
+        kept = await c.get_prompt(
+            "catc_guest_wireless_with_ise", {**args, "keep": "true", "sponsor_group": ""}
+        )
+        keep_text = kept.messages[0].content.text  # type: ignore[union-attr]
+    # The ISE half before the Catalyst Center half, the SSID with every CWA field, CLI check, undo.
+    assert text.index("`ise_create_authz_profile`") < text.index("`catc_create_ssid`")
+    assert 'auth_server="auth_ise", mac_filtering=true, aaa_override=true' in text
+    assert 'pre_auth_acl="ACL_WEBAUTH_REDIRECT"' in text and "CentralizedWebAuth" in text
+    assert "show wlan name mcp-guest_profile" in text and 'flow="wireless-mab"' in text
+    assert "Undo (keep=false)" in text and "`ise_delete_policy_rule`" in text and "mcp-guest-sponsors" in text
+    assert "Keep it (keep=true)" in keep_text and "at least one sponsor group" in keep_text
+
+
+async def test_guest_wireless_prompt_rejects_bad_args() -> None:
+    args = SAMPLES["catc_guest_wireless_with_ise"]
+    async with Client(create_server(make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True))) as c:
+        for bad in ({"redirect_acl": "1 bad acl"}, {"ssid": "x" * 33}, {"wlc": 'w"1'}):
+            with pytest.raises(MCPError):
+                await c.get_prompt("catc_guest_wireless_with_ise", {**args, **bad})

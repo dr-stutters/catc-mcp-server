@@ -323,6 +323,14 @@ Catalyst Center-managed edge enforces it: the groups and the cell in ISE and on 
 `ise_set_egress_policy` and `ise_push_trustsec_matrix`, the clients' SGTs (`ise_find_session`), the edge's
 downloaded cell and bindings (`catc_get_group_policy_enforcement`), a test flow and the counters, and an undo
 preview. ISE stays the policy owner; the prompt never starts Catalyst Center's group-based policy migration.
+`catc_guest_wireless_with_ise` (dangerous tier, uses **ise**) builds guest Wi-Fi with ISE central web auth
+the validated way: guest type, sponsor group and portal in ISE, a CWA redirect authorization profile and the
+Wireless MAB redirect / Guest Flow permit rules scoped to the SSID, then a Guest web-auth SSID
+(`catc_create_ssid` with `l3_auth='web_auth'`, `auth_server='auth_ise'`, MAC filtering, AAA override and the
+redirect ACL as `pre_auth_acl`), a wireless profile at the AP location, the redirect ACL on the 9800, WLC
+provisioning, the read-back and 9800 CLI check (`show wlan name`, the policy profile's AAA override and NAC,
+CoA), `ise_policy_explain` for the redirect and permit hits, and an undo list (applied at the end with
+`keep=false`).
 `catc_decommission_device` (dangerous tier, uses **ise**) keeps a copy of the config, shows what
 un-provisioning loses (it deletes the device), untags it, deletes it with an explicit `clean_config`, and
 removes the NAD Catalyst Center leaves in ISE (`ise_get_nad`, `ise_delete_nad`).

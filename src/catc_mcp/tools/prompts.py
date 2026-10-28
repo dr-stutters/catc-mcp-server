@@ -1127,3 +1127,153 @@ decision alone. If the ise tools are missing, stop after step 2 and say the chan
 7. Summary: the cell before and after in ISE and on the edge, the clients' SGTs, the flow result with the
    counters, and the undo (preview only, not applied): {tool_ref("ise_set_egress_policy")} back to the step 2
    cell, then {tool_ref("ise_push_trustsec_matrix")}."""
+
+    @reg.prompt(title="Guest wireless with ISE central web auth", uses=["catc", "ise"], tier=Tier.DANGEROUS)
+    def catc_guest_wireless_with_ise(
+        site: Annotated[
+            str, Field(description="AP location the guest SSID is broadcast at: a floor or building path")
+        ],
+        wlc: Annotated[str, Field(description="Catalyst 9800 WLC (hostname or management IP), site-based")],
+        ssid: Annotated[str, Field(description="Guest SSID name (32 characters at most)")] = "mcp-guest",
+        portal: Annotated[
+            str, Field(description="ISE sponsored-guest or self-registration portal the redirect opens")
+        ] = "Sponsored Guest Portal (default)",
+        redirect_acl: Annotated[
+            str, Field(description="Redirect (pre-auth) ACL name on the WLC: permit = redirect to ISE")
+        ] = "ACL_WEBAUTH_REDIRECT",
+        guest_type: Annotated[str, Field(description="ISE guest type sponsors create accounts of")] = (
+            "Daily (default)"
+        ),
+        sponsor_group: Annotated[
+            str, Field(description="ISE sponsor group that may create them (empty: any that already does)")
+        ] = "",
+        policy_set: Annotated[
+            str, Field(description="ISE policy set the WLC's wireless MAB lands in (empty: find it)")
+        ] = "",
+        keep: Annotated[
+            Literal["true", "false"],
+            Field(description="false: a proof run, everything is undone (previewed) at the end"),
+        ] = "true",
+    ) -> str:
+        """Guest Wi-Fi with ISE central web auth (CWA), the validated campus design: the ISE half (guest
+        type, sponsor group, portal, a CWA redirect authorization profile and the MAB redirect / Guest Flow
+        permit rules) joined to the Catalyst Center half (a Guest web-auth SSID with ISE as the auth server,
+        MAC filtering, AAA override and the redirect ACL, a wireless profile at the AP location, WLC
+        provisioning), then the WLC's intended-vs-deployed diff, a 9800 CLI check, ISE's policy explain
+        and an undo list. Every write is preview-first; uses the ise server; dangerous tier (provisioning)."""
+        texts = (site, wlc, ssid, portal, redirect_acl, guest_type, sponsor_group, policy_set)
+        if any(not ch.isprintable() or ch in '"`' for t in texts for ch in t):
+            raise ValueError("Arguments must be printable text without quotes or backticks.")
+        loc, ctrl, name = site.strip(), wlc.strip(), ssid.strip()
+        if not (loc and ctrl and name):
+            raise ValueError("Give site, wlc and ssid.")
+        if len(name) > 32:
+            raise ValueError("ssid must be 32 characters at most.")
+        acl = redirect_acl.strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", acl):
+            raise ValueError(f"redirect_acl must be a WLC ACL name, not {redirect_acl!r}.")
+        portal_name, gtype = portal.strip(), guest_type.strip()
+        if not (portal_name and gtype):
+            raise ValueError("Give portal and guest_type.")
+        wlan = f"{name}_profile"[:32]
+        wprofile = f"{name}-wireless"
+        authz = f"{name}-cwa"
+        sg = sponsor_group.strip()
+        sponsor = (
+            f'sponsor group "{sg}" must list "{gtype}"\n   among its guest types: if it doesn\'t (or '
+            f'doesn\'t exist), preview {tool_ref("ise_set_sponsor_group")}\n   name "{sg}" adding '
+            f'guest_types ["{gtype}"] and keep its member groups.'
+            if sg
+            else f'at least one sponsor group must list\n   "{gtype}"; name it. If none does, stop and ask '
+            f"which sponsor group to extend with {tool_ref('ise_set_sponsor_group')}."
+        )
+        pset = f'policy set "{policy_set.strip()}"' if policy_set.strip() else "the policy set step 1 found"
+        end = (
+            f"""11. Undo (keep=false), each preview-first and applied only on approval, in this order:
+    {tool_ref("catc_unassign_profile_from_sites")} "{wprofile}" from ["{loc}"], then
+    {tool_ref("catc_provision_wireless_controller")} again with the same managed AP locations (the WLAN and
+    its policy profile leave the WLC), {tool_ref("catc_delete_wireless_profile")} "{wprofile}",
+    {tool_ref("catc_delete_ssid")} "{name}", the ACL template if step 6 deployed one (a negation template:
+    'no ip access-list extended {acl}'), then on ISE {tool_ref("ise_delete_policy_rule")} for
+    {name}-permit and {name}-redirect, {tool_ref("ise_delete_object")} kind authz_profile
+    "{authz}", and the sponsor group change from step 2 if it made one (put the guest types back). Re-read
+    with {tool_ref("catc_get_wireless_controller")} and {tool_ref("ise_get_policy_set")}: nothing named
+    {name} is left."""
+            if keep == "false"
+            else f"""11. Keep it (keep=true). Write the undo list down for the user, in this order:
+    unassign "{wprofile}" from the site and re-provision the WLC, delete the wireless profile, the SSID and
+    any ACL template, then on ISE the two rules ({tool_ref("ise_delete_policy_rule")}), the authorization
+    profile "{authz}" ({tool_ref("ise_delete_object")}) and any sponsor group change."""
+        )
+        return f"""Build guest Wi-Fi with ISE central web auth (CWA): SSID "{name}" at {loc} on WLC
+{ctrl}; the redirect sends unknown guests to ISE portal "{portal_name}" through redirect ACL {acl};
+sponsors create "{gtype}" accounts. Every write is preview-first: show the preview, wait for the user's
+approval, then repeat the call with the confirm token. Stop and report on any failure. The flow (Cisco ISE
+guest access prescriptive deployment guide, CWA with Catalyst 9800): the guest associates to an open SSID,
+the WLC sends MAB to ISE, ISE answers with a redirect URL and ACL, the guest logs in on the portal, ISE
+sends a CoA and the second MAB matches Guest Flow and is permitted.
+
+1. Preconditions. Catalyst Center: {tool_ref("catc_get_policy_servers")}: an ISE entry COMPLETE with
+   next_action "none" (note its PSN address: the ACL in step 6 needs it).
+   {tool_ref("catc_get_site_settings")} for "{loc}": client AAA (wireless) must point at that ISE; if
+   not, stop and name the fix ({tool_ref("catc_update_site_aaa_settings")}).
+   {tool_ref("catc_get_wireless_controller")} "{ctrl}": a Catalyst 9800 that Catalyst Center provisions
+   site-based (per-device configuration off; with it on, use {tool_ref("catc_set_wlan_security")}
+   instead and stop here); note its building and managed AP locations.
+   ISE: {tool_ref("ise_status")} (ERS up); {tool_ref("ise_get_nad")} for the WLC's management IP (a NAD
+   with a RADIUS secret, usually created by Catalyst Center's provisioning; without it stop). Then
+   {tool_ref("ise_policy_explain")} with nad="{ctrl}" and flow="wireless-mab": the set it selects is
+   where the guest rules go, and its authentication rule for MAB must have if_user_not_found CONTINUE
+   (read it with {tool_ref("ise_get_policy_set")}): otherwise ISE rejects the unknown guest MAC before
+   any redirect.
+2. ISE guest objects. {tool_ref("ise_list_guest_types")}: "{gtype}" exists (else ask: create it with
+   {tool_ref("ise_set_guest_type")} or pick another). {tool_ref("ise_list_sponsor_groups")}: {sponsor}
+   {tool_ref("ise_list_guest_portals")}: "{portal_name}" exists and is a sponsored-guest or
+   self-registration portal; note which guest types it allows.
+3. CWA authorization profile: {tool_ref("ise_create_authz_profile")} name "{authz}", access
+   ACCESS_ACCEPT, redirect {{type: CentralizedWebAuth, acl: {acl}, portal: {portal_name}}}. The preview
+   names the portal as ISE spells it and warns that the ACL must exist on the WLC (step 6).
+4. Authorization rules in {pset} ({tool_ref("ise_create_authz_rule")}; insert each at rank 0, so the
+   last one created ends up first):
+   a. "{name}-redirect": conditions ["Wireless_MAB", "Radius:Called-Station-ID endsWith :{name}"],
+      profiles ["{authz}"].
+   b. "{name}-permit": conditions ["Guest_Flow", "Radius:Called-Station-ID endsWith :{name}"],
+      profiles ["PermitAccess"] (a guest VLAN or dACL profile instead, if the user has one). Created
+      second, it sits above the redirect rule: after the portal login the CoA'd session matches Guest
+      Flow first.
+   Read the set back with {tool_ref("ise_get_policy_set")}.
+5. The SSID: {tool_ref("catc_create_ssid")} ssid="{name}", security="OPEN", guest=true,
+   l3_auth="web_auth", auth_server="auth_ise", mac_filtering=true, aaa_override=true,
+   pre_auth_acl="{acl}" (site Global, so the wireless profile can carry it). The preview must show
+   l3AuthType web_auth, authServer auth_ise, isMacFilteringEnabled, aaaOverride and aclName {acl}, and no
+   warning about MAC filtering or AAA override. Then {tool_ref("catc_create_wireless_profile")} name
+   "{wprofile}", ssids ["{name}"]; {tool_ref("catc_assign_profile_to_sites")} "{wprofile}" to ["{loc}"];
+   if the WLC is not at a building yet, {tool_ref("catc_assign_devices_to_site")} (the WLC to the
+   building above {loc}).
+6. The redirect ACL. {tool_ref("catc_run_show_commands")} on {ctrl}: "show ip access-lists {acl}".
+   Catalyst Center sends only the ACL name. If the ACL is missing, offer it as a Day-N template on the
+   WLC ({tool_ref("catc_create_template")} -> {tool_ref("catc_commit_template")} ->
+   {tool_ref("catc_deploy_template")}) with the guide's entries (deny = no redirect): deny udp any any eq
+   domain, deny udp any eq domain any, deny udp any any eq bootps, deny ip any host <PSN>, deny ip host
+   <PSN> any, permit tcp any any eq www, permit tcp any any eq 443 (the ISE portal on port 8443 stays
+   reachable because traffic to the PSN is never redirected).
+7. Provision: {tool_ref("catc_provision_wireless_controller")} device "{ctrl}" with its managed AP
+   locations (step 1's list plus {loc} if missing). Show the preview (it pushes the WLAN, policy profile
+   and tags of every profile at those locations) and wait for approval.
+8. Read back: {tool_ref("catc_get_wireless_controller")} "{ctrl}": provisioning succeeded and "{name}"
+   is among its SSIDs, admin up and managed. {tool_ref("catc_get_wlc_config")} wlc="{ctrl}" diff=true:
+   a WLC with per-device configuration models shows the wlan_profiles record "{wlan}" and its policy
+   profile in sync; a site-based WLC has no such models (the tool says so), and then step 9's CLI is
+   the proof.
+9. 9800 CLI ({tool_ref("catc_run_show_commands")} on {ctrl}): "show wlan name {wlan}" (Security: MAC
+   Filtering on with the ISE authorization list, no 802.1X, no web auth on the WLAN itself); "show
+   wireless profile policy detailed {wlan}" (AAA Override and NAC (RADIUS NAC) enabled, the accounting
+   list); "show running-config | section dynamic-author" (ISE as a CoA client: without it the portal
+   login never re-authorizes the guest).
+10. ISE side proof: {tool_ref("ise_policy_explain")} nad="{ctrl}", flow="wireless-mab", attributes
+    {{"Radius:Called-Station-ID": "aa-bb-cc-dd-ee-ff:{name}"}}: it must hit {name}-redirect with
+    profile {authz}; adding "Network Access:UseCase": "Guest Flow" must hit {name}-permit. No AP in a
+    lab means no real guest: say so instead of claiming an end-to-end login. Summary: what was created
+    where (ISE profile and rules, sponsor change, SSID, wireless profile and site, ACL, provisioning),
+    the CLI findings and the undo list.
+{end}"""
