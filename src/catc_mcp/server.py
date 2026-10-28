@@ -42,6 +42,7 @@ from catc_mcp.tools import (
     ports,
     profiles,
     prompts,
+    provisioning_settings,
     reports,
     sda,
     sda_aaa,
@@ -107,6 +108,9 @@ Workflows:
 - Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
   settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then
   re-provision (catc_provision_devices). Use templates for everything else.
+- Change control ("why was my deploy refused with 'config preview mandated'?"): catc_get_provisioning_settings
+  (require_preview, require_itsm_approval: global) -> catc_set_provisioning_settings (dangerous; ITSM approval
+  refused without an ITSM integration).
 - Admin login through ISE (external authentication): catc_get_external_authentication -> ISE NAD + an
   authorization profile returning 'Role=<role>' -> catc_set_external_authentication -> catc_test_login (local
   admin first: lockout risk).
@@ -204,6 +208,7 @@ REGISTER = [
     settings_writes.register,
     aaa.register,
     external_auth.register,
+    provisioning_settings.register,
     group_policy.register,
     pnp.register,
     template_writes.register,
