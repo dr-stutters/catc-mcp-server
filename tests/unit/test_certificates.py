@@ -330,6 +330,6 @@ async def test_serial_match_ignores_case_colons_and_zeros() -> None:
     assert certificates.serial_key("00:0A:bC") == certificates.serial_key("abc") == "abc"
     m = certificates.AUDIT_IMPORT_RE.search(
         "Successfully imported the certificate from issuer CN=Example CA, DC=example, DC=com and issued-to "
-        "CN=Example CA, DC=example, DC=com with serial number 40ec7263 to Trusted Certificates"
+        "CN=Example CA, DC=example, DC=com with serial number 1a2b3c4d to Trusted Certificates"
     )
-    assert m and m["serial"] == "40ec7263" and m["subject"] == "CN=Example CA, DC=example, DC=com"
+    assert m and m["serial"] == "1a2b3c4d" and m["subject"] == "CN=Example CA, DC=example, DC=com"
