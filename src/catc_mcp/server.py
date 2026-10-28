@@ -18,6 +18,7 @@ from catc_mcp.tools import (
     assurance,
     assurance_analytics,
     backups,
+    certificates,
     compliance,
     compliance_policies,
     config_import,
@@ -108,6 +109,8 @@ Workflows:
 - Admin login through ISE (external authentication): catc_get_external_authentication -> ISE NAD + an
   authorization profile returning 'Role=<role>' -> catc_set_external_authentication -> catc_test_login (local
   admin first: lockout risk).
+- Enterprise CA renewed or replaced: catc_import_trusted_certificate (the new CA chain) before the ISE/pxGrid
+  leaves are re-issued.
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
   commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Issues stay 'active' for
   hours after the problem clears: check last_seen and the live state before calling one current.
@@ -189,6 +192,7 @@ REGISTER = [
     ipam.register,
     platform.register,
     backups.register,
+    certificates.register,
     profiles.register,
     prompts.register,
     site_writes.register,
