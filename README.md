@@ -287,7 +287,8 @@ assign → provision → template deploy → verification, preview-first at ever
 archive) → per-device preview → rails (≤ 10 devices, window end) → deploy → deployment status → CLI
 check → config diff → compliance → issue diff → a written rollback plan (negation template or the
 pre-change archive). It offers a maintenance window (`catc_schedule_maintenance`) so the change's own
-alerts stay quiet, and ends it after verification. Without the dangerous tier it stops after the rails with a
+alerts stay quiet; a started window can't be cancelled or shortened (Catalyst Center refuses it), so
+it ends on its own at its end time. Without the dangerous tier it stops after the rails with a
 reviewed change plan.
 `catc_onboard_switch_with_nac` (write tier, uses the **ise** server too) checks the ISE integration
 (`catc_get_policy_servers`), sets the site's client AAA to ISE, onboards and provisions the switch,
