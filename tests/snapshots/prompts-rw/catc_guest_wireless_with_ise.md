@@ -21,7 +21,7 @@ the WLC sends MAB to ISE, ISE answers with a redirect URL and ACL, the guest log
 sends a CoA and the second MAB matches Guest Flow and is permitted.
 
 1. Preconditions. Catalyst Center: `catc_get_policy_servers`: an ISE entry COMPLETE with
-   next_action "none" (note its PSN address: the ACL in step 6 needs it).
+   next_action "none" (note its PSN address: the SSID in step 5 and the ACL in step 6 need it).
    `catc_get_site_settings` for "Global/mcp-test-lab/mcp-test-bldg/Floor 1": client AAA (wireless) must point at that ISE; if
    not, stop and name the fix (`catc_update_site_aaa_settings`).
    `catc_get_wireless_controller` "mcp-catc-wlc": a Catalyst 9800 that Catalyst Center provisions
@@ -52,16 +52,19 @@ sends a CoA and the second MAB matches Guest Flow and is permitted.
       Flow first.
    Read the set back with `ise_get_policy_set`.
 5. The SSID: `catc_create_ssid` ssid="mcp-guest", security="OPEN", guest=true,
-   l3_auth="web_auth", auth_server="auth_ise", mac_filtering=true, aaa_override=true,
-   pre_auth_acl="ACL_WEBAUTH_REDIRECT" (site Global, so the wireless profile can carry it). The preview must show
-   l3AuthType web_auth, authServer auth_ise, isMacFilteringEnabled, aaaOverride and aclName ACL_WEBAUTH_REDIRECT, and no
-   warning about MAC filtering or AAA override. Then `catc_create_wireless_profile` name
+   l3_auth="web_auth", auth_server="auth_ise", auth_servers=["<the PSN address from step 1>"],
+   mac_filtering=true, aaa_override=true (site Global, so the wireless profile can carry it). Catalyst
+   Center refuses a central web auth SSID without auth_servers (NCND03058). Leave pre_auth_acl out: ISE
+   returns the redirect ACL ACL_WEBAUTH_REDIRECT with the redirect (AAA override), and Catalyst Center accepts a
+   pre_auth_acl only when it knows the ACL (NCND03141). The preview must show l3AuthType web_auth,
+   authServer auth_ise, authServers, isMacFilteringEnabled and aaaOverride, no blocker, and no warning
+   about MAC filtering or AAA override. Then `catc_create_wireless_profile` name
    "mcp-guest-wireless", ssids ["mcp-guest"]; `catc_assign_profile_to_sites` "mcp-guest-wireless" to ["Global/mcp-test-lab/mcp-test-bldg/Floor 1"];
    if the WLC is not at a building yet, `catc_assign_devices_to_site` (the WLC to the
    building above Global/mcp-test-lab/mcp-test-bldg/Floor 1).
 6. The redirect ACL. `catc_run_show_commands` on mcp-catc-wlc: "show ip access-lists ACL_WEBAUTH_REDIRECT".
-   Catalyst Center sends only the ACL name. If the ACL is missing, offer it as a Day-N template on the
-   WLC (`catc_create_template` -> `catc_commit_template` ->
+   ISE names this ACL in the redirect, so it must exist on the WLC. If the ACL is missing, offer it as a
+   Day-N template on the WLC (`catc_create_template` -> `catc_commit_template` ->
    `catc_deploy_template`) with the guide's entries (deny = no redirect): deny udp any any eq
    domain, deny udp any eq domain any, deny udp any any eq bootps, deny ip any host <PSN>, deny ip host
    <PSN> any, permit tcp any any eq www, permit tcp any any eq 443 (the ISE portal on port 8443 stays

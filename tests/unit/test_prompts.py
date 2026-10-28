@@ -511,8 +511,9 @@ async def test_guest_wireless_prompt_renders() -> None:
         keep_text = kept.messages[0].content.text  # type: ignore[union-attr]
     # The ISE half before the Catalyst Center half, the SSID with every CWA field, CLI check, undo.
     assert text.index("`ise_create_authz_profile`") < text.index("`catc_create_ssid`")
-    assert 'auth_server="auth_ise", mac_filtering=true, aaa_override=true' in text
-    assert 'pre_auth_acl="ACL_WEBAUTH_REDIRECT"' in text and "CentralizedWebAuth" in text
+    assert 'auth_server="auth_ise", auth_servers=["<the PSN address from step 1>"]' in text
+    assert "mac_filtering=true, aaa_override=true" in text
+    assert "CentralizedWebAuth" in text and 'pre_auth_acl="' not in text and "NCND03058" in text
     assert "show wlan name mcp-guest_profile" in text and 'flow="wireless-mab"' in text
     assert "Undo (keep=false)" in text and "`ise_delete_policy_rule`" in text and "mcp-guest-sponsors" in text
     assert "Keep it (keep=true)" in keep_text and "at least one sponsor group" in keep_text
