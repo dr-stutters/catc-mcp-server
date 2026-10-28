@@ -821,6 +821,10 @@
       "tier": "dangerous",
       "title": "Provision devices"
     },
+    "catc_provision_site": {
+      "tier": "dangerous",
+      "title": "Provision every device at a site"
+    },
     "catc_provision_wireless_controller": {
       "tier": "dangerous",
       "title": "Provision wireless controller"
