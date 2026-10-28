@@ -15,13 +15,17 @@ from fastmcp.exceptions import ToolError
 from catc_mcp._core import InvalidRequest
 from catc_mcp._core.errors import TaskFailed, ValidationFailed
 from catc_mcp.server import create_server
+from catc_mcp.tools import maintenance
 from catc_mcp.tools.maintenance import (
     duration_text,
     is_started_refusal,
+    now_ms,
+    overlaps,
     schedule_blockers,
     started_blocker,
     to_iso,
     to_ms,
+    window_row,
 )
 
 from .conftest import make_settings
@@ -334,17 +338,43 @@ async def test_update_other_errors_pass_through(api: respx.MockRouter) -> None:
     assert "bad endTime" in str(exc.value) and "started window" not in str(exc.value)
 
 
-async def test_update_end_now_sends_minus_one(api: respx.MockRouter) -> None:
-    mock_device_lookup(api)
-    ended = window("COMPLETED", start=1_000, end=2_000)
+def ended_window(status: str | None, start: int = START_MS) -> dict[str, Any]:
+    """The recorded shape after end_now (Catalyst Center 3.2.2, run96 #269): endTime stays -1, the status
+    reads null for a few seconds and then COMPLETED."""
+    w = window("IN_PROGRESS", start=start, end=-1)
+    w["maintenanceSchedule"]["status"] = status
+    w["maintenanceSchedule"]["recurrence"] = None
+    return w
+
+
+def end_now_routes(
+    api: respx.MockRouter, after: list[dict[str, Any]], start: int = 1_000
+) -> tuple[respx.Route, respx.Route]:
+    """IN_PROGRESS before the PUT; after it, the re-reads answer `after` in order (the last one repeats)."""
     put = api.put(f"{PATH}/{WIN_ID}").respond(202, json={"response": {"taskId": "t6"}})
+    reads: list[int] = []
 
     def reread(request: httpx.Request) -> httpx.Response:
-        w = ended if put.called else window("IN_PROGRESS", start=1_000, end=END_MS)
+        if not put.called:
+            w = window("IN_PROGRESS", start=start, end=END_MS)
+        else:
+            w = after[min(len(reads), len(after) - 1)]
+            reads.append(1)
         return httpx.Response(200, json={"response": w, "version": "1.0"})
 
-    api.get(f"{PATH}/{WIN_ID}").mock(side_effect=reread)
+    get = api.get(f"{PATH}/{WIN_ID}").mock(side_effect=reread)
     task_ok(api, "t6")
+    return put, get
+
+
+@pytest.fixture
+def no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(maintenance, "END_NOW_POLL", 0)
+
+
+async def test_update_end_now_sends_minus_one(api: respx.MockRouter, no_wait: None) -> None:
+    mock_device_lookup(api)
+    put, _ = end_now_routes(api, [ended_window("COMPLETED", start=1_000)])
     preview, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end_now": True})
     assert preview["status"] == "preview" and "leave maintenance mode now" in preview["side_effects"][0]
     sent = json.loads(put.calls.last.request.content)
@@ -352,6 +382,79 @@ async def test_update_end_now_sends_minus_one(api: respx.MockRouter) -> None:
     assert sent["description"] == "mcp-chg1 uplink swap" and sent["networkDeviceIds"] == [DEV_ID]
     assert done is not None and done["status"] == "applied"
     assert done["result"]["window"]["status"] == "COMPLETED" and "warnings" not in done["result"]
+
+
+async def test_end_now_rereads_until_completed(api: respx.MockRouter, no_wait: None) -> None:
+    """Recorded: the immediate re-read has status null and endTime -1, a few seconds later COMPLETED."""
+    mock_device_lookup(api)
+    start = now_ms() - 30 * 60_000
+    _, get = end_now_routes(
+        api, [ended_window(None, start), ended_window(None, start), ended_window("COMPLETED", start)], start
+    )
+    _, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end_now": True})
+    assert done is not None and done["status"] == "applied"
+    res = done["result"]
+    row = res["window"]
+    assert row["status"] == "COMPLETED" and row["end"] is None and row["ended_early"] is True
+    assert "1969" not in json.dumps(res)
+    assert row["duration"] in ("30m", "31m")  # start to the time the end was sent, not "0m"
+    sent = datetime.fromisoformat(res["ended_at"].replace("Z", "+00:00"))
+    assert abs(sent.timestamp() * 1000 - now_ms()) < 60_000
+    assert "note" not in res and "warnings" not in res
+    assert get.call_count >= 4  # preview + apply's own read + three re-reads after the PUT
+
+
+async def test_end_now_says_ending_while_status_is_null(api: respx.MockRouter, no_wait: None) -> None:
+    mock_device_lookup(api)
+    _, get = end_now_routes(api, [ended_window(None)])
+    before = get.call_count
+    _, done = await flow("catc_update_maintenance_window", {"window": WIN_ID, "end_now": True})
+    assert done is not None
+    res = done["result"]
+    assert res["window"]["status"] is None and res["window"]["ended_early"] is True
+    assert res["window"]["end"] is None and "COMPLETED within seconds" in res["note"]
+    assert "warnings" not in res
+    assert get.call_count - before >= maintenance.END_NOW_READS  # bounded: gave up after ~10 s
+
+
+async def test_list_shows_ended_early_not_1969(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [ended_window("COMPLETED"), window()])
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_list_maintenance_windows", {"response_format": "json"})
+        text = await c.call_tool("catc_list_maintenance_windows", {})
+    ended, upcoming = out["results"]
+    assert ended.get("end") is None and ended["ended_early"] is True and "duration" not in ended
+    assert upcoming["end"] == "2099-01-10T13:00:00Z" and "ended_early" not in upcoming
+    assert "end_now" in out["ended_early"]
+    md = text.content[0].text  # type: ignore[union-attr]
+    assert "1969" not in md and "ended_early" in md
+
+
+async def test_cancel_preview_of_an_ended_window(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_windows(api, [ended_window("COMPLETED")])
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        preview = await run(c, "catc_cancel_maintenance", {"window": WIN_ID})
+    row = preview["preview"]["window"]
+    assert preview["status"] == "preview" and row["status"] == "COMPLETED"
+    assert row["end"] is None and row["ended_early"] is True and "duration" not in row
+    assert "1969" not in json.dumps(preview)
+
+
+def test_overlaps_ignores_an_ended_window() -> None:
+    """endTime -1 is below any start, so an ended window never counts as overlapping."""
+    ended = ended_window(None, start=START_MS - DAY)
+    assert overlaps([ended], START_MS, END_MS) == []
+    assert overlaps([ended_window("COMPLETED", start=1_000)], 0, END_MS) == []
+    assert overlaps([window("IN_PROGRESS")], START_MS, END_MS)  # a real window still does
+
+
+def test_window_row_ended_early() -> None:
+    row = window_row(ended_window(None))
+    assert row["end"] is None and row["ended_early"] is True and "duration" not in row
+    assert row["status"] is None
+    assert window_row(window())["duration"] == "2h" and "ended_early" not in window_row(window())
 
 
 async def test_update_end_now_only_for_running(api: respx.MockRouter) -> None:

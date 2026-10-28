@@ -20,10 +20,15 @@ window starts between preview and confirm. If a later release allows it, gate `s
 What the appliance takes on update (3.2.2, live run96 #252): the PUT task ends SUCCESS but the
 description stays as it was (the spec: "The description for the maintenance schedule cannot be
 updated"), so the update tool re-reads the window and warns about every field that did not change. The
-spec's one way out of a running window is `endTime: -1` (end it now), which `end_now=true` sends.
+spec's one way out of a running window is `endTime: -1` (end it now), which `end_now=true` sends. The
+appliance keeps `endTime: -1` on the ended window (it never writes the real end time back) and the status
+reads null for a few seconds before it turns COMPLETED (live, run96 #269): rows show that as
+`ended_early: true` with no end or duration, and the end_now result re-reads until COMPLETED and gives
+`ended_at`, the time the end was sent.
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import asyncio
 import contextlib
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -76,6 +81,14 @@ DESCRIPTION_FIXED = (
     f"PUT succeeds and the old description stays). {RENAME}"
 )
 END_NOW = -1  # spec: endTime -1 on an IN_PROGRESS window ends it now
+# After end_now the re-read shows status null (endTime -1) until Catalyst Center marks the window COMPLETED,
+# within seconds on 3.2.2 (run96 #269): re-read up to END_NOW_READS times, END_NOW_POLL seconds apart.
+END_NOW_POLL = 2.0
+END_NOW_READS = 6
+ENDING = (
+    "Ending: Catalyst Center marks the window COMPLETED within seconds of end_now; check with "
+    "catc_list_maintenance_windows."
+)
 
 IsoTime = Annotated[
     str,
@@ -196,18 +209,31 @@ def device_ids(w: dict[str, Any]) -> list[str]:
     return [str(i) for i in ensure_list(w.get("networkDeviceIds")) if i]
 
 
+def ended_early(s: dict[str, Any]) -> bool:
+    """True when the schedule's endTime is the end_now marker (-1, or any value <= 0): the window was ended
+    early and Catalyst Center keeps no real end time for it."""
+    try:
+        return int(s["endTime"]) <= 0
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def window_row(w: dict[str, Any], names: dict[str, str] | None = None) -> dict[str, Any]:
     s = sched(w)
     ids = device_ids(w)
+    early = ended_early(s)
     row: dict[str, Any] = {
         "id": w.get("id"),
         "description": w.get("description"),
         "status": window_status(w) or None,
         "start": to_iso(s.get("startTime")),
-        "end": to_iso(s.get("endTime")),
+        "end": None if early else to_iso(s.get("endTime")),
     }
-    with contextlib.suppress(KeyError, TypeError, ValueError):
-        row["duration"] = duration_text(int(s["endTime"]) - int(s["startTime"]))
+    if early:
+        row["ended_early"] = True  # endTime -1: ended with end_now; the real end time is not kept
+    else:
+        with contextlib.suppress(KeyError, TypeError, ValueError):
+            row["duration"] = duration_text(int(s["endTime"]) - int(s["startTime"]))
     rec = s.get("recurrence")
     if isinstance(rec, dict) and rec.get("interval"):
         row["repeats_every_days"] = rec.get("interval")
@@ -394,21 +420,33 @@ async def _end_now(
     )
 
     async def apply() -> Any:
+        sent = now_ms()
         job = await app.run_job(
             "PUT", f"{PATH}/{safe_id(wid, 'maintenance window id')}", body, ctx=ctx, what="end maintenance"
         )
-        out: dict[str, Any] = {"task": job}
-        try:
-            row = window_row(await get_window(app, wid), names)
-        except UpstreamError as err:
-            out["window"] = {"unavailable": str(err)[:200]}
-            return out
+        out: dict[str, Any] = {"task": job, "ended_at": to_iso(sent)}
+        row: dict[str, Any] = {}
+        for attempt in range(END_NOW_READS):
+            if attempt:
+                await asyncio.sleep(END_NOW_POLL)
+            try:
+                row = window_row(await get_window(app, wid), names)
+            except UpstreamError as err:
+                out["window"] = {"unavailable": str(err)[:200]}
+                return out
+            if row.get("status") in ("COMPLETED", "FAILED"):
+                break
+        if row.get("ended_early"):
+            with contextlib.suppress(KeyError, TypeError, ValueError):
+                row["duration"] = duration_text(sent - int(s["startTime"]))  # up to the end_now time
         out["window"] = row
         if row.get("status") == "IN_PROGRESS" and row.get("end") == before.get("end"):
             out["warnings"] = [
                 f"The window still shows IN_PROGRESS until {row.get('end')}: Catalyst Center did not end it. "
                 "Check again in a minute with catc_list_maintenance_windows."
             ]
+        elif row.get("status") not in ("COMPLETED", "FAILED"):
+            out["note"] = ENDING
         return out
 
     return await preview_or_apply(
@@ -456,7 +494,8 @@ def register(reg: ToolRegistrar) -> None:
     ) -> ToolResult:
         """Catalyst Center device maintenance windows: description, status (UPCOMING, IN_PROGRESS,
         COMPLETED, FAILED), start and end in ISO 8601 UTC, duration, recurrence (every N days until a
-        date), and the devices by hostname. Devices in an IN_PROGRESS window are in maintenance mode:
+        date), and the devices by hostname (a window ended early with end_now has ended_early and no end
+        time). Devices in an IN_PROGRESS window are in maintenance mode:
         Assurance raises no issues and computes no health for them, so a quiet catc_list_issues on them
         means nothing until the window ends. Filter by device, site (child sites included) or status.
         Schedule one with catc_schedule_maintenance."""
@@ -490,12 +529,14 @@ def register(reg: ToolRegistrar) -> None:
             )
         if not page.items and offset == 0:
             extra["note"] = "No maintenance windows" + (f" with status {status}" if status else "") + "."
-        return list_result(
-            page,
-            fmt=response_format,
-            columns=["description", "status", "start", "end", "repeats_every_days", "device_count", "id"],
-            extra=extra or None,
-        )
+        columns = ["description", "status", "start", "end", "repeats_every_days", "device_count", "id"]
+        if any(r.get("ended_early") for r in page.items):
+            columns.insert(4, "ended_early")
+            extra["ended_early"] = (
+                "Ended early with end_now: Catalyst Center keeps endTime -1, not the real end time, so these "
+                "rows have no end or duration."
+            )
+        return list_result(page, fmt=response_format, columns=columns, extra=extra or None)
 
     @reg.write(title="Schedule maintenance window")
     async def catc_schedule_maintenance(
