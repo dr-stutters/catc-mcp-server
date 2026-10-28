@@ -239,13 +239,15 @@ async def test_advisories_for_a_site_aggregate_by_advisory(api: respx.MockRouter
         "catc_security_advisories", {"site": "Global/AU/SYD-1", "impact": ["CRITICAL", "MEDIUM"]}
     )
     assert out["verdict"] == "Security advisories: 2 of 2 scanned device(s) affected (3 advisories)."
-    assert one.calls.last.request.url.params["securityImpactRating"] == "CRITICAL,MEDIUM"
+    assert "securityImpactRating" not in one.calls.last.request.url.params  # filtered here, not upstream
     first, second = out["advisories"]
     assert first["id"] == ADV_HIGH["id"] and first["devices"] == ["edge-sw1.lab.local", "edge-sw2.lab.local"]
     assert first["first_fixed"] == {"17.9.4": ["17.9.4a"]} and second["cvss"] == 5.3
     assert out["by_impact"] == {"CRITICAL": 1, "MEDIUM": 1} and len(out["devices"]) == 2
     out = await call("catc_security_advisories", {"site": "Global/AU/SYD-1", "min_cvss": 9})
     assert [a["id"] for a in out["advisories"]] == [ADV_HIGH["id"]]
+    out = await call("catc_security_advisories", {"site": "Global/AU/SYD-1", "impact": ["MEDIUM"]})
+    assert [a["id"] for a in out["advisories"]] == [ADV_MED["id"]] and out["by_impact"] == {"MEDIUM": 1}
 
 
 async def test_advisories_whole_network_uses_the_advisory_list(api: respx.MockRouter) -> None:
@@ -338,7 +340,7 @@ async def test_signals_one_device_lists_findings(api: respx.MockRouter) -> None:
         }
     )
     out = await call("catc_lifecycle_signals", {"device": "edge-sw1", "insecure_modules": ["TELNET", "SNMP"]})
-    assert insecure.calls.last.request.url.params["module"] == "TELNET,SNMP"
+    assert insecure.calls.last.request.url.params.get_list("module") == ["TELNET", "SNMP"]
     assert bugs.call_count == 0  # not scanned: no detail call
     assert out["verdict"] == [
         "EoX: 0 of 1 scanned device(s) affected (0 alerts).",

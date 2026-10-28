@@ -318,7 +318,8 @@ def xe_major(dev: dict[str, Any]) -> int | None:
 
 
 async def insecure_configs(app: CatcApp, did: str, modules: list[str] | None = None) -> list[dict[str, Any]]:
-    params: dict[str, Any] = {"module": ",".join(modules)} if modules else {}
+    # `module` is an exploded array (module=TELNET&module=SNMP); a comma-joined value matches nothing.
+    params: dict[str, Any] = {"module": list(modules)} if modules else {}
     found, _ = await rows(app, INSECURE.format(id=safe_id(did, "device id")), params)
     return [insecure(c) for c in found]
 
@@ -434,9 +435,9 @@ def register(reg: ToolRegistrar) -> None:
         summ = scan_summary("Security advisories", recs, "advisoryCount", "advisories")
         out["verdict"] = summ.pop("verdict")
         out |= summ
+        # securityImpactRating is a single-value filter on 3.2.2 (CRITICAL or HIGH only), so the impact
+        # and CVSS filters are applied here instead.
         params: dict[str, Any] = {}
-        if impact:
-            params["securityImpactRating"] = ",".join(impact)
         advisories: dict[str, dict[str, Any]] = {}
         if scope.devices is None:
             for a in (await rows(app, f"{PSIRT}/results/advisories", params))[0]:
@@ -451,7 +452,12 @@ def register(reg: ToolRegistrar) -> None:
                     entry["devices"].append(scope.name(did))
             if len(affected) > DETAIL_CAP:
                 out["advisories_truncated"] = f"Advisories of the first {DETAIL_CAP} affected devices only."
-        items = [a for a in advisories.values() if min_cvss is None or (a.get("cvss") or 0) >= min_cvss]
+        items = [
+            a
+            for a in advisories.values()
+            if (min_cvss is None or (a.get("cvss") or 0) >= min_cvss)
+            and (not impact or a.get("impact") in impact)
+        ]
         out["advisories"] = by_cvss(items)
         out["by_impact"] = dict(sorted(Counter(str(a.get("impact")) for a in items).items()))
         device_rows: list[dict[str, Any]] = [
