@@ -170,6 +170,7 @@ async def test_create_ap_profile_masks_secrets(api: respx.MockRouter) -> None:
         "ssh": True,
         "mgmt_user": "apadmin",
         "mgmt_password": SECRET,
+        "mgmt_enable_password": SECRET,
         "dot1x_supplicant": "EAP-FAST",
         "dot1x_user": "ap-supplicant",
         "dot1x_password": SECRET,
@@ -182,6 +183,7 @@ async def test_create_ap_profile_masks_secrets(api: respx.MockRouter) -> None:
     body = preview["preview"]["body"]
     assert body["managementSetting"]["managementPassword"] == "********"
     assert body["managementSetting"]["dot1xPassword"] == "********"
+    assert body["managementSetting"]["managementEnablePassword"] == "********"
     assert body["countryCode"] == "AU" and body["timeZone"] == "Controller"
     assert any("re-provision" in s for s in preview["side_effects"])
     assert any("factory reset" in s for s in preview["side_effects"])
@@ -193,9 +195,15 @@ async def test_create_ap_profile_masks_secrets(api: respx.MockRouter) -> None:
         "authType": "EAP-FAST",
         "dot1xUsername": "ap-supplicant",
         "managementPassword": SECRET,
+        "managementEnablePassword": SECRET,
         "dot1xPassword": SECRET,
     }
-    assert sent["rogueDetectionSetting"] == {"rogueDetectionMinRssi": -80}
+    assert sent["rogueDetectionSetting"] == {
+        "rogueDetection": True,
+        "rogueDetectionMinRssi": -80,
+        "rogueDetectionReportInterval": 10,
+        "rogueDetectionTransientInterval": 0,
+    }
     assert done and SECRET not in json.dumps(done)
 
 
@@ -203,7 +211,12 @@ async def test_confirm_bound_to_secret_digest(api: respx.MockRouter) -> None:
     mock_reads(api)
     post = api.post(AP).respond(202, json={"response": {"taskId": "t1"}})
     task_ok(api, "t1")
-    args = {"name": "mcp-ap-profile", "mgmt_user": "apadmin", "mgmt_password": SECRET}
+    args = {
+        "name": "mcp-ap-profile",
+        "mgmt_user": "apadmin",
+        "mgmt_password": SECRET,
+        "mgmt_enable_password": SECRET,
+    }
     async with Client(server()) as c:
         preview = await run(c, "catc_set_ap_profile", args)
         with pytest.raises(ToolError):
@@ -237,6 +250,225 @@ async def test_input_rules(api: respx.MockRouter) -> None:
         await flow("catc_set_ap_profile", {"name": "x", "time_zone_offset_hour": 2})
     with pytest.raises(ToolError, match="Nothing to set"):
         await flow("catc_set_ap_profile", {"name": "x"})
+    with pytest.raises(ToolError, match="120-1800"):
+        await flow("catc_set_ap_profile", {"name": "x", "rogue_transient_interval": 60})
+    with pytest.raises(ToolError):
+        await flow("catc_set_ap_profile", {"name": "x", "rogue_report_interval": 5})
+
+
+def rejected(*errors: str) -> httpx.Response:
+    """Catalyst Center 3.2.2's 400 for an AP profile it refuses (recorded live, D127 / #284)."""
+    listed = json.dumps(list(errors))
+    return httpx.Response(
+        400,
+        json={
+            "response": {
+                "errorCode": "NCND00001",
+                "message": f"NCND00001: The Common Settings request has validation errors: {listed}",
+            },
+            "version": "1.0",
+        },
+    )
+
+
+NCND80157 = (
+    "NCND80157: Partial configuration of AP management username, password and enable password is not "
+    "allowed for AP Profile: Username/Password/Enable Password"
+)
+EMPTY_ENABLE = "NCND00027: This attribute (Enable Password) cannot be empty"
+EMPTY_PASSWORD = "NCND00027: This attribute (Password) cannot be empty"
+NCND00041 = (
+    "NCND00041: The attribute rogueDetectionReportInterval has a value of 0 which is less than the "
+    "minimum acceptable value of 10"
+)
+
+
+def appliance(request: httpx.Request) -> httpx.Response:
+    """The appliance's checks on an AP profile body, as seen live: the three management credentials go
+    together, and a rogueDetectionSetting missing its intervals gets them as 0."""
+    body = json.loads(request.content)
+    m = body.get("managementSetting") or {}
+    errors: list[str] = []
+    creds = [m.get(k) for k in ("managementUserName", "managementPassword", "managementEnablePassword")]
+    if any(creds) and not all(creds):
+        errors.append(NCND80157)
+        if not m.get("managementPassword"):
+            errors.append(EMPTY_PASSWORD)
+        if not m.get("managementEnablePassword"):
+            errors.append(EMPTY_ENABLE)
+    r = body.get("rogueDetectionSetting")
+    if r is not None and int(r.get("rogueDetectionReportInterval") or 0) < 10:
+        errors.append(NCND00041)
+    if errors:
+        return rejected(*errors)
+    return httpx.Response(202, json={"response": {"taskId": "t9"}})
+
+
+async def test_create_partial_mgmt_credentials_blocked(api: respx.MockRouter) -> None:
+    mock_reads(api)
+    post = api.post(AP).mock(side_effect=appliance)
+    for partial in (
+        {"mgmt_user": "apadmin", "mgmt_password": SECRET},
+        {"mgmt_user": "apadmin"},
+        {"mgmt_password": SECRET, "mgmt_enable_password": SECRET},
+    ):
+        out, _ = await flow("catc_set_ap_profile", {"name": "mcp-ap-profile", "ssh": True, **partial})
+        assert out["status"] == "blocked", partial
+        blocker = next(b for b in out["blockers"] if "NCND80157" in b)
+        assert "mgmt_user, mgmt_password and mgmt_enable_password" in blocker
+        assert SECRET not in json.dumps(out)
+    assert post.call_count == 0
+    # A profile that has no management user yet: the same rule on update.
+    out, _ = await flow("catc_set_ap_profile", {"name": "default-ap-profile", "mgmt_user": "apadmin"})
+    assert out["status"] == "blocked" and any(
+        "missing: mgmt_password, mgmt_enable_password" in b for b in out["blockers"]
+    )
+
+
+async def test_create_all_three_mgmt_credentials_accepted(api: respx.MockRouter) -> None:
+    mock_reads(api)
+    post = api.post(AP).mock(side_effect=appliance)
+    task_ok(api, "t9")
+    args = {
+        "name": "mcp-ap-profile",
+        "ssh": True,
+        "mgmt_user": "apadmin",
+        "mgmt_password": SECRET,
+        "mgmt_enable_password": SECRET,
+    }
+    preview, done = await flow("catc_set_ap_profile", args)
+    assert preview["status"] == "preview" and done and done["status"] == "applied"
+    assert post.calls.last.response.status_code == 202
+
+
+async def test_appliance_400_body_surfaces(api: respx.MockRouter) -> None:
+    """Were a partial body ever sent, the recorded 400 comes back with its NCND codes."""
+    mock_reads(api)
+    api.post(AP).mock(return_value=rejected(NCND80157, EMPTY_ENABLE, NCND00041))
+    args = {
+        "name": "mcp-ap-profile",
+        "mgmt_user": "apadmin",
+        "mgmt_password": SECRET,
+        "mgmt_enable_password": SECRET,
+    }
+    with pytest.raises(ToolError, match="NCND80157"):
+        await flow("catc_set_ap_profile", args)
+
+
+async def test_create_rogue_rssi_alone_sends_whole_setting(api: respx.MockRouter) -> None:
+    mock_reads(api)
+    post = api.post(AP).mock(side_effect=appliance)
+    task_ok(api, "t9")
+    preview, done = await flow("catc_set_ap_profile", {"name": "mcp-ap-profile", "rogue_min_rssi": -80})
+    assert preview["status"] == "preview"
+    assert any("factory default-ap-profile" in s for s in preview["side_effects"])
+    assert done and done["status"] == "applied" and post.calls.last.response.status_code == 202
+    assert json.loads(post.calls.last.request.content)["rogueDetectionSetting"] == {
+        "rogueDetection": True,
+        "rogueDetectionMinRssi": -80,
+        "rogueDetectionReportInterval": 10,
+        "rogueDetectionTransientInterval": 0,
+    }
+    await flow(
+        "catc_set_ap_profile",
+        {
+            "name": "mcp-ap-profile",
+            "rogue_detection": False,
+            "rogue_report_interval": 60,
+            "rogue_transient_interval": 300,
+        },
+    )
+    assert json.loads(post.calls.last.request.content)["rogueDetectionSetting"] == {
+        "rogueDetection": False,
+        "rogueDetectionMinRssi": -90,
+        "rogueDetectionReportInterval": 60,
+        "rogueDetectionTransientInterval": 300,
+    }
+
+
+def with_mgmt_user(**over: Any) -> dict[str, Any]:
+    """An AP profile with management credentials, as the live GET returns it: the passwords masked."""
+    return ap_record(
+        "mcp-ap-profile",
+        "ap-mine",
+        description="lab",
+        countryCode="AU",
+        managementSetting={
+            "authType": "NO-AUTH",
+            "dot1xUsername": None,
+            "dot1xPassword": None,
+            "sshEnabled": True,
+            "telnetEnabled": False,
+            "managementUserName": "apadmin",
+            "managementPassword": "********",
+            "managementEnablePassword": "********",
+            "cdpState": True,
+            **over,
+        },
+        rogueDetectionSetting={
+            "rogueDetection": False,
+            "rogueDetectionMinRssi": -90,
+            "rogueDetectionTransientInterval": 0,
+            "rogueDetectionReportInterval": 10,
+        },
+    )
+
+
+async def test_update_profile_with_mgmt_credentials_needs_passwords(api: respx.MockRouter) -> None:
+    mock_reads(api, aps=[*DEFAULTS, with_mgmt_user()])
+    put = api.put(f"{AP}/ap-mine").mock(side_effect=appliance)
+    task_ok(api, "t9")
+    out, _ = await flow("catc_set_ap_profile", {"name": "mcp-ap-profile", "rogue_min_rssi": -80})
+    assert out["status"] == "blocked"
+    blocker = next(b for b in out["blockers"] if "apadmin" in b)
+    assert "mgmt_password and mgmt_enable_password" in blocker and "never returns" in blocker
+    out, _ = await flow(
+        "catc_set_ap_profile", {"name": "mcp-ap-profile", "rogue_min_rssi": -80, "mgmt_password": SECRET}
+    )
+    assert out["status"] == "blocked"
+    assert any("give mgmt_enable_password again" in b for b in out["blockers"])
+    assert put.call_count == 0
+    preview, done = await flow(
+        "catc_set_ap_profile",
+        {
+            "name": "mcp-ap-profile",
+            "rogue_min_rssi": -80,
+            "mgmt_password": SECRET,
+            "mgmt_enable_password": SECRET,
+        },
+    )
+    assert preview["status"] == "preview" and SECRET not in json.dumps(preview)
+    assert done and done["status"] == "applied" and put.calls.last.response.status_code == 202
+    sent = json.loads(put.calls.last.request.content)
+    assert sent["managementSetting"]["managementUserName"] == "apadmin"
+    assert sent["managementSetting"]["managementPassword"] == SECRET
+    assert sent["managementSetting"]["managementEnablePassword"] == SECRET
+    assert sent["rogueDetectionSetting"]["rogueDetectionMinRssi"] == -80
+    assert sent["rogueDetectionSetting"]["rogueDetectionReportInterval"] == 10
+
+
+async def test_update_password_supplicant_needs_dot1x_password(api: respx.MockRouter) -> None:
+    rec = ap_record(
+        "mcp-ap-profile",
+        "ap-mine",
+        managementSetting={
+            **DEFAULTS[1]["managementSetting"],
+            "authType": "EAP-FAST",
+            "dot1xUsername": "ap-supplicant",
+            "dot1xPassword": "********",
+        },
+    )
+    mock_reads(api, aps=[*DEFAULTS, rec])
+    put = api.put(f"{AP}/ap-mine").respond(202, json={"response": {"taskId": "t9"}})
+    task_ok(api, "t9")
+    out, _ = await flow("catc_set_ap_profile", {"name": "mcp-ap-profile", "cdp": False})
+    assert out["status"] == "blocked"
+    assert any("dot1x_password on every update" in b for b in out["blockers"])
+    out, _ = await flow(
+        "catc_set_ap_profile", {"name": "mcp-ap-profile", "cdp": False, "dot1x_password": SECRET}
+    )
+    assert out["status"] == "preview"
+    assert json.loads(put.calls.last.request.content)["managementSetting"]["dot1xPassword"] == SECRET
 
 
 async def test_update_ap_profile_keeps_record(api: respx.MockRouter) -> None:
