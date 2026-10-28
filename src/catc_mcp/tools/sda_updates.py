@@ -111,14 +111,20 @@ def register(reg: ToolRegistrar) -> None:
             int | None, Field(ge=500, le=1440, description="TCP MSS adjustment on the SVI")
         ] = None,
         resource_guard: Annotated[bool | None, Field(description="Resource guard")] = None,
+        wireless_pool: Annotated[
+            bool | None,
+            Field(
+                description="Wireless pool: fabric SSIDs can be mapped to it (catc_set_fabric_ssid_mapping)"
+            ),
+        ] = None,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Change an anycast gateway in place instead of deleting and re-adding it (which drops every client
         in the subnet). Settable: layer 2 flooding and its address, IP-directed broadcast, multiple IP-to-MAC,
-        traffic type, a static security group, group-based policy enforcement, TCP MSS, resource guard. Unset
-        arguments keep their value; the VLAN, pool, VN, critical pool and intra-subnet routing can't be
-        changed (re-create the gateway for those). Catalyst Center pushes the SVI change to every edge.
-        Preview-first: current -> new per field and the edges."""
+        traffic type, a static security group, group-based policy enforcement, TCP MSS, resource guard,
+        wireless pool. Unset arguments keep their value; the VLAN, pool, VN, critical pool and intra-subnet
+        routing can't be changed (re-create the gateway for those). Catalyst Center pushes the SVI change to
+        every edge. Preview-first: current -> new per field and the edges."""
         app: CatcApp = get_client(ctx)
         fabric, fsite = await resolve_fabric(app, fabric_site)
         gws = await sda_list(app, "anycastGateways", {"fabricId": fabric["id"]})
@@ -138,6 +144,7 @@ def register(reg: ToolRegistrar) -> None:
                 "isGroupBasedPolicyEnforcementEnabled": group_policy_enforcement,
                 "tcpMssAdjustment": tcp_mss_adjustment,
                 "isResourceGuardEnabled": resource_guard,
+                "isWirelessPool": wireless_pool,
             }.items()
             if v is not None
         }
@@ -202,6 +209,7 @@ def register(reg: ToolRegistrar) -> None:
                 "group_policy_enforcement": group_policy_enforcement,
                 "tcp_mss_adjustment": tcp_mss_adjustment,
                 "resource_guard": resource_guard,
+                "wireless_pool": wireless_pool,
             },
             confirm=confirm,
             plan=plan,

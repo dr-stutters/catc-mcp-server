@@ -178,3 +178,11 @@ async def test_port_without_assignment(api: respx.MockRouter) -> None:
             "catc_update_port_assignment",
             {"device": "edge-sw1", "interface": "GigabitEthernet1/0/9", "description": "x"},
         )
+
+
+async def test_gateway_wireless_pool(api: respx.MockRouter) -> None:
+    fab = Fabric(api)
+    args = {"fabric_site": FID, "ip_pool": "MCP_CLIENTS", "wireless_pool": True}
+    preview, done = await flow("catc_update_anycast_gateway", args)
+    assert preview["preview"]["changes"] == {"isWirelessPool": {"from": False, "to": True}}
+    assert done and fab.puts[0][1][0]["isWirelessPool"] is True
