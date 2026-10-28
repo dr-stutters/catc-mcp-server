@@ -1,0 +1,169 @@
+{
+  "_about": "D49 catc_client_timeline. Wired shapes recorded on the 3.2.2 lab (client-detail, Wired Client assurance events from ISE), redacted to documentation addresses; wireless shapes and issues built from the 3.2.2 spec (client-detail onboarding, assuranceEvents childEvents/roamType, assuranceIssues). Times are epoch ms; tests shift them so recorded_at_ms is now.",
+  "recorded_at_ms": 1793143643629,
+  "wired_detail": {
+    "detail": {
+      "id": "52:54:00:13:42:10",
+      "connectionStatus": "CONNECTED",
+      "hostType": "WIRED",
+      "userId": "jdoe",
+      "hostName": "pc-jdoe",
+      "hostOs": null,
+      "lastUpdated": 1793140560000,
+      "healthScore": [
+        {"healthType": "OVERALL", "reason": "", "score": 10.0},
+        {"healthType": "ONBOARDED", "reason": "", "score": 4.0},
+        {"healthType": "CONNECTED", "reason": "", "score": 6.0}
+      ],
+      "hostMac": "52:54:00:13:42:10",
+      "hostIpV4": "192.0.2.102",
+      "vlanId": 1021,
+      "l3VirtualNetwork": "CORP_VN",
+      "ssid": null,
+      "sgt": "104.0",
+      "location": "Example/Site-A/HQ/Level 1",
+      "clientConnection": "edge-sw1.example.com",
+      "connectedDevice": [
+        {"type": "SWITCH", "name": "edge-sw1.example.com", "id": "dev-1", "mgmtIp": "198.51.100.41", "mode": "Unknown"}
+      ],
+      "issueCount": 0,
+      "onboarding": {
+        "averageRunDuration": "0.0",
+        "aaaServerIp": "203.0.113.35",
+        "dhcpServerIp": "",
+        "authDoneTime": 0,
+        "assocDoneTime": 0,
+        "dhcpDoneTime": 0,
+        "aaaRootcauseList": ["SUCCESS"],
+        "dhcpRootcauseList": ["SUCCESS"],
+        "latestRootCauseList": ["SUCCESS"]
+      },
+      "onboardingTime": 0,
+      "port": "GigabitEthernet1/0/6",
+      "aaaServerIp": "203.0.113.35",
+      "portDescription": "pc-jdoe (802.1X)",
+      "security": {
+        "authenticatingIse": "203.0.113.35",
+        "selectedAuthzProfiles": "PermitAccess",
+        "securityGroup": "Sales",
+        "postureStatus": null
+      }
+    },
+    "connectionInfo": {"hostType": "WIRED", "nwDeviceName": "edge-sw1.example.com", "timestamp": 1793143643629},
+    "topology": {"nodes": [{"role": "CLIENT", "id": "52:54:00:13:42:10", "ip": "192.0.2.102"}]}
+  },
+  "wired_events": {
+    "response": [
+      {
+        "messageType": "ISE",
+        "details": "Client Authenticated - DOT1X",
+        "id": "evt-wired-2",
+        "networkDeviceName": "198.51.100.41",
+        "deviceFamily": "Wired Client",
+        "name": "Authentication Started",
+        "timestamp": 1793096445785,
+        "managementIpAddress": "198.51.100.41",
+        "networkDeviceId": "dev-1",
+        "siteHierarchy": "Global/Example/Site-A/HQ/Level 1"
+      },
+      {
+        "messageType": "ISE",
+        "details": "Client Authenticated - DOT1X",
+        "id": "evt-wired-1",
+        "networkDeviceName": "198.51.100.41",
+        "deviceFamily": "Wired Client",
+        "name": "Authentication Started",
+        "timestamp": 1793075022450,
+        "managementIpAddress": "198.51.100.41",
+        "networkDeviceId": "dev-1",
+        "siteHierarchy": "Global/Example/Site-A/HQ/Level 1"
+      }
+    ],
+    "version": "1.0",
+    "page": {"limit": 20, "offset": 1, "count": 2, "sortBy": [{"name": "timestamp", "order": "desc"}]}
+  },
+  "wireless_detail": {
+    "detail": {
+      "id": "02:00:00:00:aa:01",
+      "connectionStatus": "CONNECTED",
+      "hostType": "WIRELESS",
+      "userId": "alice",
+      "hostName": "laptop-alice",
+      "lastUpdated": 1793143500000,
+      "hostMac": "02:00:00:00:aa:01",
+      "hostIpV4": "198.51.100.77",
+      "vlanId": 30,
+      "ssid": "corp-wifi",
+      "location": "Example/Site-A/HQ/Level 2",
+      "clientConnection": "ap-l2-01",
+      "onboarding": {
+        "aaaServerIp": "203.0.113.35",
+        "dhcpServerIp": "203.0.113.53",
+        "assocDoneTime": 1793142000000,
+        "authDoneTime": 1793142001000,
+        "dhcpDoneTime": 1793142002000,
+        "aaaRootcauseList": ["SUCCESS"],
+        "dhcpRootcauseList": ["DHCP_TIMEOUT"],
+        "latestRootCauseList": ["DHCP_TIMEOUT"]
+      },
+      "onboardingTime": 1793142002500,
+      "wlcName": "wlc-1.example.com"
+    }
+  },
+  "wireless_events": {
+    "response": [
+      {
+        "id": "evt-roam",
+        "name": "INTRA-WLC Roaming",
+        "deviceFamily": "Wireless Client",
+        "timestamp": 1793143000000,
+        "clientMac": "02:00:00:00:aa:01",
+        "roamType": "802.11r",
+        "ssid": "corp-wifi",
+        "apMac": "02:00:00:00:bb:02",
+        "wlcName": "wlc-1.example.com",
+        "resultStatus": "Success"
+      },
+      {
+        "id": "evt-onb",
+        "name": "Onboarding",
+        "deviceFamily": "Wireless Client",
+        "timestamp": 1793142000000,
+        "clientMac": "02:00:00:00:aa:01",
+        "ssid": "corp-wifi",
+        "wlcName": "wlc-1.example.com",
+        "resultStatus": "Failure",
+        "failureCategory": "DHCP",
+        "childEvents": [
+          {"id": "c1", "name": "Association Start", "timestamp": 1793142000000, "resultStatus": "Success"},
+          {"id": "c2", "name": "KeyExchange", "timestamp": 1793142001000, "resultStatus": "Success"},
+          {
+            "id": "c3",
+            "name": "DHCP",
+            "timestamp": 1793142002000,
+            "resultStatus": "Failure",
+            "reasonDescription": "DHCP server timeout"
+          }
+        ]
+      }
+    ],
+    "version": "1.0",
+    "page": {"limit": 20, "offset": 1, "count": 2}
+  },
+  "issues": {
+    "response": [
+      {
+        "issueId": "iss-dhcp",
+        "name": "client_dhcp_timeout",
+        "summary": "Wireless client failed to get an IP address on SSID corp-wifi",
+        "priority": "P3",
+        "status": "active",
+        "category": "Onboarding",
+        "firstOccurredTime": 1793140000000,
+        "mostRecentOccurredTime": 1793142002000
+      }
+    ],
+    "page": {"limit": 25, "offset": 1, "count": 1},
+    "version": "1.0"
+  }
+}

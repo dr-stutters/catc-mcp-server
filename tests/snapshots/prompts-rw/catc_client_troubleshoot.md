@@ -22,7 +22,9 @@ missing, skip steps 5 and say ISE could not be checked.
    authentication, so Assurance never saw it).
 2. Issues: `catc_list_issues` for the client's switch/WLC and site in the window, and
    `catc_get_issue` for the relevant ones (suggested commands, root cause). Issues stay active
-   for hours after they clear: compare last_seen with now.
+   for hours after they clear: compare last_seen with now. The client's own history:
+   `catc_client_timeline` for "52:54:00:62:c6:b2" with hours 4 (onboarding steps, authentications,
+   roams, failures and issues by time); merge it by time with ISE's attempts from step 5.
 3. The device, live: `catc_run_show_commands` on the switch with
    "show access-session mac <MAC> details" (status, method, policy, dACL, SGT, VLAN),
    "show interfaces <port> status", "show running-config interface <port>",

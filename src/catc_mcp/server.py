@@ -107,6 +107,8 @@ Workflows:
 - What changed / who did it: catc_recent_activity (device or site, merged issues, syslog, notifications,
   audit), catc_list_audit_logs(changes_only=true), catc_compare_device_configs (config diff; the
   archive lags a few minutes behind a change).
+- What happened to this client: catc_client_timeline(mac, hours or since) (onboarding steps, ISE
+  authentications, roams and issues for one MAC, merged by time).
 - Pre/post change check: catc_snapshot(site) before the change (keep the blob), catc_compare_snapshot(before)
   after it: what got unhealthy (device reachability/health, site health, compliance, new P1/P2 issues).
   Across products: prompt suite_change_check.
