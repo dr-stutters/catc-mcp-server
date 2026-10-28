@@ -365,7 +365,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (107)
+### Read (109)
 
 | Tool | What it does |
 |---|---|
@@ -385,6 +385,7 @@ got unhealthy.
 | `catc_export_templates` | Export a template project, or one template, as a JSON document: content, variables, device types and every committed version with its comment, author and time. |
 | `catc_fabric_health` | SD-Access health as Catalyst Center Assurance scores it. |
 | `catc_find_host` | Where is this host plugged in: from a MAC, IP, hostname or username, each matching client Assurance saw in the window, newest first, with its switch (name, management IP) and port or AP/WLC/SSID, VLAN, SGT, site, status, health, last seen and a one-line `where`, plus a live lookup on given switches. |
+| `catc_get_activity` | One Catalyst Center activity: description, status, type, recurring, start/end (ISO 8601 UTC) and the jobs it triggered (each run of a recurring schedule, or the job a one-off activity started), with each job's status, failure reason and task id (catc_get_task(task_id) for the task's own detail). |
 | `catc_get_backup_status` | Whether Catalyst Center can take a backup now, and how the last ones went: the backup target (NFS server or physical disk, mount path, backups kept, encryption passphrase set, the NFS server's health and the disk use), `ready` with the blockers (no target, no passphrase, NFS unhealthy, a backup or restore already running), the last backup, and the recent backup/restore executions (job, status, percent done, errors). |
 | `catc_get_client` | Details for one wired or wireless client: IP, user, host type/OS, health score, connected switch/port or AP/SSID/band, VLAN, RSSI/SNR, and onboarding state. |
 | `catc_get_client_health` | Client health summary: overall, wired and wireless client scores and how many clients are in each health band (poor/fair/good/idle/no data). |
@@ -426,6 +427,7 @@ got unhealthy.
 | `catc_issue_recurrence` | What keeps breaking: the same issue (name and device or client) opening and closing again in the window. |
 | `catc_lifecycle_signals` | Every lifecycle and security signal Catalyst Center has for one device or the devices under a site, in one read: EoX alerts, Cisco security advisories (PSIRT), field notices, network bugs and insecure configurations (deprecated or weak CLI such as telnet, SNMPv1/v2c communities, HTTP), with one verdict line per signal and a row per device. |
 | `catc_link_mismatch` | Links whose two ends disagree, from Catalyst Center's Inventory Insight: speed/duplex mismatches and native VLAN / allowed VLAN mismatches at a site (and the sites below it). |
+| `catc_list_activities` | Catalyst Center activities (the scheduler's jobs), split into upcoming (scheduled, not started yet), in progress (running, or a work item waiting for action), recurring (the schedules, e.g. the weekly config-archive backup and the security-advisory scan) and finished (failed first, then newest first). |
 | `catc_list_audit_logs` | Catalyst Center audit log, newest first: who did what and when (logins, provisioning, template deploys, configuration changes, API calls) with the device it concerns. |
 | `catc_list_backups` | Catalyst Center system backups on the configured backup target, newest first: name, status (SUCCESS, FAILED, IN_PROGRESS), scope (with or without Assurance data), start/end, duration, size, whether it is still on the target and compatible to restore, the release it was taken on, who took it and whether it was on-demand or scheduled. |
 | `catc_list_clients` | Wired and wireless clients Catalyst Center Assurance saw in the window, newest first: MAC, IP, user, type, connection status, health, the switch and port or WLC/SSID/band, VLAN, last onboarding failure and when it was last seen. |
