@@ -29,6 +29,7 @@ from catc_mcp.tools import (
     inventory,
     ipam,
     issue_definitions,
+    lifecycle,
     maintenance,
     network_services,
     ops_writes,
@@ -126,6 +127,10 @@ Workflows:
   catc_list_devices or catc_list_device_images.
 - "Is it the network or ISE/DHCP/DNS?": catc_network_services_health(service='aaa'|'dhcp'|'dns'|'all', site)
   (per-server success %, latency, EAP/MAB split, the failing NADs, a verdict line; Assurance lags by minutes).
+- Lifecycle and security ("what is end-of-life or vulnerable here?"): catc_lifecycle_signals(device|site)
+  (EoX, PSIRT, field notices, bugs, insecure configurations, one verdict each), catc_eox_report,
+  catc_security_advisories; catc_trigger_lifecycle_scan (write) rescans.
+  NOT_SCANNED without the Cisco (CCO) connection means no data.
 - Over time ("is this site getting worse?", "what keeps breaking?"): catc_site_health_report, or
   catc_health_trend (dips), catc_top_problems, catc_issue_recurrence, catc_ai_insights.
 - Backups (before the group-based policy migration or an upgrade): catc_get_backup_status (target configured?,
@@ -166,6 +171,7 @@ REGISTER = [
     topology.register,
     compliance.register,
     compliance_policies.register,
+    lifecycle.register,
     templates.register,
     swim.register,
     discovery.register,
