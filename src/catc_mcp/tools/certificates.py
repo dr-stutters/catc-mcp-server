@@ -12,7 +12,10 @@ first import and overwrites the entry, which does no harm (seen live, #281). The
 (/dna/data/api/v1/event/event-series/audit-logs) stands in for the missing read: each import writes
 "Successfully imported the certificate from issuer <issuer> and issued-to <subject> with serial number
 <hex> to Trusted Certificates". The preview searches it for earlier imports of the same serials, and the
-result reads it back after the import (subject, issuer and serial as Catalyst Center recorded them). A
+result reads it back after the import (subject, issuer and serial as Catalyst Center recorded them): only
+a record stamped after the import on the appliance's clock (the status clock offset, a few seconds'
+allowance) that the preview's lookup had not already seen, so a re-import seconds after the first never
+reports the earlier record (#301); with no new record before the wait ends, `read_back` is 'pending'. A
 duplicate refusal (`is_duplicate`) is still mapped to `already_trusted`, for releases that refuse one.
 The system (server) certificate import (POST /certificate, /certificate-p12) is out of scope: it restarts
 controller services.
@@ -30,7 +33,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from fastmcp import Context
 from pydantic import Field
 
-from catc_mcp._core import Confirm, InvalidRequest, Plan, ToolRegistrar, get_client, preview_or_apply
+from catc_mcp._core import Confirm, InvalidRequest, Plan, ToolRegistrar, clock, get_client, preview_or_apply
 from catc_mcp._core.errors import UpstreamError
 from catc_mcp.client import CatcApp
 from catc_mcp.common import window
@@ -51,8 +54,12 @@ AUDIT_IMPORT_RE = re.compile(
 AUDIT_LOOKBACK_HOURS = 720  # earlier imports: the longest window the audit log tools use
 AUDIT_SCAN = 200  # trusted-certificate import records read per search
 # Read-back after the import: the audit record may land a moment after the task ends.
-READBACK_TRIES = 3
+READBACK_TRIES = 5
 READBACK_DELAY = 2.0
+# Read-back window start, on the appliance's clock: the import time (corrected by the status clock offset)
+# minus this allowance plus the offset's own uncertainty. Without a clock sample: SKEW_FALLBACK_S.
+SKEW_ALLOWANCE_S = 5.0
+SKEW_FALLBACK_S = 60.0
 
 
 def _name(n: x509.Name) -> str:
@@ -174,9 +181,26 @@ async def audit_imports(app: CatcApp, hours: float) -> dict[str, list[dict[str, 
             "issuer": m["issuer"],
             "serial": m["serial"],
             "_ms": r.get("timestamp") or 0,
+            "_id": r.get("instanceId") or r.get("id"),
         }
         out.setdefault(serial_key(m["serial"]), []).append(rec)
     return out
+
+
+def record_key(rec: dict[str, Any]) -> str:
+    """An audit record's identity: its instance id, else its timestamp."""
+    return f"id:{rec['_id']}" if rec.get("_id") else f"ms:{rec.get('_ms')}"
+
+
+def appliance_start_ms(base_url: str) -> int:
+    """Now on the appliance's clock (epoch ms), less the skew allowance: audit records of an import
+    sent from now on are stamped at or after it. Uses the clock offset core measures from the HTTP Date
+    header (`<prefix>_status` clock.offset_seconds); with no sample yet, a 60 s allowance."""
+    now = datetime.now(UTC).timestamp()
+    sample = clock.sample_for(base_url)
+    if sample is None:
+        return int((now - SKEW_FALLBACK_S) * 1000)
+    return int((now + sample.offset_seconds - SKEW_ALLOWANCE_S - sample.uncertainty_seconds) * 1000)
 
 
 def _public(rec: dict[str, Any]) -> dict[str, Any]:
@@ -271,8 +295,11 @@ def register(reg: ToolRegistrar) -> None:
             blockers=blockers,
         )
 
+        # Audit records the lookup above already saw: never an import's read-back (#301).
+        seen_records = {serial: {record_key(a) for a in recs} for serial, recs in before.items()}
+
         async def apply() -> Any:
-            started_ms = int(datetime.now(UTC).timestamp() * 1000) - 60_000  # allow for clock skew
+            started_ms = appliance_start_ms(app.api.base_url)
             results: list[dict[str, Any]] = []
             for c, r, f in zip(certs, rows, files, strict=True):
                 body, ctype = multipart(f, c.public_bytes(serialization.Encoding.PEM))
@@ -299,7 +326,9 @@ def register(reg: ToolRegistrar) -> None:
             return await read_back(results, started_ms)
 
         async def read_back(results: list[dict[str, Any]], started_ms: int) -> dict[str, Any]:
-            """Match each imported certificate with its audit record (written at or after the import)."""
+            """Match each imported certificate with its audit record: written at or after the import (on the
+            appliance's clock) and not one the earlier-imports lookup already saw. Polls until each has a
+            new record; on a timeout the read-back is 'pending'."""
             wanted = [x for x in results if x.get("_serial")]
             notes: list[str] = []
             for attempt in range(READBACK_TRIES if wanted else 0):
@@ -311,12 +340,19 @@ def register(reg: ToolRegistrar) -> None:
                     notes.append(f"Audit log not readable for the read-back: {str(err)[:200]}")
                     break
                 for x in wanted:
-                    recs = [a for a in found.get(x["_serial"], []) if a["_ms"] >= started_ms]
+                    old = seen_records.get(x["_serial"], set())
+                    recs = [
+                        a
+                        for a in found.get(x["_serial"], [])
+                        if a["_ms"] >= started_ms and record_key(a) not in old
+                    ]
                     if recs:
                         x["read_back"] = _public(recs[0])
                 if all("read_back" in x for x in wanted):
                     break
             missing = [x["subject"] for x in wanted if "read_back" not in x]
+            for x in wanted:
+                x.setdefault("read_back", "pending")
             if missing and not notes:
                 notes.append(
                     "No audit record of the import yet for "

@@ -6,6 +6,7 @@ duplicate like a first import, #281). Audit records copy the 3.2.2 wording of a 
 ("Successfully imported the certificate from issuer ... with serial number <hex> to Trusted
 Certificates", lower-case hex), with synthetic names and ids."""
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,11 +20,13 @@ from cryptography.x509.oid import NameOID
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+from catc_mcp._core import clock
 from catc_mcp.server import create_server
 from catc_mcp.tools import certificates
+from catc_mcp.tools.activity import ts_text
 from catc_mcp.tools.certificates import IMPORT_PATH, fingerprint
 
-from .conftest import make_settings
+from .conftest import BASE, make_settings
 from .test_write_tools import run
 
 TASK = "11111111-2222-3333-4444-555555555555"
@@ -46,8 +49,18 @@ def audit_record(cert: x509.Certificate, *, ms: int | None = None, rid: str = "a
 
 
 @pytest.fixture(autouse=True)
-def _fast_readback(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fast_readback(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(certificates, "READBACK_DELAY", 0)
+    clock.clear()
+    yield
+    clock.clear()
+
+
+def set_offset(seconds: float) -> None:
+    """A clock sample as core records it from a Date header: the appliance `seconds` ahead."""
+    t = datetime.now(UTC).timestamp()
+    when = datetime.fromtimestamp(t + seconds - 0.5, UTC)
+    clock.observe(BASE, when.strftime("%a, %d %b %Y %H:%M:%S GMT"), sent=t, received=t)
 
 
 def audit(api: respx.MockRouter, *answers: list[dict[str, Any]]) -> respx.Route:
@@ -308,7 +321,7 @@ async def test_missing_audit_entry_is_a_note(api: respx.MockRouter) -> None:
     _, done = await flow({"certificate_pem": pem(ROOT[0]), "name": "mcp-root"})
     res = done["result"]
     assert res["certificates"][0]["status"] == "imported"
-    assert "read_back" not in res["certificates"][0]
+    assert res["certificates"][0]["read_back"] == "pending"
     assert "No audit record of the import yet" in res["notes"][0]
     assert "catc_list_audit_logs" in res["notes"][0]
     # Preview, the re-check at confirm, then every read-back try.
@@ -333,3 +346,74 @@ async def test_serial_match_ignores_case_colons_and_zeros() -> None:
         "CN=Example CA, DC=example, DC=com with serial number 1a2b3c4d to Trusted Certificates"
     )
     assert m and m["serial"] == "1a2b3c4d" and m["subject"] == "CN=Example CA, DC=example, DC=com"
+
+
+def ms_ago(seconds: float) -> int:
+    return int((datetime.now(UTC).timestamp() - seconds) * 1000)
+
+
+async def test_reimport_20s_later_skips_the_earlier_record(api: respx.MockRouter) -> None:
+    """#301: the same CA imported 20 s earlier. The earlier record is inside any skew window, but the
+    preview's lookup saw it, so the read-back waits for the new one."""
+    task_ok(api)
+    prior = audit_record(ROOT[0], ms=ms_ago(20), rid="prior")
+    new_ms = ms_ago(0)
+    new = audit_record(ROOT[0], ms=new_ms, rid="new")
+    # Preview, the re-check at confirm, a read-back try before the new row lands, then the new row.
+    log = audit(api, [prior], [prior], [prior], [new, prior])
+    preview, done = await flow({"certificate_pem": pem(ROOT[0]), "name": "mcp-root"})
+    assert preview["preview"]["certificates"][0]["imported_before"] == ts_text(prior["timestamp"])
+    c = done["result"]["certificates"][0]
+    assert c["read_back"]["time"] == ts_text(new_ms)
+    assert "notes" not in done["result"]
+    assert log.call_count == 4
+
+
+async def test_reimport_with_no_new_record_is_pending(api: respx.MockRouter) -> None:
+    task_ok(api)
+    prior = audit_record(ROOT[0], ms=ms_ago(20), rid="prior")
+    log = audit(api, [prior])
+    _, done = await flow({"certificate_pem": pem(ROOT[0]), "name": "mcp-root"})
+    res = done["result"]
+    assert res["certificates"][0]["read_back"] == "pending"
+    assert "No audit record of the import yet" in res["notes"][0]
+    assert log.call_count == 2 + certificates.READBACK_TRIES
+
+
+async def test_prior_record_without_id_is_matched_by_time(api: respx.MockRouter) -> None:
+    task_ok(api)
+    prior = {k: v for k, v in audit_record(ROOT[0], ms=ms_ago(20)).items() if k != "instanceId"}
+    audit(api, [prior])
+    _, done = await flow({"certificate_pem": pem(ROOT[0]), "name": "mcp-root"})
+    assert done["result"]["certificates"][0]["read_back"] == "pending"
+
+
+async def test_readback_window_follows_the_appliance_clock(api: respx.MockRouter) -> None:
+    """The appliance runs 2 min behind: its record of this import is stamped 120 s before this server's
+    now, which the 60 s fallback would have missed."""
+    set_offset(-120)
+    task_ok(api)
+    new_ms = ms_ago(120)
+    audit(api, [], [], [audit_record(ROOT[0], ms=new_ms, rid="new")])
+    _, done = await flow({"certificate_pem": pem(ROOT[0]), "name": "mcp-root"})
+    assert done["result"]["certificates"][0]["read_back"]["time"] == ts_text(new_ms)
+
+
+async def test_appliance_clock_ahead_excludes_older_rows(api: respx.MockRouter) -> None:
+    """The appliance runs 2 min ahead: a record stamped at this server's now is from before the import
+    (on the appliance's clock), even when the earlier-imports lookup could not see it."""
+    set_offset(120)
+    task_ok(api)
+    stale = audit_record(ROOT[0], ms=ms_ago(0), rid="stale")
+    audit(api, [], [], [stale])
+    _, done = await flow({"certificate_pem": pem(ROOT[0]), "name": "mcp-root"})
+    assert done["result"]["certificates"][0]["read_back"] == "pending"
+
+
+def test_appliance_start_ms() -> None:
+    now = datetime.now(UTC).timestamp() * 1000
+    assert abs(certificates.appliance_start_ms(BASE) - (now - 60_000)) < 1_000
+    set_offset(30)
+    start = certificates.appliance_start_ms(BASE)
+    # now + 30 s offset - 5 s allowance - 0.5 s Date-header uncertainty
+    assert abs(start - (now + 24_500)) < 1_000
