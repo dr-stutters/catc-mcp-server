@@ -265,6 +265,10 @@
       "tier": "write",
       "title": "Attach template to network profiles"
     },
+    "catc_cancel_maintenance": {
+      "tier": "write",
+      "title": "Cancel maintenance window"
+    },
     "catc_check_fabric_aaa": {
       "tier": "read",
       "title": "SD-Access fabric AAA readiness"
@@ -741,6 +745,10 @@
       "tier": "read",
       "title": "List ITSM integrations"
     },
+    "catc_list_maintenance_windows": {
+      "tier": "read",
+      "title": "List maintenance windows"
+    },
     "catc_list_network_profiles": {
       "tier": "read",
       "title": "List network profiles"
@@ -836,6 +844,10 @@
     "catc_run_show_commands": {
       "tier": "read",
       "title": "Run show commands"
+    },
+    "catc_schedule_maintenance": {
+      "tier": "write",
+      "title": "Schedule maintenance window"
     },
     "catc_search_spec": {
       "tier": "read",
@@ -941,6 +953,10 @@
       "tier": "write",
       "title": "Resolve or ignore issues"
     },
+    "catc_update_maintenance_window": {
+      "tier": "write",
+      "title": "Update maintenance window"
+    },
     "catc_update_policy_server": {
       "tier": "dangerous",
       "title": "Update an authentication and policy server"
@@ -970,5 +986,5 @@
       "title": "Update template"
     }
   },
-  "version": "0.15.0"
+  "version": "0.16.0"
 }

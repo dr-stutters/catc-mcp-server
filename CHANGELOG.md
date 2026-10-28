@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.0 (2026-10-28)
+
+Device maintenance windows and the client timeline. Core 0.15.0 (0.16.1 needs peer tools the suite pack's
+`suite_access_review` calls). 196 tools (101 read, 52 write, 43 dangerous) and nine prompts.
+
+### Added
+- Maintenance-window tools (D73, #247): `catc_list_maintenance_windows`, `catc_schedule_maintenance`,
+  `catc_update_maintenance_window`, `catc_cancel_maintenance`; `catc_change_window` offers a window so a change doesn't
+  page anyone.
+- `catc_client_timeline(mac, hours | since)` (D49, #234): one client's onboarding steps, assurance events (ISE
+  authentications, roams, failures) and issues merged by time; `catc_client_troubleshoot` uses it.
+
+### Security
+- authlib 1.9.0 -> 1.9.1 (GHSA-8m4g-j4wp-wgcg, transitive through fastmcp) (#234).
+
 ## 0.15.0 (2026-10-24)
 
 Wave 7 (SD-WAN cross-architecture): pre/post change snapshots on the suite's snapshot contract. Core 0.15.0 with the suite
