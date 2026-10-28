@@ -575,6 +575,14 @@ repository only covers the Assurance APIs. To refresh it for another release, ex
 *Platform > Developer Toolkit > APIs* and run
 `uv run python scripts/bundle_spec.py swagger.json <version>`.
 
+**Spec conformance (contract test).** Every request the unit suite sends to the fake appliance (method,
+path, query keys, top-level JSON body keys) is recorded and checked against the bundled spec when the
+session ends; `pytest tests/unit` fails on a path, method, query key or body key the spec doesn't
+declare. Deliberate exceptions (the business-API execution-status poll, the UI's `/api/v1/siteprofile`
+fallback, the `tag/{id}/member` body whose spec schema is wrong, ...) are listed with a reason in
+`tests/unit/spec_allowlist.py`. After a spec refresh, `uv run python scripts/spec_audit.py` prints the full
+report: mismatches, allowlisted findings and allowlist entries nothing uses any more.
+
 ## Docker
 
 ```bash

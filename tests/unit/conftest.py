@@ -1,8 +1,14 @@
-"""Shared fixtures: settings without .env, and a respx router on the fake appliance."""
+"""Shared fixtures: settings without .env, and a respx router on the fake appliance.
 
+D52: every request the suite sends is recorded and checked against the bundled spec at session end
+(tests/unit/spec_conformance.py; exceptions with reasons in tests/unit/spec_allowlist.py).
+"""
+
+import os
 from collections.abc import Iterator
 from typing import Any
 
+import httpx
 import pytest
 import respx
 from fastmcp import FastMCP
@@ -58,3 +64,54 @@ def api() -> Iterator[respx.MockRouter]:
             json={"response": {"users": [{"username": "admin", "roleList": ["SUPER-ADMIN-ROLE"]}]}}
         )
         yield router
+
+
+# --- D52 spec-conformance recorder ------------------------------------------------------------
+
+_RECORDED: list[Any] = []
+_CURRENT_TEST = [""]
+_ORIGINAL_SEND = httpx.AsyncClient.send
+
+
+async def _recording_send(self: httpx.AsyncClient, request: httpx.Request, **kw: Any) -> httpx.Response:
+    from .spec_conformance import record
+
+    if (r := record(request, _CURRENT_TEST[0])) is not None:
+        _RECORDED.append(r)
+    return await _ORIGINAL_SEND(self, request, **kw)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    httpx.AsyncClient.send = _recording_send  # type: ignore[method-assign]
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    httpx.AsyncClient.send = _ORIGINAL_SEND  # type: ignore[method-assign]
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    _CURRENT_TEST[0] = item.nodeid
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail the run when a recorded request doesn't conform to the spec (and isn't allowlisted)."""
+    if not _RECORDED:
+        return
+    from .spec_conformance import check
+
+    report = check(_RECORDED)
+    if out := os.environ.get("CATC_SPEC_AUDIT_OUT"):  # scripts/spec_audit.py
+        import json
+
+        with open(out, "w") as f:
+            json.dump([[r.method, r.path, sorted(r.query), sorted(r.body), r.test] for r in _RECORDED], f)
+    tr = session.config.pluginmanager.get_plugin("terminalreporter")
+    if report.findings:
+        if tr is not None:
+            tr.write_sep("=", "spec conformance (D52)", red=True)
+            tr.write_line(report.text())
+            tr.write_line("Fix the request, or add an entry with a reason to tests/unit/spec_allowlist.py.")
+        if session.exitstatus == pytest.ExitCode.OK:
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    elif tr is not None:
+        tr.write_line(report.text().splitlines()[0])
