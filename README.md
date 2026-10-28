@@ -303,6 +303,12 @@ auth record and an undo list; by default it switches external authentication off
 `catc_client_troubleshoot` (read tier, uses **ise**) takes a client by MAC, IP or username through Catalyst
 Center (360, issues, live CLI, path trace), ISE (auth history, failure reason, NAD) and the switch's AAA health to a
 diagnosis and a previewed-only fix.
+`catc_site_health_review` (read tier) is the weekly review of one site as a single ranked report: maintenance
+windows first (`catc_list_maintenance_windows`: devices under maintenance are listed apart, never as findings),
+health now and over the window (`catc_site_health_report`, `catc_health_trend`, network, device and client
+health), open and recurring issues, compliance (`catc_compliance_report`), image currency against the golden image
+(`catc_list_device_images`) and template drift (`catc_template_drift`), ranked most severe first and ending with
+next steps that name the tools to run.
 `catc_build_fabric_site` (dangerous tier, uses **ise** for the AAA check) builds an SD-Access fabric site from
 switches to a client in the fabric: SD-Access availability and the account's tier, devices onboarded and provisioned
 at the building, the client pool, the fabric site, border and control plane before the edges, the VN, the anycast
