@@ -438,13 +438,13 @@ def register(reg: ToolRegistrar) -> None:
             # Catalyst Center counts the page offset from 1.
             "page": {"limit": limit, "offset": offset + 1, "sortBy": {"name": sort_by, "order": order}}
         }
-        count_body: dict[str, Any] = {}
         if flt:
             body["filter"] = flt
-            count_body["filter"] = flt
         resp = await app.api.post(QUERY, body)
-        # The total is a second query: when only it fails, the page still comes back.
-        data, errors = await gather_sections({"count": app.api.post(f"{QUERY}/count", count_body)})
+        # The total is a second query: when only it fails, the page still comes back. query/count requires
+        # a non-empty `filter`, so an unfiltered list takes its total from GET networkDeviceLicenses/count.
+        count = app.api.post(f"{QUERY}/count", {"filter": flt}) if flt else app.api.get(f"{DEVICES}/count")
+        data, errors = await gather_sections({"count": count})
         now = time.time()
         recs = ensure_list(resp.get("response") if isinstance(resp, dict) else resp)
         rows = [device_row(r, now) for r in recs if isinstance(r, dict)]

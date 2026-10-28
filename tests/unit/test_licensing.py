@@ -319,9 +319,12 @@ async def test_list_filter_pass_through(api: respx.MockRouter) -> None:
 
 async def test_list_no_filter_and_count_failure(api: respx.MockRouter) -> None:
     rows = api.post(QUERY).respond(json={"response": [record("core-1.example.com", "192.0.2.1")]})
-    api.post(f"{QUERY}/count").mock(return_value=httpx.Response(500, json={"message": "boom"}))
+    post_count = api.post(f"{QUERY}/count")
+    api.get(f"{DEVICES}/count").mock(return_value=httpx.Response(500, json={"message": "boom"}))
     out = await call("catc_list_device_licenses", {"response_format": "json"})
     assert "filter" not in json.loads(rows.calls.last.request.content)
+    # query/count requires a filter: the unfiltered total comes from GET networkDeviceLicenses/count
+    assert not post_count.called
     assert out["results"][0]["licenses"].startswith("NETWORK_ADVANTAGE/network-advantage (IN_USE)")
     assert "count" in out["unavailable"]
 
@@ -337,6 +340,13 @@ async def test_list_rejects_bad_filters(api: respx.MockRouter) -> None:
         )
     with pytest.raises(ToolError, match="needs a `key`"):
         await call("catc_list_device_licenses", {"filters": [{"operator": "eq", "value": "X"}]})
+
+
+async def test_list_unfiltered_total_from_get_count(api: respx.MockRouter) -> None:
+    api.post(QUERY).respond(json={"response": [record("core-1.example.com", "192.0.2.1")]})
+    api.get(f"{DEVICES}/count").respond(json={"response": {"count": 12}, "version": "1.0"})
+    out = await call("catc_list_device_licenses", {"response_format": "json"})
+    assert out["total"] == 12 and "unavailable" not in out
 
 
 def test_epoch_seconds_reads_both_units() -> None:
