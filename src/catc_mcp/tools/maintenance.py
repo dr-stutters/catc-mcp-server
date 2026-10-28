@@ -10,6 +10,13 @@ The spec quirks (3.2.2): the create body lists `id` and a top-level `status` as 
 read-only and `status` only exists inside `maintenanceSchedule` (read-only too): neither is sent.
 `networkDeviceIds` is set at creation only; an update keeps the devices (cancel and schedule again to
 change them). The list filter takes at most 25 device ids.
+
+What the appliance takes on update (3.2.2, live run96 #252/#258): the PUT task ends SUCCESS but the
+description stays as it was (the spec: "The description for the maintenance schedule cannot be
+updated"), so the update tool re-reads the window and warns about every field that did not change. A
+window that has started can neither be deleted ("... is in progress ... and cannot be deleted") nor given a
+new end time (400 NCIM90982 "The maintenance window has already started and cannot be updated"); the spec's
+one way out of a running window is `endTime: -1` (end it now), which `end_now=true` sends.
 """
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
@@ -54,6 +61,18 @@ RUNS_FULL = (
     "A started window runs for its full duration: the devices leave maintenance mode at the end time, not "
     "when the change is done. Pick an end time that covers the change and its verification, no more."
 )
+
+LOCKED_ONCE_STARTED = (
+    "Catalyst Center does not let a started window be cancelled or given a new start or end time (3.2.2: "
+    "NCIM90982 'The maintenance window has already started and cannot be updated'; the cancel task fails "
+    "with '... is in progress ... and cannot be deleted')."
+)
+RENAME = "To rename a window, cancel it and schedule it again."
+DESCRIPTION_FIXED = (
+    "Catalyst Center keeps a window's description on update (3.2.2: the API says it cannot be updated; the "
+    f"PUT succeeds and the old description stays). {RENAME}"
+)
+END_NOW = -1  # spec: endTime -1 on an IN_PROGRESS window ends it now
 
 IsoTime = Annotated[
     str,
@@ -248,6 +267,44 @@ def overlaps(windows: list[dict[str, Any]], start: int, end: int, skip: str | No
     return hits
 
 
+def running_blocker(end: str | None) -> str:
+    return (
+        f"{LOCKED_ONCE_STARTED} It ends on its own at {end or 'its end time'}. To end it now, call "
+        "catc_update_maintenance_window with end_now=true (the API's documented exit for a running window)."
+    )
+
+
+def not_applied(wanted: dict[str, Any], got: dict[str, Any]) -> list[str]:
+    """A warning for every requested field the re-read window does not show (`wanted` holds only the
+    fields this update changed)."""
+    labels = {
+        "description": "description",
+        "start": "start time",
+        "end": "end time",
+        "repeats_every_days": "repeat interval",
+        "repeats_until": "end of the repeats",
+    }
+    out: list[str] = []
+    for key, value in wanted.items():
+        if got.get(key) == value:
+            continue
+        note = f"Catalyst Center did not apply the {labels[key]}: asked for {value!r}, the window shows " + (
+            f"{got.get(key)!r}."
+        )
+        if key == "description":
+            note += " " + RENAME
+        out.append(note)
+    return out
+
+
+def current_recurrence(rec: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The window's own recurrence in the body's shape (None for a one-off or a bad record)."""
+    try:
+        return recurrence_body(int(rec["interval"]), int(rec["recurrenceEndTime"])) if rec else None
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def recurrence_body(days: int | None, until: int | None) -> dict[str, Any] | None:
     if days is None or until is None:
         return None
@@ -266,6 +323,96 @@ async def find_created(app: CatcApp, first_device: str, start: int, end: int) ->
         if str(s.get("startTime")) == str(start) and str(s.get("endTime")) == str(end):
             return w
     return None
+
+
+async def _end_now(
+    ctx: Context,
+    app: CatcApp,
+    w: dict[str, Any],
+    before: dict[str, Any],
+    names: dict[str, str] | None,
+    status: str,
+    window: str,
+    confirm: str | None,
+) -> dict[str, Any]:
+    """catc_update_maintenance_window(end_now=true): endTime -1 on a running window (the spec's exit: the
+    appliance sets the end to now; everything else stays read-only)."""
+    wid = str(w.get("id"))
+    s = sched(w)
+    ids = device_ids(w)
+    blockers: list[str] = []
+    if status != "IN_PROGRESS":
+        blockers.append(
+            f"end_now ends a running window; this one is {status or 'of unknown status'}. "
+            + (
+                "Cancel it with catc_cancel_maintenance instead."
+                if status == "UPCOMING"
+                else "There is nothing to end."
+            )
+        )
+    sent_schedule: dict[str, Any] = {"startTime": s.get("startTime"), "endTime": END_NOW}
+    rec = current_recurrence(s.get("recurrence") if isinstance(s.get("recurrence"), dict) else None)
+    if rec:
+        sent_schedule["recurrence"] = rec
+    body: dict[str, Any] = {
+        "description": w.get("description") or "",
+        "maintenanceSchedule": sent_schedule,
+        "networkDeviceIds": ids,
+    }
+    side_effects = [
+        f"The devices leave maintenance mode now instead of at {before.get('end')}: Assurance computes their "
+        "health and raises their issues again, so anything still wrong after the change pages as usual.",
+        "Nothing changes in the devices' configuration.",
+    ]
+    if rec:
+        side_effects.append(
+            "It repeats: the API does not say whether the later occurrences stay scheduled; check with "
+            "catc_list_maintenance_windows afterwards."
+        )
+    plan = Plan(
+        f"End maintenance window {w.get('description') or wid} now ({len(ids)} device(s))",
+        details={"before": before, "method": "PUT", "path": f"{PATH}/{wid}", "body": body},
+        side_effects=side_effects,
+        fingerprint={"window": wid, "schedule": s, "status": status},
+        blockers=blockers,
+        blast_radius=len(ids),
+    )
+
+    async def apply() -> Any:
+        job = await app.run_job(
+            "PUT", f"{PATH}/{safe_id(wid, 'maintenance window id')}", body, ctx=ctx, what="end maintenance"
+        )
+        out: dict[str, Any] = {"task": job}
+        try:
+            row = window_row(await get_window(app, wid), names)
+        except UpstreamError as err:
+            out["window"] = {"unavailable": str(err)[:200]}
+            return out
+        out["window"] = row
+        if row.get("status") == "IN_PROGRESS" and row.get("end") == before.get("end"):
+            out["warnings"] = [
+                f"The window still shows IN_PROGRESS until {row.get('end')}: Catalyst Center did not end it. "
+                "Check again in a minute with catc_list_maintenance_windows."
+            ]
+        return out
+
+    return await preview_or_apply(
+        ctx,
+        tool="catc_update_maintenance_window",
+        args={
+            "window": window,
+            "start": None,
+            "end": None,
+            "description": None,
+            "recurrence_days": None,
+            "recurrence_end": None,
+            "stop_repeating": False,
+            "end_now": True,
+        },
+        confirm=confirm,
+        plan=plan,
+        apply=apply,
+    )
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -400,7 +547,12 @@ def register(reg: ToolRegistrar) -> None:
         rec = recurrence_body(recurrence_days, until_ms)
         if rec:
             body["maintenanceSchedule"]["recurrence"] = rec
-        side_effects = [GOES_DARK, RUNS_FULL, "Nothing changes in the devices' configuration."]
+        side_effects = [
+            GOES_DARK,
+            RUNS_FULL + " Once it starts it can't be cancelled or given a new end time; it can only be ended "
+            "now (catc_update_maintenance_window end_now=true).",
+            "Nothing changes in the devices' configuration.",
+        ]
         if rec:
             side_effects.append(
                 f"It repeats every {recurrence_days} day(s) until {to_iso(until_ms)}: every occurrence "
@@ -481,21 +633,33 @@ def register(reg: ToolRegistrar) -> None:
         stop_repeating: Annotated[
             bool, Field(description="Make a recurring window a one-off (drops the recurrence)")
         ] = False,
+        end_now: Annotated[
+            bool,
+            Field(
+                description="End a running (IN_PROGRESS) window now: the devices leave maintenance mode "
+                "(sends endTime -1, the API's exit for a started window); nothing else can be changed with it"
+            ),
+        ] = False,
         confirm: Confirm = None,
     ) -> dict[str, Any]:
         """Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an
-        offset). The devices can't be changed (Catalyst Center sets them at creation): cancel and schedule
-        again for that. Preview-first: before and after times, the devices it covers, overlaps with other
-        windows on those devices. A running (IN_PROGRESS) window keeps its start; moving its end changes
-        when the devices come out of maintenance. COMPLETED or FAILED one-off windows are refused."""
+        offset), or end a running window now (end_now=true). The devices can't be changed (Catalyst Center
+        sets them at creation): cancel and schedule again for that. Preview-first: before and after times,
+        the devices it covers, overlaps with other windows on those devices. Catalyst Center 3.2.2 keeps
+        the description (the preview says so; cancel and schedule again to rename) and refuses any change
+        to a window that has started except end_now. After the update the window is read back and
+        `warnings` names every requested field Catalyst Center did not apply. COMPLETED or FAILED one-off
+        windows are refused."""
         app: CatcApp = get_client(ctx)
         if stop_repeating and (recurrence_days is not None or recurrence_end is not None):
             raise InvalidRequest("Give stop_repeating or a new recurrence, not both.")
-        if (
-            not any(v is not None for v in (start, end, description, recurrence_days, recurrence_end))
-            and not stop_repeating
-        ):
-            raise InvalidRequest("Nothing to change: give start, end, description or a recurrence change.")
+        changes = (start, end, description, recurrence_days, recurrence_end)
+        if end_now and (any(v is not None for v in changes) or stop_repeating):
+            raise InvalidRequest("end_now ends a running window as it is: give nothing else with it.")
+        if not any(v is not None for v in changes) and not stop_repeating and not end_now:
+            raise InvalidRequest(
+                "Nothing to change: give start, end, description, a recurrence change or end_now."
+            )
         w = await get_window(app, window)
         wid = str(w.get("id"))
         s = sched(w)
@@ -505,6 +669,13 @@ def register(reg: ToolRegistrar) -> None:
         except (KeyError, TypeError, ValueError) as exc:
             raise InvalidRequest(f"Maintenance window {wid} has no start/end time to update.") from exc
         cur_rec = s.get("recurrence") if isinstance(s.get("recurrence"), dict) else None
+        cur_desc = str(w.get("description") or "")
+        ids = device_ids(w)
+        names = await inventory_names(app, ids)
+        before = window_row(w, names)
+        started = status == "IN_PROGRESS"
+        if end_now:
+            return await _end_now(ctx, app, w, before, names, status, window, confirm)
         new_start = to_ms(start, "start") if start else cur_start
         new_end = to_ms(end, "end") if end else cur_end
         if stop_repeating:
@@ -518,29 +689,27 @@ def register(reg: ToolRegistrar) -> None:
             )
             days = int(days) if days is not None else None
             until = int(until) if until is not None else None
-        started = status == "IN_PROGRESS"
+        rec = recurrence_body(days, until)
+        renames = description is not None and description != cur_desc
+        schedule_changes = (new_start, new_end, rec) != (cur_start, cur_end, current_recurrence(cur_rec))
         blockers = schedule_blockers(new_start, new_end, days, until, started=started)
-        if started and start and new_start != cur_start:
-            blockers.append(
-                "The window is already running (IN_PROGRESS): its start can't move. Change the end, or "
-                "cancel it and schedule a new one."
-            )
+        if started:
+            blockers.append(running_blocker(before.get("end")))
         if status in ("COMPLETED", "FAILED") and not cur_rec:
             blockers.append(f"The window is {status}; schedule a new one instead.")
-        ids = device_ids(w)
-        names = await inventory_names(app, ids)
+        if renames and not schedule_changes:
+            blockers.append(f"{DESCRIPTION_FIXED} Nothing else would change, so there is nothing to send.")
         existing = await windows_for(app, ids) if ids else []
         clash = overlaps(existing, new_start, new_end, skip=wid)
         body: dict[str, Any] = {
-            "description": description if description is not None else (w.get("description") or ""),
+            # Sent as asked (a later release may take it); the result warns when it stays as it was.
+            "description": description if description is not None else cur_desc,
             "maintenanceSchedule": {"startTime": new_start, "endTime": new_end},
             # Read-only on update, but the 3.2.2 schema requires it: send the window's own devices back.
             "networkDeviceIds": ids,
         }
-        rec = recurrence_body(days, until)
         if rec:
             body["maintenanceSchedule"]["recurrence"] = rec
-        before = window_row(w, names)
         after = {
             "description": body["description"],
             "start": to_iso(new_start),
@@ -549,12 +718,15 @@ def register(reg: ToolRegistrar) -> None:
             "repeats_every_days": days if rec else None,
             "repeats_until": to_iso(until) if rec else None,
         }
+        # The fields this update changes, checked against the window read back after the PUT.
+        wanted = {
+            k: after[k]
+            for k in ("description", "start", "end", "repeats_every_days", "repeats_until")
+            if after[k] != before.get(k)
+        }
         side_effects = [GOES_DARK, RUNS_FULL]
-        if started and new_end != cur_end:
-            side_effects.append(
-                f"The window is running: the devices now leave maintenance mode at {to_iso(new_end)} instead "
-                f"of {to_iso(cur_end)}."
-            )
+        if renames:
+            side_effects.insert(0, DESCRIPTION_FIXED)
         details: dict[str, Any] = {
             "before": before,
             "after": after,
@@ -579,9 +751,18 @@ def register(reg: ToolRegistrar) -> None:
             )
             out: dict[str, Any] = {"task": job}
             try:
-                out["window"] = window_row(await get_window(app, wid), names)
+                row = window_row(await get_window(app, wid), names)
             except UpstreamError as err:
                 out["window"] = {"unavailable": str(err)[:200]}
+                out["warnings"] = [
+                    "Could not read the window back to check what Catalyst Center applied; check with "
+                    "catc_list_maintenance_windows."
+                ]
+                return out
+            out["window"] = row
+            warnings = not_applied(wanted, row)
+            if warnings:
+                out["warnings"] = warnings
             return out
 
         return await preview_or_apply(
@@ -595,6 +776,7 @@ def register(reg: ToolRegistrar) -> None:
                 "recurrence_days": recurrence_days,
                 "recurrence_end": recurrence_end,
                 "stop_repeating": stop_repeating,
+                "end_now": end_now,
             },
             confirm=confirm,
             plan=plan,
@@ -609,9 +791,9 @@ def register(reg: ToolRegistrar) -> None:
     ) -> dict[str, Any]:
         """Delete a maintenance window (and every future occurrence of a recurring one). Preview-first: the
         window, its status, times and devices. Cancelling an UPCOMING window means its devices are never
-        silenced, so a change made then raises issues and pages as usual. For a running (IN_PROGRESS)
-        window the preview warns that the devices may stay in maintenance mode until the end time; check
-        with catc_list_maintenance_windows and catc_device_360 afterwards."""
+        silenced, so a change made then raises issues and pages as usual. A running (IN_PROGRESS) window
+        can't be cancelled (Catalyst Center refuses it; the preview is blocked): end it now with
+        catc_update_maintenance_window(end_now=true), or let it run to its end time."""
         app: CatcApp = get_client(ctx)
         w = await get_window(app, window)
         wid = str(w.get("id"))
@@ -626,12 +808,7 @@ def register(reg: ToolRegistrar) -> None:
                 "The devices won't be in maintenance mode at that time: a change made then raises issues and "
                 "health alerts as usual.",
             )
-        elif status == "IN_PROGRESS":
-            side_effects.insert(
-                0,
-                f"The window is running now. {RUNS_FULL.split(':')[0]}: the devices may stay in maintenance "
-                f"mode until {row.get('end')} even after the cancel; check catc_device_360 afterwards.",
-            )
+        blockers = [running_blocker(row.get("end"))] if status == "IN_PROGRESS" else []
         if row.get("repeats_every_days"):
             side_effects.append("Every future occurrence of this recurring window goes too.")
         plan = Plan(
@@ -640,6 +817,7 @@ def register(reg: ToolRegistrar) -> None:
             details={"window": row, "method": "DELETE", "path": f"{PATH}/{wid}"},
             side_effects=side_effects,
             fingerprint={"window": wid, "status": status, "schedule": sched(w)},
+            blockers=blockers,
             blast_radius=len(ids),
         )
 

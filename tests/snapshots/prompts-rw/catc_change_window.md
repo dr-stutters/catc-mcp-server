@@ -60,8 +60,9 @@ with the confirm token. Keep a short log of each step's result for the summary.
 9. Issue diff: `catc_list_issues` per device again (and
    `catc_recent_activity` for the window) and report new issues since step 1. Inside a
    maintenance window the devices raise no issues: a quiet list proves nothing, so rely on steps 6-8.
-   Once verified, end the silence: `catc_update_maintenance_window` with end a few minutes
-   from now (or `catc_cancel_maintenance` if it never started), then
+   Once verified, end the silence: a started window can't be cancelled or given a new end time, so
+   `catc_update_maintenance_window` with end_now=true (or `catc_cancel_maintenance`
+   if it never started); if Catalyst Center refuses, it ends on its own at its end time. Then
    `catc_list_maintenance_windows` to see it COMPLETED, and `catc_list_issues`
    per device once more after it ends.
 10. Rollback plan (always write it, even when everything passed):

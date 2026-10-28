@@ -529,7 +529,7 @@ got unhealthy.
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
 | `catc_update_issue_definition` | Enable or disable a built-in Assurance issue, or change its priority (P1..P4, or back to the default) or threshold: "stop paging me about X". |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
-| `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset). |
+| `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset), or end a running window now (end_now=true). |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |
 | `catc_update_site_aaa_settings` | Set a site's AAA network settings (Design > Network Settings > AAA): which server devices use for administrator login (network) and for 802.1X/MAB endpoints (client), as ISE or plain AAA, RADIUS or TACACS. |
 | `catc_update_site_settings` | Change a site's network settings (Design > Network Settings): DNS servers and domain, NTP, DHCP servers, banner, time zone, and telemetry (external syslog/SNMP trap servers, Catalyst Center as collector, wired client data collection). |

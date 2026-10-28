@@ -142,7 +142,8 @@ Workflows:
 - Maintenance windows (silence a planned change's alerts):
   catc_schedule_maintenance(devices|site|tag, start, end) -> catc_list_maintenance_windows ->
   catc_update_maintenance_window / catc_cancel_maintenance. Devices in a running window raise no issues
-  and get no health, real problems included.
+  and get no health, real problems included. A started window can't be cancelled or moved: end it with
+  catc_update_maintenance_window(end_now=true). The description can't be changed after scheduling.
 Asynchronous operations return a task id; check it with catc_get_task.
 Anything not covered: catc_search_spec -> catc_get_definition -> catc_api_call.
 """.strip()
