@@ -745,6 +745,10 @@
       "tier": "read",
       "title": "List ITSM integrations"
     },
+    "catc_list_l3_handoffs": {
+      "tier": "read",
+      "title": "List layer 3 handoffs"
+    },
     "catc_list_maintenance_windows": {
       "tier": "read",
       "title": "List maintenance windows"
