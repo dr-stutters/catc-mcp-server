@@ -353,7 +353,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (100)
+### Read (101)
 
 | Tool | What it does |
 |---|---|
@@ -430,6 +430,7 @@ got unhealthy.
 | `catc_list_global_credentials` | Global device credentials (CLI, SNMPv2c read/write, SNMPv3, NETCONF port, HTTP(S)) that discovery and sites use: description, type, username/port and id. |
 | `catc_list_images` | Software images known to Catalyst Center (imported into the repository, or suggested from cisco.com): name, version, product families, golden tag, integrity status and id. |
 | `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
+| `catc_list_issue_definitions` | Assurance issue definitions: for each built-in (system) one its name and display name, whether it is enabled, its priority next to the factory default, the threshold where it has one (e.g. minutes BGP may be down), device type and category; for custom ones the syslog rule in words (severity, %FACILITY-SEV-MNEMONIC, text regex, N times in M minutes), priority and whether it notifies. |
 | `catc_list_issues` | Assurance issues (problems Catalyst Center detected) with priority, the device they are about, summary, status, site and how long ago each last occurred, newest first. |
 | `catc_list_itsm_instances` | ITSM (ServiceNow) integration instances configured in Catalyst Center: name, type, URL, status (credentials are never shown). |
 | `catc_list_maintenance_windows` | Catalyst Center device maintenance windows: description, status (UPCOMING, IN_PROGRESS, COMPLETED, FAILED), start and end in ISO 8601 UTC, duration, recurrence (every N days until a date), and the devices by hostname. |
@@ -459,7 +460,7 @@ got unhealthy.
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (52)
+### Write (55)
 
 | Tool | What it does |
 |---|---|
@@ -472,6 +473,7 @@ got unhealthy.
 | `catc_clone_template` | Copy a template under a new name, in the same or another project. |
 | `catc_commit_template` | Commit a template's current content as a new version (required before deploying it). |
 | `catc_create_compliance_policy` | Create a compliance policy that checks devices against your own standard, e.g. "no ip http server" (a MATCHES_EXPRESSION '^ip http server' condition with violation_when='matches') or "a login banner is set" ('^banner login' with violation_when='does_not_match'), or straight from CLI lines with require_lines=['service password-encryption'] / forbid_lines=['ip http server']. |
+| `catc_create_custom_issue` | Create a custom (syslog-based) Assurance issue: "alert when this syslog appears". |
 | `catc_create_discovery` | Start a device discovery (IP range, CIDR, single IP, or CDP/LLDP from a seed) that adds what it finds to the inventory. |
 | `catc_create_fabric_site` | Make a site an SD-Access fabric site. |
 | `catc_create_fabric_zone` | Make a building or floor inside an SD-Access fabric site a fabric zone. |
@@ -487,6 +489,7 @@ got unhealthy.
 | `catc_create_transit_network` | Define an SD-Access transit network. |
 | `catc_create_virtual_network` | Create a layer 3 virtual network (VRF) or add an existing one to more fabric sites. |
 | `catc_create_wireless_profile` | Create a wireless network profile that carries SSIDs. |
+| `catc_delete_custom_issue` | Delete a custom (syslog-based) issue definition. |
 | `catc_delete_global_credential` | Delete a global device credential. |
 | `catc_delete_ip_pool` | Release a site's reserved subpool, or delete a global pool (refused while it still has reservations). |
 | `catc_delete_report` | Delete a report and its executions. |
@@ -508,6 +511,7 @@ got unhealthy.
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
+| `catc_update_issue_definition` | Enable or disable a built-in Assurance issue, or change its priority (P1..P4, or back to the default) or threshold: "stop paging me about X". |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
 | `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset). |
 | `catc_update_site` | Rename a site or change a building's address/coordinates or a floor's number, RF model and dimensions. |

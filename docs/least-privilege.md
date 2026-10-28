@@ -38,7 +38,7 @@ checked by `tests/live/test_least_privilege.py`. Tested on Catalyst Center **3.2
 |---|---|---|
 | Assurance.Monitoring | Read | health, issues, events, clients, `catc_device_360` / `catc_client_360`, topology |
 | Assurance.Troubleshooting | Read | `catc_path_trace` (Read is enough to run a path trace) |
-| Assurance.Settings | Read | issue settings behind `catc_get_issue` |
+| Assurance.Settings | Read | issue settings behind `catc_get_issue`, `catc_list_issue_definitions` |
 | Extensions.Event Subscription | Read | `catc_list_event_notifications`, `catc_recent_activity` |
 | Extensions.Intent API | Read | the Intent API itself |
 | Network Design.Profiles & Settings | Read | site settings, credentials list, IP pools, network profiles, templates |
@@ -78,6 +78,7 @@ Everything in `mcp-catc-ro`, plus Write on:
 | Permission | Write tools it enables |
 |---|---|
 | Assurance.Monitoring | `catc_update_issue_status` |
+| Assurance.Settings | `catc_update_issue_definition`, `catc_create_custom_issue`, `catc_delete_custom_issue` (issue settings) |
 | Network Design.Profiles & Settings | site settings and AAA, global credentials, IP pools, network profiles and template attachment, template projects/templates/commit, `catc_preview_template` |
 | Network Design.Wireless Maps | creating, updating and deleting **floors** (`/v2/floors`) |
 | Network Management.Discovery | `catc_create_discovery` |

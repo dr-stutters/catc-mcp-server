@@ -52,6 +52,7 @@ READ: dict[str, str] = {
 WRITE: dict[str, str] = {
     **READ,
     "Assurance.Monitoring": "Write",  # catc_update_issue_status
+    "Assurance.Settings": "Write",  # issue definitions: catc_update_issue_definition, custom issues
     "Network Design.Profiles & Settings": "Write",  # settings, creds, pools, profiles, templates, preview
     "Network Design.Wireless Maps": "Write",  # floors (POST/PUT/DELETE /v2/floors are map operations)
     "Network Management.Discovery": "Write",

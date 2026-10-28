@@ -1,0 +1,360 @@
+"""D53: Assurance issue definitions (respx). The system rows follow the 3.2.2 lab appliance's live answer
+(2026-10-28, GET systemIssueDefinitions?limit=3&offset=1, ids replaced); the empty custom list is its live
+answer too. Custom definitions with rules follow the 3.2.2 spec (customIssueDefinitions)."""
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+import respx
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
+
+from catc_mcp.server import create_server
+
+from .conftest import make_settings
+from .test_write_tools import preview_then_apply, run
+
+SYSTEM = "/dna/intent/api/v1/systemIssueDefinitions"
+CUSTOM = "/dna/intent/api/v1/customIssueDefinitions"
+BGP_ID = "3e4250c4-0000-4000-8000-000000000001"
+WLC_ID = "01d34dd7-0000-4000-8000-000000000002"
+SENSOR_ID = "009e5b42-0000-4000-8000-000000000003"
+CUSTOM_ID = "c0c0c0c0-0000-4000-8000-000000000004"
+
+BGP = {
+    "id": BGP_ID,
+    "name": "BGP_Down",
+    "displayName": "Network Device Interface Connectivity - BGP Down",
+    "description": "Time duration BGP on a Router/Switch can be down for before issue is generated",
+    "priority": "P2",
+    "defaultPriority": "P2",
+    "deviceType": "SWITCH_AND_HUB",
+    "issueEnabled": True,
+    "profileId": "global",
+    "definitionStatus": "DEFAULT",
+    "categoryName": "CONNECTIVITY",
+    "synchronizeToHealthThreshold": False,
+    "thresholdValue": 3.0,
+}
+WLC = {
+    "id": WLC_ID,
+    "name": "wlc_monitor",
+    "displayName": "WLC Monitor",
+    "description": "Cisco Catalyst Center is not receiving data from Wireless Controller",
+    "priority": "P1",
+    "defaultPriority": "P3",
+    "deviceType": "WIRELESS_CONTROLLER",
+    "issueEnabled": False,
+    "profileId": "global",
+    "definitionStatus": "MODIFIED",
+    "categoryName": "AVAILABILITY",
+    "synchronizeToHealthThreshold": False,
+}
+SENSOR = {
+    "id": SENSOR_ID,
+    "name": "global_sensor_outlook_fail_trigger",
+    "displayName": "Sensors - Outlook Server Test Fail",
+    "description": "Multiple sensors are reporting a failure to connect to Outlook Web Access",
+    "priority": "P3",
+    "defaultPriority": "P3",
+    "deviceType": "SENSOR",
+    "issueEnabled": True,
+    "profileId": "global",
+    "definitionStatus": "DEFAULT",
+    "categoryName": "SENSOR_TEST",
+    "synchronizeToHealthThreshold": False,
+}
+OSPF = {
+    "id": CUSTOM_ID,
+    "name": "mcp-ospf-down",
+    "description": "OSPF neighbour lost",
+    "priority": "P2",
+    "isEnabled": True,
+    "isNotificationEnabled": True,
+    "isDeletable": True,
+    "profileId": "global",
+    "rules": [
+        {
+            "type": "SYSLOG",
+            "severity": 5,
+            "facility": "OSPF",
+            "mnemonic": "ADJCHG",
+            "pattern": "from FULL to DOWN",
+            "occurrences": 1,
+        }
+    ],
+}
+
+
+def rw_server() -> Any:
+    return create_server(make_settings(mcp_enable_writes=True))
+
+
+class Lab:
+    """A fake appliance holding system and custom definitions; records the writes."""
+
+    def __init__(self, api: respx.MockRouter, custom: list[dict[str, Any]] | None = None) -> None:
+        self.system = {d["id"]: dict(d) for d in (BGP, WLC, SENSOR)}
+        self.custom = [dict(d) for d in (custom or [])]
+        self.sent: list[tuple[str, str, Any]] = []
+        self.queries: list[dict[str, str]] = []
+        api.get(SYSTEM).mock(side_effect=self.list_system)
+        api.get(url__regex=rf"{SYSTEM}/[0-9a-f-]{{36}}$").mock(side_effect=self.get_system)
+        api.put(url__regex=rf"{SYSTEM}/[0-9a-f-]{{36}}$").mock(side_effect=self.put_system)
+        api.get(CUSTOM).mock(side_effect=self.list_custom)
+        api.get(url__regex=rf"{CUSTOM}/[0-9a-f-]{{36}}$").mock(side_effect=self.get_custom)
+        api.post(CUSTOM).mock(side_effect=self.post_custom)
+        api.delete(url__regex=rf"{CUSTOM}/[0-9a-f-]{{36}}$").mock(side_effect=self.delete_custom)
+
+    @staticmethod
+    def _page(rows: list[dict[str, Any]], q: Any) -> httpx.Response:
+        start = int(q.get("offset", "1")) - 1  # one-based
+        size = int(q.get("limit", "25"))
+        chunk = rows[start : start + size]
+        page = {"limit": size, "offset": start + 1, "count": len(chunk)}
+        return httpx.Response(200, json={"response": chunk, "version": "1.0", "page": page})
+
+    def list_system(self, request: httpx.Request) -> httpx.Response:
+        q = request.url.params
+        self.queries.append(dict(q))
+        rows = [
+            d
+            for d in self.system.values()
+            if q.get("name") in (None, d["name"])
+            and q.get("priority") in (None, d["priority"])
+            and q.get("deviceType") in (None, d["deviceType"])
+            and q.get("issueEnabled") in (None, str(d["issueEnabled"]).lower())
+        ]
+        return self._page(rows, q)
+
+    def get_system(self, request: httpx.Request) -> httpx.Response:
+        d = self.system.get(request.url.path.rsplit("/", 1)[1])
+        if d is None:
+            return httpx.Response(404, json={"response": {"errorCode": "NOT_FOUND"}})
+        return httpx.Response(200, json={"response": d, "version": "1.0"})
+
+    def put_system(self, request: httpx.Request) -> httpx.Response:
+        did = request.url.path.rsplit("/", 1)[1]
+        body = json.loads(request.content)
+        self.sent.append(("PUT", did, body))
+        self.system[did] = {**self.system[did], **body, "definitionStatus": "MODIFIED"}
+        return httpx.Response(200, json={"response": self.system[did], "version": "1.0"})
+
+    def list_custom(self, request: httpx.Request) -> httpx.Response:
+        q = request.url.params
+        self.queries.append(dict(q))
+        rows = [d for d in self.custom if q.get("name") in (None, d["name"])]
+        resp = self._page(rows, q)
+        body = json.loads(resp.content)
+        body["page"]["sortBy"] = [{"name": "name", "order": "asc"}]
+        return httpx.Response(200, json=body)
+
+    def get_custom(self, request: httpx.Request) -> httpx.Response:
+        did = request.url.path.rsplit("/", 1)[1]
+        rows = [d for d in self.custom if d["id"] == did]
+        if not rows:
+            return httpx.Response(404, json={"response": {"errorCode": "NOT_FOUND"}})
+        return httpx.Response(200, json={"response": rows[0], "version": "1.0"})
+
+    def post_custom(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        self.sent.append(("POST", CUSTOM, body))
+        made = {**body, "id": CUSTOM_ID, "isDeletable": True, "profileId": "global"}
+        self.custom.append(made)
+        return httpx.Response(200, json={"response": made, "version": "1.0"})
+
+    def delete_custom(self, request: httpx.Request) -> httpx.Response:
+        did = request.url.path.rsplit("/", 1)[1]
+        self.sent.append(("DELETE", did, None))
+        self.custom = [d for d in self.custom if d["id"] != did]
+        return httpx.Response(204)
+
+
+async def test_list_system_definitions(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_list_issue_definitions", {"response_format": "json"})
+        rows = {r["name"]: r for r in out["results"]}
+        assert rows["BGP_Down"]["threshold"] == 3.0 and rows["BGP_Down"]["enabled"] is True
+        assert rows["wlc_monitor"]["changed_from_default"] is True
+        assert rows["wlc_monitor"]["priority"] == "P1" and rows["wlc_monitor"]["default_priority"] == "P3"
+        assert lab.queries[-1]["offset"] == "1" and lab.queries[-1]["profileId"] == "global"
+        out = await run(
+            c,
+            "catc_list_issue_definitions",
+            {"enabled": False, "device_type": "WIRELESS_CONTROLLER", "response_format": "json"},
+        )
+        assert [r["name"] for r in out["results"]] == ["wlc_monitor"]
+        assert lab.queries[-1]["issueEnabled"] == "false"
+        out = await run(c, "catc_list_issue_definitions", {"search": "outlook", "response_format": "json"})
+        assert [r["name"] for r in out["results"]] == ["global_sensor_outlook_fail_trigger"]
+
+
+async def test_list_custom_definitions(api: respx.MockRouter) -> None:
+    Lab(api)
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_list_issue_definitions", {"kind": "custom", "response_format": "json"})
+        assert out["results"] == [] and "No custom" in out["note"]
+
+
+async def test_list_custom_rule_text(api: respx.MockRouter) -> None:
+    Lab(api, custom=[OSPF])
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_list_issue_definitions", {"kind": "custom", "response_format": "json"})
+        row = out["results"][0]
+        assert row["rules"] == [
+            "severity 5 (notice), %OSPF-5-ADJCHG, text matching /from FULL to DOWN/, 1 time(s)"
+        ]
+        with pytest.raises(ToolError, match="system definitions only"):
+            await run(c, "catc_list_issue_definitions", {"kind": "custom", "device_type": "ROUTER"})
+
+
+async def test_update_disable_by_name(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    preview, done = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "BGP_Down", "enabled": False}
+    )
+    assert preview["status"] == "preview"
+    details = preview["preview"]
+    assert details["changes"] == {"enabled": {"from": True, "to": False}}
+    assert details["before"]["enabled"] is True and details["after"]["enabled"] is False
+    assert any("stops raising" in s for s in preview["side_effects"])
+    assert done and done["result"]["definition"]["enabled"] is False
+    assert lab.sent == [
+        (
+            "PUT",
+            BGP_ID,
+            {
+                "issueEnabled": False,
+                "priority": "P2",
+                "synchronizeToHealthThreshold": False,
+                "thresholdValue": 3.0,
+            },
+        )
+    ]
+
+
+async def test_update_priority_default_and_threshold(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    preview, done = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "WLC Monitor", "priority": "default", "enabled": True}
+    )
+    assert preview["preview"]["changes"]["priority"] == {"from": "P1", "to": "P3"}
+    assert done and lab.sent[-1] == (
+        "PUT",
+        WLC_ID,
+        {"issueEnabled": True, "priority": "P3", "synchronizeToHealthThreshold": False},
+    )
+    # By id, a threshold change.
+    _, done = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": BGP_ID, "threshold": 10}
+    )
+    assert done and lab.sent[-1][2]["thresholdValue"] == 10
+
+
+async def test_update_blockers(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    out, _ = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "wlc_monitor", "threshold": 5}
+    )
+    assert out["status"] == "blocked" and "has no threshold" in out["blockers"][0]
+    out, _ = await preview_then_apply(
+        "catc_update_issue_definition", {"definition": "BGP_Down", "priority": "P2"}
+    )
+    assert out["status"] == "blocked" and "nothing would change" in out["blockers"][0]
+    assert lab.sent == []
+    async with Client(rw_server()) as c:
+        with pytest.raises(ToolError, match="Nothing to change"):
+            await run(c, "catc_update_issue_definition", {"definition": "BGP_Down"})
+        with pytest.raises(ToolError, match="No system issue definition named 'bgp-dwn'"):
+            await run(c, "catc_update_issue_definition", {"definition": "bgp-dwn", "enabled": False})
+
+
+async def test_writes_need_the_write_tier(api: respx.MockRouter) -> None:
+    Lab(api)
+    async with Client(create_server(make_settings())) as c:
+        names = {t.name for t in await c.list_tools()}
+    assert "catc_list_issue_definitions" in names
+    assert (
+        not {"catc_update_issue_definition", "catc_create_custom_issue", "catc_delete_custom_issue"} & names
+    )
+
+
+async def test_create_custom_issue(api: respx.MockRouter) -> None:
+    lab = Lab(api)
+    args = {
+        "name": "mcp-ospf-down",
+        "severity": 5,
+        "facility": "ospf",
+        "mnemonic": "adjchg",
+        "pattern": "from FULL to DOWN",
+        "occurrences": 2,
+        "duration_minutes": 10,
+        "priority": "P2",
+        "notify": True,
+    }
+    preview, done = await preview_then_apply("catc_create_custom_issue", args)
+    assert preview["status"] == "preview"
+    assert preview["preview"]["rule"] == (
+        "severity 5 (notice), %OSPF-5-ADJCHG, text matching /from FULL to DOWN/, 2 time(s) in 10 min"
+    )
+    assert done and done["result"]["created"]["id"] == CUSTOM_ID
+    method, path, body = lab.sent[0]
+    assert (method, path) == ("POST", CUSTOM)
+    assert body["rules"] == [
+        {
+            "severity": 5,
+            "occurrences": 2,
+            "facility": "OSPF",
+            "mnemonic": "ADJCHG",
+            "pattern": "from FULL to DOWN",
+            "durationInMinutes": 10,
+        }
+    ]
+    assert body["isEnabled"] is True and body["isNotificationEnabled"] is True and body["priority"] == "P2"
+
+
+async def test_create_custom_issue_blockers(api: respx.MockRouter) -> None:
+    lab = Lab(api, custom=[OSPF])
+    out, _ = await preview_then_apply(
+        "catc_create_custom_issue", {"name": "mcp-ospf-down", "severity": 5, "mnemonic": "ADJCHG"}
+    )
+    assert out["status"] == "blocked" and "exists already" in out["blockers"][0]
+    out, _ = await preview_then_apply("catc_create_custom_issue", {"name": "mcp-any", "severity": 3})
+    assert "severity alone" in out["blockers"][0]
+    out, _ = await preview_then_apply(
+        "catc_create_custom_issue", {"name": "mcp-x", "severity": 3, "mnemonic": "X", "occurrences": 3}
+    )
+    assert "duration_minutes" in out["blockers"][0]
+    assert lab.sent == []
+    async with Client(rw_server()) as c:  # preview only
+        out = await run(c, "catc_create_custom_issue", {"name": "mcp-x", "severity": 3, "pattern": "([bad"})
+    assert out["status"] == "preview" and any("doesn't compile" in s for s in out["side_effects"])
+    assert lab.sent == []
+
+
+async def test_delete_custom_issue(api: respx.MockRouter) -> None:
+    lab = Lab(api, custom=[OSPF])
+    preview, done = await preview_then_apply("catc_delete_custom_issue", {"definition": "mcp-ospf-down"})
+    assert preview["status"] == "preview" and preview["preview"]["definition"]["priority"] == "P2"
+    assert any("Notifications subscribed" in s for s in preview["side_effects"])
+    assert done and done["result"]["deleted"] == CUSTOM_ID
+    assert lab.sent == [("DELETE", CUSTOM_ID, None)]
+
+
+async def test_delete_points_system_definitions_to_disable(api: respx.MockRouter) -> None:
+    Lab(api)
+    async with Client(rw_server()) as c:
+        with pytest.raises(ToolError, match="disable it with catc_update_issue_definition"):
+            await run(c, "catc_delete_custom_issue", {"definition": "BGP_Down"})
+        with pytest.raises(ToolError, match="No custom issue definition"):
+            await run(c, "catc_delete_custom_issue", {"definition": CUSTOM_ID})
+
+
+async def test_delete_not_deletable(api: respx.MockRouter) -> None:
+    lab = Lab(api, custom=[{**OSPF, "isDeletable": False}])
+    out, _ = await preview_then_apply("catc_delete_custom_issue", {"definition": CUSTOM_ID})
+    assert out["status"] == "blocked" and "not deletable" in out["blockers"][0]
+    assert lab.sent == []
