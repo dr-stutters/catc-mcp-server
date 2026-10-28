@@ -116,11 +116,6 @@
       ]
     },
     "catc_guest_wireless_with_ise": {
-      "uses": [
-        "catc",
-        "ise"
-      ],
-      "tier": "dangerous",
       "arguments": [
         "site",
         "wlc",
@@ -162,7 +157,12 @@
         "ise_delete_policy_rule",
         "ise_delete_object"
       ],
-      "rendered": true
+      "rendered": true,
+      "tier": "dangerous",
+      "uses": [
+        "catc",
+        "ise"
+      ]
     },
     "catc_onboard_device": {
       "arguments": [
@@ -904,6 +904,10 @@
       "tier": "read",
       "title": "List activities"
     },
+    "catc_list_ap_profiles": {
+      "tier": "read",
+      "title": "List AP profiles"
+    },
     "catc_list_audit_logs": {
       "tier": "read",
       "title": "List audit logs"
@@ -1116,6 +1120,14 @@
       "tier": "read",
       "title": "Security advisories (PSIRT)"
     },
+    "catc_set_ap_power_profile": {
+      "tier": "write",
+      "title": "Set AP power profile"
+    },
+    "catc_set_ap_profile": {
+      "tier": "write",
+      "title": "Set AP profile"
+    },
     "catc_set_device_role": {
       "tier": "write",
       "title": "Set device role"
@@ -1273,5 +1285,5 @@
       "title": "Write memory"
     }
   },
-  "version": "0.19.0"
+  "version": "0.20.0"
 }

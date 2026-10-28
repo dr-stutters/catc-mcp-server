@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.20.0 (2026-10-28)
+
+Guest wireless with ISE central web auth, AP join and power profiles, Visibility and Control of Configurations, and a
+maintenance-window fix. Core 0.19.0. 219 tools (112 read, 61 write, 46 dangerous) and fifteen prompts.
+
+### Added
+- `catc_create_ssid` takes the guest web-auth fields (L3 web auth, ISE/internal/external portal, MAC filtering, AAA
+  override, pre-auth ACL, RADIUS profiling, posture, NAS-ID options), and the new prompt
+  `catc_guest_wireless_with_ise` builds guest Wi-Fi with ISE central web auth end to end (D126, #242, #282).
+- AP join and power profiles: `catc_list_ap_profiles`, `catc_set_ap_profile` (SSH, management and 802.1X supplicant
+  credentials masked, CDP, rogue min RSSI, country, time zone, power profile) and `catc_set_ap_power_profile` (D127,
+  #243, #280).
+- `catc_get_provisioning_settings` / `catc_set_provisioning_settings` (D128, #244, #278): Visibility and Control of
+  Configurations (require preview, require ITSM approval; ITSM refused without an integration); a 'config preview
+  mandated' refusal now points to the setting.
+
+### Fixed
+- `catc_update_maintenance_window(end_now=true)`, `catc_list_maintenance_windows` and `catc_cancel_maintenance` show a
+  window ended early as `ended_early` with no end (it was 1969-12-31), and `end_now` waits for COMPLETED and gives
+  `ended_at` (D73, #269, #277).
+
 ## 0.19.0 (2026-10-28)
 
 Assurance health score tuning, enterprise CA import, core 0.19.0's suite prompts, and issue-definition and
