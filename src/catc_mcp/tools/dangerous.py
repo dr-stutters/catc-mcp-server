@@ -37,6 +37,7 @@ from catc_mcp.tools.archive import archive_files
 from catc_mcp.tools.discovery import resolve_discovery
 from catc_mcp.tools.inventory import redact_config
 from catc_mcp.tools.ops_writes import Devices, brief, resolve_devices
+from catc_mcp.tools.provisioning_settings import preview_gate
 from catc_mcp.tools.sites import SITE_DETAIL_PATHS, all_sites
 from catc_mcp.tools.swim import resolve_image
 from catc_mcp.tools.templates import TemplateRef, deployment_summary
@@ -256,6 +257,7 @@ def register(reg: ToolRegistrar) -> None:
                     )
         except UpstreamError as e:
             rendered = f"(preview unavailable: {redact_config(str(e))[:200]})"
+        gate, prov = await preview_gate(app, "template deploy")
         body = {
             "templateId": tid,
             "forcePushTemplate": force_push,
@@ -276,16 +278,19 @@ def register(reg: ToolRegistrar) -> None:
                 "rendered_cli_first_device": rendered,
                 "note": "CLI rendered for the first device only; device-bound variables may differ.",
                 "params": compact(params or {}),
+                "provisioning_settings": prov,
             },
             side_effects=[
                 "Changes the running configuration of every listed device.",
                 "The change is not saved to the startup config (Catalyst Center doesn't write memory): "
                 "run catc_write_memory(devices) afterwards to keep it.",
+                *gate,
             ],
             fingerprint={
                 "template": tid,
                 "devices": sorted(str(d["id"]) for d in devs),
                 "versions": [v.get("id") for v in versions],
+                "provisioning_settings": prov,
             },
             blockers=blockers,
             blast_radius=len(devs),
@@ -365,6 +370,7 @@ def register(reg: ToolRegistrar) -> None:
                 "rediscover it, then assign and provision it."
             )
         path = "/dna/intent/api/v1/sda/provisionDevices"
+        gate, prov = await preview_gate(app, "provisioning")
         plan = Plan(
             f"Provision {len(new_devs)} and re-provision {len(again)} device(s) at {s.get('nameHierarchy')}",
             details={
@@ -372,15 +378,18 @@ def register(reg: ToolRegistrar) -> None:
                 "re_provision": brief(again),
                 "site": {"nameHierarchy": s.get("nameHierarchy"), "id": s.get("id")},
                 "requests": ([f"POST {path}"] if new_devs else []) + ([f"PUT {path}"] if again else []),
+                "provisioning_settings": prov,
             },
             side_effects=[
                 "Pushes the site's network settings to each device (not the network profile's Day-N "
-                "templates: deploy those with catc_deploy_template)."
+                "templates: deploy those with catc_deploy_template).",
+                *gate,
             ],
             fingerprint={
                 "site": s["id"],
                 "devices": sorted(str(d["id"]) for d in devs),
                 "existing": existing,
+                "provisioning_settings": prov,
             },
             blockers=blockers,
             blast_radius=len(devs),
@@ -462,6 +471,7 @@ def register(reg: ToolRegistrar) -> None:
             blockers.append("Nothing to provision: every device at the site is skipped (see skipped).")
         path = "/dna/intent/api/v1/sda/provisionDevices"
         body = [{"networkDeviceId": str(d["id"]), "siteId": where[str(d["id"])]["siteId"]} for d in include]
+        gate, prov = await preview_gate(app, "provisioning")
         plan = Plan(
             f"Provision {len(include)} device(s) at {s.get('nameHierarchy')} (skip {len(skipped)})",
             details={
@@ -472,16 +482,19 @@ def register(reg: ToolRegistrar) -> None:
                 ],
                 "skipped": skipped,
                 "requests": [f"POST {path}"] if include else [],
+                "provisioning_settings": prov,
             },
             side_effects=[
                 "Pushes each device's site network settings (AAA, DNS, NTP, banner, syslog/SNMP, telemetry) "
                 "to it; with ISE as the site's AAA, ISE gets a network device for each.",
                 "Not the network profile's Day-N templates: deploy those with catc_deploy_template.",
+                *gate,
             ],
             fingerprint={
                 "site": s["id"],
                 "body": body,
                 "existing": {k: v for k, v in existing.items() if k in where},
+                "provisioning_settings": prov,
             },
             blockers=blockers,
             blast_radius=len(include),
@@ -552,6 +565,8 @@ def register(reg: ToolRegistrar) -> None:
             if activate
             else ["Copies the image to the device's flash (no reload)."]
         )
+        gate, prov = await preview_gate(app, f"image {'activation' if activate else 'distribution'}")
+        effects += gate
         plan = Plan(
             f"{action.title()} image {img.get('name')} ({img.get('version')}) on {brief([dev])[0]}",
             details={
@@ -560,9 +575,15 @@ def register(reg: ToolRegistrar) -> None:
                 "image": {k: img.get(k) for k in ("name", "version", "id")},
                 "method": "POST",
                 "path": path,
+                "provisioning_settings": prov,
             },
             side_effects=effects,
-            fingerprint={"device": dev["id"], "image": img["id"], "action": action},
+            fingerprint={
+                "device": dev["id"],
+                "image": img["id"],
+                "action": action,
+                "provisioning_settings": prov,
+            },
             blockers=device_limit_blockers(app, 1),
             blast_radius=1,
         )

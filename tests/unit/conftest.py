@@ -60,6 +60,11 @@ def api() -> Iterator[respx.MockRouter]:
         router.get("/dna/intent/api/v1/network-device/count").respond(json={"response": 0})
         router.get("/dna/intent/api/v1/sites/count").respond(json={"response": {"count": 1}})
         router.get("/dna/intent/api/v1/networkDeviceConfigFiles").respond(json={"response": []})
+        # Gated previews (catc_deploy_template, provisioning, SWIM) read the provisioning settings; tests that
+        # care add their own route, which replaces this one.
+        router.get("/dna/intent/api/v1/provisioningSettings").respond(
+            json={"response": {"requirePreview": False, "requireItsmApproval": False}, "version": "1.0"}
+        )
         router.get("/dna/system/api/v1/user").respond(
             json={"response": {"users": [{"username": "admin", "roleList": ["SUPER-ADMIN-ROLE"]}]}}
         )
