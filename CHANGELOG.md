@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.21.0 (2026-10-29)
+
+User-defined fields, wired per-device intended configuration, telemetry settings pushed without a re-provision, a
+'devices under maintenance' note on issues, and an honest trusted-certificate import. Core 0.19.0. 226 tools (114
+read, 65 write, 47 dangerous) and fifteen prompts.
+
+### Added
+- User-defined fields: `catc_list_udfs`, `catc_set_udf` and `catc_set_device_udfs` manage user-defined fields and
+  their per-device values; `catc_get_device` shows a device's UDFs (D123, #239, #296).
+- Wired per-device intended configuration: `catc_get_wired_config`, `catc_set_wired_feature` and
+  `catc_deploy_wired_config` read, store and deploy a switch's layer-2 configuration (VLANs, STP, VTP, CDP/LLDP,
+  snooping, 802.1X/MAB, switchport, trunk, port-channel), with a CLI preview before the deploy (D125, #241, #298).
+- `catc_apply_telemetry_settings` pushes a site's syslog/SNMP trap/NetFlow settings to devices without a
+  re-provision (D122, #238, #299).
+- `catc_list_issues` and `catc_device_360` add a 'maintenance' note naming devices in a running maintenance window
+  (Assurance raises no issues for them until its end time) and windows starting soon (D73, #128, #297).
+
+### Fixed
+- `catc_import_trusted_certificate` no longer claims a duplicate is refused (3.2.2 overwrites it); the preview names
+  earlier imports from the audit log, and the result reads the import back from the audit log (subject, issuer,
+  serial) (D130, #281, #295).
+
 ## 0.20.1 (2026-10-29)
 
 Fixes found in the live proofs of 0.18.0–0.20.0: guest CWA SSID and AP profile previews block what Catalyst Center

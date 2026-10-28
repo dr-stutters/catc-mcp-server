@@ -831,6 +831,10 @@
       "tier": "dangerous",
       "title": "Deploy template"
     },
+    "catc_deploy_wired_config": {
+      "tier": "dangerous",
+      "title": "Deploy wired config"
+    },
     "catc_deploy_wlc_config": {
       "tier": "dangerous",
       "title": "Deploy WLC config"
@@ -1018,6 +1022,10 @@
     "catc_get_vlan_topology": {
       "tier": "read",
       "title": "VLAN topology"
+    },
+    "catc_get_wired_config": {
+      "tier": "read",
+      "title": "Wired feature config"
     },
     "catc_get_wireless_controller": {
       "tier": "read",
@@ -1343,6 +1351,10 @@
       "tier": "write",
       "title": "Create, update or delete a user-defined field"
     },
+    "catc_set_wired_feature": {
+      "tier": "write",
+      "title": "Set wired feature"
+    },
     "catc_set_wlan_security": {
       "tier": "write",
       "title": "Set WLAN security"
@@ -1456,5 +1468,5 @@
       "title": "Write memory"
     }
   },
-  "version": "0.20.1"
+  "version": "0.21.0"
 }
