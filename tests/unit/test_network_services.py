@@ -5,13 +5,16 @@
 Catalyst Center 3.2.2 raised them) fold into the AAA verdict."""
 
 import json
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
+import pytest
 import respx
 from fastmcp import Client
 
 from catc_mcp.server import create_server
+from catc_mcp.tools import network_services
 
 from .conftest import make_settings
 from .test_read_tools import AREA, GLOBAL
@@ -20,6 +23,15 @@ from .test_write_tools import mock_sites, run
 AAA = "/dna/data/api/v1/aaaServices"
 ISSUES = "/dna/data/api/v1/assuranceIssues"
 ISE = "198.18.134.35"
+NOW = 1793154000.0  # 2026-10-28 02:20:00 UTC: the dead-issue times below are on this UTC day
+
+
+@pytest.fixture(autouse=True)
+def frozen_now(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The window ends at NOW, so 'today' and 'before the window' are fixed (#270)."""
+    end = int(NOW * 1000)
+    monkeypatch.setattr(network_services, "window_ms", lambda hours: (end - int(hours * 3_600_000), end))
+    yield
 
 
 def aaa_row(device: str, tx: int, failed: int, eap: int, eap_failed: int, latency: int) -> dict[str, Any]:
@@ -268,3 +280,47 @@ async def test_dead_issue_read_failure_is_reported(api: respx.MockRouter) -> Non
         out = await run(c, "catc_network_services_health", {"trend": False})
     assert "dead_server_issues_unavailable" in out["aaa"] and "dead_server_issues" not in out["aaa"]
     assert out["verdict"][0].startswith("ISE 198.18.134.35 answered 97.2% of 212 AAA requests")
+
+
+async def test_dead_issue_from_an_earlier_day_carries_its_date(api: respx.MockRouter) -> None:
+    """#270, the live CBR case: hours=6, a radius_error_trigger first seen two days back and still active
+    (last seen today) reads 'since <date time>'; a same-day issue inside the window keeps HH:MM."""
+    mock_policy(
+        api,
+        [
+            dead_issue(
+                "cbr1.example.com",
+                name="radius_error_trigger",
+                status="active",
+                first=1793009746000,  # 2026-10-26 10:15:46 UTC
+                last=1793152620000,  # 2026-10-28 01:57:00 UTC
+                updated=None,
+            ),
+            dead_issue("sw1.example.com"),  # 02:04 -> 02:10 UTC today, inside the window
+        ],
+    )
+    api.get(AAA).respond(json=page([]))
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_network_services_health", {"hours": 6, "trend": False})
+    old, today = out["aaa"]["dead_server_issues"]
+    assert old["first_at"] == "2026-10-26 10:15 UTC" and old["started_before_window"] is True
+    assert old["last_at"] == "01:57 UTC"
+    assert today["first_at"] == "02:04 UTC" and today["resolved_at"] == "02:10 UTC"
+    assert "started_before_window" not in today
+    (line,) = out["verdict"]
+    assert (
+        "cbr1.example.com reported ISE 198.18.134.35 not responding since 2026-10-26 10:15 UTC "
+        "(P2, still active, last seen 01:57 UTC)"
+    ) in line
+    assert "sw1.example.com marked ISE 198.18.134.35 DEAD at 02:04 UTC (P1, resolved 02:10 UTC)" in line
+
+
+async def test_dead_issue_before_the_window_on_the_same_day_is_dated(api: respx.MockRouter) -> None:
+    """Earlier today but before a 1-hour window: dated and 'since', so it is not read as inside the window."""
+    mock_policy(api, [dead_issue("sw1.example.com", first=1793146200000, updated=None, status="active")])
+    api.get(AAA).respond(json=page([]))
+    async with Client(create_server(make_settings())) as c:
+        out = await run(c, "catc_network_services_health", {"hours": 1, "trend": False})
+    (row,) = out["aaa"]["dead_server_issues"]
+    assert row["first_at"] == "2026-10-28 00:10 UTC" and row["last_at"] == "02:04 UTC"
+    assert "DEAD since 2026-10-28 00:10 UTC (P1, still active, last seen 02:04 UTC)" in out["verdict"][0]
