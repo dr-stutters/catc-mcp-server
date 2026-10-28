@@ -1059,6 +1059,10 @@
       "tier": "read",
       "title": "Issue recurrence"
     },
+    "catc_license_summary": {
+      "tier": "read",
+      "title": "Licensing summary"
+    },
     "catc_lifecycle_signals": {
       "tier": "read",
       "title": "Lifecycle and security signals"
@@ -1110,6 +1114,10 @@
     "catc_list_device_interfaces": {
       "tier": "read",
       "title": "List device interfaces"
+    },
+    "catc_list_device_licenses": {
+      "tier": "read",
+      "title": "List device licences"
     },
     "catc_list_device_modules": {
       "tier": "read",

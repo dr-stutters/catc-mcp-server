@@ -21,7 +21,7 @@ READ: dict[str, str] = {
     "Network Management.Discovery": "Read",
     "Network Management.Hierarchy": "Read",  # (minimum Read)
     "Network Management.Inventory": "Read",  # devices, interfaces, modules, config, archive, tags
-    "Network Management.License": "Read",  # catc_get_device_hardware licence records
+    "Network Management.License": "Read",  # licence records: device hardware, D55 licensing tools
     "Network Management.Network-wide Settings": "Read",  # (fixed at Read)
     "Network Operations.Compliance": "Read",
     "Network Operations.Device Replacement & Refresh": "Read",  # RMA list
