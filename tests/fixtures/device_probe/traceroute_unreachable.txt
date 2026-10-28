@@ -1,0 +1,9 @@
+traceroute 203.0.113.99 numeric timeout 2 ttl 1 4
+Type escape sequence to abort.
+Tracing the route to 203.0.113.99
+VRF info: (vrf in name/id, vrf out name/id)
+  1 192.0.2.2 1 msec 1 msec 1 msec
+  2 192.0.2.6 !H  *  !H 
+  3  *  *  * 
+  4  *  *  * 
+edge-r1#

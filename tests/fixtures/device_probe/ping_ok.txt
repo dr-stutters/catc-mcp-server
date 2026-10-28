@@ -1,0 +1,7 @@
+ping 198.51.100.20 repeat 5 source Loopback0
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 198.51.100.20, timeout is 2 seconds:
+Packet sent with a source address of 192.0.2.1 
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms
+edge-r1#

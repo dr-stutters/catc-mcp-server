@@ -26,6 +26,7 @@ from catc_mcp.tools import (
     config_io,
     credentials,
     dangerous,
+    device_probe,
     discovery,
     external_auth,
     group_policy,
@@ -128,7 +129,8 @@ Workflows:
 - Enterprise CA renewed or replaced: catc_import_trusted_certificate (the new CA chain) before the ISE/pxGrid
   leaves are re-issued.
 - Troubleshoot: catc_device_360 / catc_client_360 -> catc_list_issues -> catc_get_issue (suggested
-  commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Issues stay 'active' for
+  commands) -> catc_run_show_commands; catc_path_trace; catc_list_events. Reachability from a device
+  (ping ISE/DNS from the access switch, no SSH): catc_ping / catc_traceroute. Issues stay 'active' for
   hours after the problem clears: check last_seen and the live state before calling one current.
 - One port (contain or fix a client port; dangerous tier): catc_set_interface(device, interface,
   shut|no_shut|access_vlan|voice_vlan|description); uplinks and trunks refused unless allow_uplink; the
@@ -197,6 +199,7 @@ REGISTER = [
     health_scores.register,
     network_services.register,
     smart.register,
+    device_probe.register,
     snapshot.register,
     topology.register,
     link_insight.register,

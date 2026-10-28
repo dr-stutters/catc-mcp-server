@@ -391,6 +391,9 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_run_show_commands` is **read tier** but only accepts `show ...` commands; after a `|` only
   include/exclude/begin/section/count filters are allowed (regex alternatives such as
   `| include up|down` are fine; no redirect/tee/append, no `;`, `&`, `<`, `>`).
+- `catc_ping` / `catc_traceroute` are **read tier** too: the command is built from the arguments and
+  checked against a fixed allow-list (show, ping, traceroute, dir, each with a fixed grammar), never the
+  command runner's own keyword list (which also accepts debug, monitor, test, crypto, verify).
 - Global credential secrets (passwords, communities, SNMPv3 keys) are write-only: they are masked in
   previews and never returned.
 - Running configs, template bodies and command output have passwords, secrets, keys and SNMP
@@ -398,7 +401,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (114)
+### Read (116)
 
 | Tool | What it does |
 |---|---|
@@ -504,6 +507,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_list_udfs` | User-defined fields (UDFs): the global field definitions Catalyst Center devices can carry (asset tag, owner, contract, CMDB id...) with name, description and id. |
 | `catc_network_services_health` | How the AAA (RADIUS), DHCP and DNS servers answered the network, as Catalyst Center Assurance measured it: per server the transactions, successful and failed ones, success %, average latency (AAA: EAP vs MAB split; DHCP: discover-offer and request-ack), one verdict line ("ISE 198.18.134.35 answered 97% of 212 AAA requests, average latency 180 ms; 6 MAB failures on sw1"), the devices (NADs) behind it with their own counts, the top failing devices and the trend. AAA also folds in the Assurance issues saying a device marked its AAA server DEAD or not responding (open or resolved in the window): the data API counts only requests a device sent, so a dead-server window shows no failures. |
 | `catc_path_trace` | Trace the network path between two IPs as Catalyst Center sees it: each hop (device, ingress/egress interfaces, how the link was learned), ACL verdicts when statistics are requested, and the failure reason if the trace can't be built (e.g. the source isn't known to Catalyst Center). |
+| `catc_ping` | Ping from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed result: sent/received, success and loss %, min/avg/max round-trip time, reachable, a one-line verdict, and the raw output. |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
 | `catc_recent_activity` | What happened on this device or site recently? Queries Catalyst Center's assurance issues, assurance events (syslog, traps), platform event notifications and the audit log for the same window and scope, and merges them newest first with a `source` column. |
 | `catc_run_show_commands` | Run read-only `show` commands live on managed devices through Catalyst Center's command runner and return each device's output. |
@@ -516,6 +520,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_template_usage` | Where a template is used: the network profiles it is attached to, the sites those profiles are assigned to, and the devices it was deployed to with the version each one runs against the latest committed version (current / behind / failed). |
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
+| `catc_traceroute` | Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS labels and unreachable codes (!H, !N, !A ...), whether the target answered, a one-line verdict and the raw output. |
 
 ### Write (64)
 

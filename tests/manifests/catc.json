@@ -1239,6 +1239,10 @@
       "tier": "read",
       "title": "Path trace"
     },
+    "catc_ping": {
+      "tier": "read",
+      "title": "Ping from a device"
+    },
     "catc_preview_template": {
       "tier": "read",
       "title": "Preview template"
@@ -1394,6 +1398,10 @@
     "catc_top_problems": {
       "tier": "read",
       "title": "Top problem devices or clients"
+    },
+    "catc_traceroute": {
+      "tier": "read",
+      "title": "Traceroute from a device"
     },
     "catc_trigger_lifecycle_scan": {
       "tier": "write",
