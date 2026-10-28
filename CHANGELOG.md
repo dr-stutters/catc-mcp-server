@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.19.0 (2026-10-28)
+
+Assurance health score tuning, enterprise CA import, core 0.19.0's suite prompts, and issue-definition and
+site-scope fixes from the 3.2.2 live run. Core 0.19.0. 214 tools (110 read, 59 write, 45 dangerous) and fourteen
+prompts.
+
+### Added
+- `catc_list_health_score_definitions` and `catc_update_health_score_definition` (D121, #237, #274): list and tune the
+  Assurance health score KPIs (threshold, include in overall health, sync to issue threshold, reset to default) per
+  device family.
+- `catc_import_trusted_certificate` (D130, #246, #275): adds an enterprise CA certificate or chain to Catalyst
+  Center's trusted certificates; the preview parses each certificate and refuses leaf, expired and key-carrying PEMs,
+  and already-trusted ones are reported.
+- Core v0.19.0 (#271): the suite prompts `suite_access_review`, `suite_asbuilt_drift`, `suite_decommission_site` and
+  `suite_maintenance_window` are now registered.
+
+### Fixed
+- `catc_update_issue_definition` finds disabled system definitions by name, `catc_list_issue_definitions` lists them
+  by default, and custom rules show their syslog severity (D53, #262, #272).
+- `catc_list_devices(site=...)` now includes devices on child sites (a building's floors) and names each device's
+  site; `include_children=false` keeps the exact-site filter. `catc_site_health_review` scopes a building correctly,
+  makes one issues call, and no longer ranks a recovered dip as a worsening trend (D42, #264, #273).
+
 ## 0.18.0 (2026-10-28)
 
 Link mismatches, Catalyst Center's scheduled activities, and maintenance-window and dead-AAA fixes from the 3.2.2
