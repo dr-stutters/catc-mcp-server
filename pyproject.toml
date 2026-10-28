@@ -17,6 +17,7 @@ dependencies = [
     "uvicorn>=0.30",
     "fastmcp-tasks>=4.1,<5",
     # <<< bundled stutters-mcp-core
+    "cryptography>=43",
     "pyyaml>=6.0",
 ]
 

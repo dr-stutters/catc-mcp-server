@@ -685,6 +685,10 @@
       "tier": "write",
       "title": "Import templates"
     },
+    "catc_import_trusted_certificate": {
+      "tier": "write",
+      "title": "Import a trusted CA certificate"
+    },
     "catc_issue_recurrence": {
       "tier": "read",
       "title": "Issue recurrence"

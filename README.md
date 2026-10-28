@@ -339,6 +339,9 @@ got unhealthy.
   gives each server a `next_action`; an entry that FAILED (ISE renamed, certificate renewed, FQDN not
   matching its CN) is fixed in place with `catc_update_policy_server` (ISE password re-entered), then
   the certificate is accepted again; `include_sites=true` lists the sites whose AAA uses each server.
+  When the enterprise CA is renewed or replaced, `catc_import_trusted_certificate` puts the new CA chain in
+  Catalyst Center's trust store (root first; leaf, expired and key-carrying PEMs refused in the preview)
+  before ISE's leaves are re-issued.
 - **SD-Access fabric AAA:** `catc_check_fabric_aaa(fabric_site)` reads every fabric device live (one command
   runner request): the RLOC its RADIUS comes from (Loopback0), each RADIUS server's state (DEAD, dead count,
   automate-tester), TrustSec environment data and PAC, with a verdict and the fix per device. Pass the ise
@@ -479,7 +482,7 @@ got unhealthy.
 | `catc_test_login` | Prove that a user can log in to Catalyst Center (a local account, or an external one through ISE when external authentication is on): one token request with these credentials, nothing else. |
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 
-### Write (57)
+### Write (58)
 
 | Tool | What it does |
 |---|---|
@@ -519,6 +522,7 @@ got unhealthy.
 | `catc_delete_wireless_profile` | Delete a wireless network profile. |
 | `catc_detach_template_from_profile` | Detach a Day-N CLI template from network profiles. |
 | `catc_import_templates` | Import templates from a catc_export_templates document: creates missing projects, then each template with its committed versions replayed in order (version comments kept; numbers start at 1 on this Catalyst Center) and the uncommitted draft on top. |
+| `catc_import_trusted_certificate` | Add an enterprise CA certificate, or a CA chain, to Catalyst Center's trusted certificates, so it trusts the servers and clients that CA issued (ISE's admin and pxGrid certificates, a syslog or proxy server). |
 | `catc_mark_device_for_replacement` | Mark a faulty device for replacement (RMA), the first step before catc_replace_device; or unmark it. |
 | `catc_resync_devices` | Re-collect inventory (config, interfaces, modules) from devices now instead of waiting for the next polling cycle. |
 | `catc_run_compliance` | Run a compliance check now for devices (all categories unless given). |
