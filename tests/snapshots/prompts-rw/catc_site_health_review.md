@@ -33,13 +33,15 @@ healthy one.
    `catc_get_client_health`. Per device: `catc_list_device_health` with site "Global/mcp-test-lab/mcp-test-bldg"
    (POOR and FAIR devices, CPU/memory, link errors, reachability); trend a POOR device with
    `catc_health_trend` scope "device" to see whether it is new or chronic.
-4. Issues. `catc_list_issues` with site "Global/mcp-test-lab/mcp-test-bldg", status "active" and hours 168; for each P1/P2
+4. Issues. `catc_list_issues` with site "Global/mcp-test-lab/mcp-test-bldg", status "active" and hours 168, and again with
+   site "Global/mcp-test-lab/mcp-test-bldg/*" (the filter matches the site exactly; the wildcard adds its child sites); for each P1/P2
    `catc_get_issue` (root cause, suggested actions). Issues stay active for hours after they
    clear: compare last_seen with now and with the device's live reachability before calling one current.
    What keeps coming back: `catc_issue_recurrence` with site "Global/mcp-test-lab/mcp-test-bldg" and hours 168.
 5. Compliance. `catc_compliance_report` with site "Global/mcp-test-lab/mcp-test-bldg" (non-compliant devices, failing
    categories and severity, policy rule violations; trend.since_previous_report says what is new and what was
-   fixed) and `catc_list_compliance_violations` with site "Global/mcp-test-lab/mcp-test-bldg" for the rule detail. Note
+   fixed); for the rule detail `catc_list_compliance_violations` with device set to each
+   non-compliant device from that report (the tool needs a device, or a policy and a site). Note
    when the last compliance run is older than the window: the result is stale, and the next steps recommend
    `catc_run_compliance` for the site's devices.
 6. Image currency. `catc_list_device_images` with site "Global/mcp-test-lab/mcp-test-bldg": NON_COMPLIANT devices do not run

@@ -815,13 +815,15 @@ healthy one.
    {tool_ref("catc_get_client_health")}. Per device: {tool_ref("catc_list_device_health")} with site "{path}"
    (POOR and FAIR devices, CPU/memory, link errors, reachability); trend a POOR device with
    {tool_ref("catc_health_trend")} scope "device" to see whether it is new or chronic.
-4. Issues. {tool_ref("catc_list_issues")} with site "{path}", status "active" and hours {w}; for each P1/P2
+4. Issues. {tool_ref("catc_list_issues")} with site "{path}", status "active" and hours {w}, and again with
+   site "{path}/*" (the filter matches the site exactly; the wildcard adds its child sites); for each P1/P2
    {tool_ref("catc_get_issue")} (root cause, suggested actions). Issues stay active for hours after they
    clear: compare last_seen with now and with the device's live reachability before calling one current.
    What keeps coming back: {tool_ref("catc_issue_recurrence")} with site "{path}" and hours {w}.
 5. Compliance. {tool_ref("catc_compliance_report")} with site "{path}" (non-compliant devices, failing
    categories and severity, policy rule violations; trend.since_previous_report says what is new and what was
-   fixed) and {tool_ref("catc_list_compliance_violations")} with site "{path}" for the rule detail. Note
+   fixed); for the rule detail {tool_ref("catc_list_compliance_violations")} with device set to each
+   non-compliant device from that report (the tool needs a device, or a policy and a site). Note
    when the last compliance run is older than the window: the result is stale, and the next steps recommend
    {tool_ref("catc_run_compliance")} for the site's devices.
 6. Image currency. {tool_ref("catc_list_device_images")} with site "{path}": NON_COMPLIANT devices do not run

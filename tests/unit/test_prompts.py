@@ -431,6 +431,9 @@ async def test_site_health_review_renders_every_section() -> None:
     ):
         assert f"`{tool}`" in text, tool
     assert 'site "Global/mcp-test-lab/mcp-test-bldg"' in text and "hours 168" in text
+    # The violations tool refuses a bare site; issues need the wildcard for child sites.
+    assert "with device set to each\n   non-compliant device" in text
+    assert 'site "Global/mcp-test-lab/mcp-test-bldg/*"' in text
     # D73: maintenance comes before any finding and its devices stay out of the ranking.
     assert text.index("catc_list_maintenance_windows") < text.index("catc_site_health_report")
     assert "is NOT a finding" in text and "never appear in the ranking" in text
