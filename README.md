@@ -229,6 +229,11 @@ Typical flows:
 - **Troubleshoot:** `catc_device_360` / `catc_client_360` → `catc_list_issues` → `catc_get_issue`
   (Catalyst Center's suggested commands) → `catc_run_show_commands`; `catc_path_trace` (needs CDP or
   LLDP between devices); `catc_list_events`.
+- **One port** (contain or fix a client port; dangerous tier): `catc_set_interface(device, interface,
+  action=shut|no_shut|access_vlan|voice_vlan|description)` through Catalyst Center's interface API. Uplinks
+  (physical topology), trunks, port channels and virtual interfaces are refused unless `allow_uplink`; the
+  management port is never shut. The preview shows the port row, Catalyst Center's dry run
+  (`deploymentMode=Preview`) and the undo call; one device for `CATC_MAX_DEVICES_PER_CHANGE`.
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
   called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
@@ -353,7 +358,7 @@ got unhealthy.
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (100)
+### Read (101)
 
 | Tool | What it does |
 |---|---|
@@ -516,7 +521,7 @@ got unhealthy.
 | `catc_update_tag_members` | Add network devices to, or remove them from, a static tag. |
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 
-### Dangerous (43)
+### Dangerous (44)
 
 | Tool | What it does |
 |---|---|
@@ -556,6 +561,7 @@ got unhealthy.
 | `catc_set_fabric_authentication_profile` | Set an SD-Access fabric site's authentication template and/or edit that template's settings. |
 | `catc_set_fabric_multicast` | Set multicast at an SD-Access fabric site. |
 | `catc_set_fabric_port_channel` | Create, change or delete a port channel on an SD-Access fabric device. |
+| `catc_set_interface` | Change one switch port through Catalyst Center: shut / no shut, the access VLAN, the voice VLAN or the description (containment or remediation without writing a template). |
 | `catc_set_l2_handoff` | Set or remove a layer 2 handoff: a fabric VLAN extended out of a border port into a VLAN of a traditional network. |
 | `catc_set_l2_virtual_network` | Create, change or delete a layer 2 virtual network at an SD-Access fabric site. |
 | `catc_update_anycast_gateway` | Change an anycast gateway in place instead of deleting and re-adding it (which drops every client in the subnet). |
