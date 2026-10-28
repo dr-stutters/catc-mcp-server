@@ -269,6 +269,12 @@ Typical flows:
   `catc_deploy_wlc_config` (dangerous) pushes it and reports each config group's status
   (`catc_get_wlc_deployments`). Needs the provisioning settings without "require preview"
   ([docs](docs/wireless-per-device.md)).
+- **Wired change (per-device):** on a switch with Per Device Configuration (PDC) enabled in Inventory (GUI
+  only), `catc_get_wired_config` lists the supported layer-2 features (VLANs, STP, VTP, CDP/LLDP, snooping,
+  802.1X/MAB, switchport, trunk, port-channel) with intended and deployed items (`diff=true`: what is
+  pending); `catc_set_wired_feature` stores a change in the intended model (merge, replace, remove, delete);
+  `catc_deploy_wired_config` (dangerous) previews the exact CLI from a Catalyst Center configuration model,
+  then deploys it ([docs](docs/wired-per-device.md)).
 - **AP join and power profiles:** `catc_list_ap_profiles` shows each AP profile (SSH/Telnet and management
   user, the AP's 802.1X supplicant, CDP, rogue detection, country, time zone, power profile; passwords masked)
   with the wireless profile site tags that use it, plus the AP power profiles. `catc_set_ap_profile` and
@@ -392,7 +398,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (113)
+### Read (114)
 
 | Tool | What it does |
 |---|---|
@@ -448,6 +454,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_get_template` | One template in full: content (CLI body), language, variables (name, type, required, default, choices), target device families/software, project and version history. |
 | `catc_get_template_deployment` | Status of one template deployment: overall status and, per device, whether the push succeeded, the CLI actually pushed (realizedClis: what a rollback has to undo) and Catalyst Center's detailed message (e.g. the CLI line the device rejected). |
 | `catc_get_vlan_topology` | Without `vlan`: the VLAN names Catalyst Center knows about. |
+| `catc_get_wired_config` | Wired layer-2 configuration Catalyst Center keeps for a switch with Per Device Configuration (PDC) enabled: VLANs, STP, VTP, CDP/LLDP, DHCP/IGMP/MLD snooping, 802.1X/MAB, switchport, trunk and port-channel settings, as an intended model (what Catalyst Center will push) and a deployed one (read back from the switch). |
 | `catc_get_wireless_controller` | A Catalyst 9800 WLC as Catalyst Center sees it: provisioning status, primary managed AP locations and the SSIDs deployed on it (admin status, managed by Catalyst Center or not). |
 | `catc_get_wlc_config` | Wireless feature configuration Catalyst Center keeps for a Catalyst 9800 WLC (the /dna/campus feature models): WLAN, policy and RLAN profiles, policy and site tags, RF/radio profiles and RF tags, AP join, power, mesh and calendar profiles, flex, mDNS, Dot11be and AP tag mappings. |
 | `catc_get_wlc_deployments` | Configuration deployments Catalyst Center ran on a Catalyst 9800 WLC, newest first: per config group (WLAN, policy and RF groups, or the site settings of a site-based provision), its status, when it ran and Catalyst Center's error and remedy when it failed. |
@@ -561,6 +568,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
 | `catc_set_device_udfs` | Set or clear user-defined field values on network devices (e.g. asset tag, owner, CMDB id from the source of truth). |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
+| `catc_set_wired_feature` | Store a change to a switch's per-device intended layer-2 configuration (Per Device Configuration enabled): add or change VLANs, STP/VTP/CDP/LLDP/snooping globals, or per-interface switchport, trunk, 802.1X/MAB settings. |
 | `catc_set_udf` | Create a global user-defined field (asset tag, owner, CMDB id...) that devices can then carry, change its description or name, or delete it. |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
 | `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
@@ -579,7 +587,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 | `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
-### Dangerous (46)
+### Dangerous (47)
 
 | Tool | What it does |
 |---|---|
@@ -607,6 +615,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_delete_site` | Delete a site from the hierarchy. |
 | `catc_delete_transit_network` | Delete a transit network. |
 | `catc_deploy_template` | Deploy (push) a committed configuration template to devices: an explicit list, every device under a site, or every device with a tag. |
+| `catc_deploy_wired_config` | Deploy a switch's per-device intended layer-2 configuration (what catc_set_wired_feature stored). |
 | `catc_deploy_wlc_config` | Deploy a Catalyst 9800 WLC's per-device intended configuration to the WLC (what catc_set_wlan_security, catc_set_wlan_vlan and catc_set_rf_profile staged, and any other intended change). |
 | `catc_distribute_image` | Copy an imported software image to a device's flash (SWIM distribution) without activating it. |
 | `catc_import_config` | Build Catalyst Center design intent from a catc_export_config document: a PoC's design on a production Catalyst Center, or a rebuilt lab. |

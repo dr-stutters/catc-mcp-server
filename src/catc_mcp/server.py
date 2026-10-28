@@ -74,6 +74,7 @@ from catc_mcp.tools import (
     templates,
     topology,
     udfs,
+    wired_config,
     wireless,
     wireless_config,
     wireless_writes,
@@ -110,6 +111,10 @@ Workflows:
 - Wireless per-device (a 9800 with Per-Device Configuration enabled, not site-based): catc_set_wlan_security /
   catc_set_wlan_vlan / catc_set_rf_profile stage the change -> catc_get_wlc_config(diff=true) ->
   catc_deploy_wlc_config -> catc_get_wlc_deployments.
+- Wired per-device (a switch with Per Device Configuration enabled in Inventory, GUI only):
+  catc_get_wired_config (supported layer-2 features; intended vs deployed, diff=true) ->
+  catc_set_wired_feature (VLANs, STP, VTP, snooping, switchport...; stores only) ->
+  catc_deploy_wired_config (CLI preview, then deploy).
 - Network settings vs templates: DNS, NTP, syslog/SNMP servers, banner, time zone and AAA are site
   settings: change them with catc_update_site_settings (or catc_update_site_aaa_settings), then apply
   telemetry (syslog/SNMP trap/NetFlow collectors) with catc_apply_telemetry_settings, or re-provision
@@ -241,6 +246,7 @@ REGISTER = [
     wireless.register,
     wireless_config.register,
     wireless_writes.register,
+    wired_config.register,
     ap_profiles.register,
     reports.register,
     config_io.register,

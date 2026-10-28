@@ -69,4 +69,22 @@ ALLOWLIST: tuple[Allowed, ...] = (
         "/dna/intent/api/v1/intent/api/v1/activities/{id}, which is a 404 on 3.2.2; the single prefix "
         "answers (read live on the lab appliance, 2026-10-28). The doubled path stays as the fallback.",
     ),
+    Allowed(
+        "path",
+        "POST",
+        r"/dna/intent/api/v1/wired/networkDevices/[^/]+/configFeatures/intended/configurationModels/[^/]+/deploy",
+        reason="catc_deploy_wired_config (D125): the spec lists the model deploy only at the doubled prefix "
+        "/dna/intent/api/v1/intent/api/v1/wired/..., which 3.2.2 answers 404 'BAPI not found' for the wired "
+        "deviceDeployments read and the activities API (read live 2026-10-28); every sibling step is at the "
+        "single prefix. TODO(live): confirm the deploy itself on a PDC-enabled switch.",
+    ),
+    Allowed(
+        "query",
+        "GET",
+        r"/dna/intent/api/v1/wired/networkDevices/\{networkDeviceId\}/configFeatures/intended/deviceDeployments",
+        key="deployActivityId",
+        reason="The spec declares deployActivityId 'in: path' although the path has no such segment; it is a "
+        "query filter, as on the wireless twin (?deployActivityId=, proven live in D71). The unfiltered read "
+        "answers on 3.2.2 (2026-10-28).",
+    ),
 )
