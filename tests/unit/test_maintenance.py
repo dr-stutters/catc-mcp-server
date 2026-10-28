@@ -638,3 +638,140 @@ async def test_writes_hidden_when_read_only() -> None:
         "catc_cancel_maintenance",
     }
     assert DEVICE["id"] == DEV_ID
+
+
+# --- 'devices under maintenance' note in catc_list_issues and catc_device_360 ----------------------
+
+HOUR = 3_600_000
+
+
+def running_window(devices: list[str] | None = None) -> dict[str, Any]:
+    """IN_PROGRESS since an hour ago, ends in an hour (relative to now so the status stays true)."""
+    now = now_ms()
+    return window("IN_PROGRESS", start=now - HOUR, end=now + HOUR, devices=devices)
+
+
+def soon_window() -> dict[str, Any]:
+    """UPCOMING, starting in two hours: inside the 24h horizon."""
+    now = now_ms()
+    return window("UPCOMING", wid=OTHER_DEV, start=now + 2 * HOUR, end=now + 3 * HOUR)
+
+
+def mock_issues(api: respx.MockRouter) -> None:
+    api.get("/dna/data/api/v1/assuranceIssues").respond(json={"response": [], "page": {"count": 0}})
+
+
+def mock_360(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_issues(api)
+    api.get(f"/dna/data/api/v1/networkDevices/{DEV_ID}").respond(json={"response": {}})
+    api.get("/dna/intent/api/v1/sda/provisionDevices").respond(json={"response": []})
+    api.get(f"/dna/intent/api/v1/interface/network-device/{DEV_ID}").respond(json={"response": []})
+    api.get("/dna/intent/api/v1/compliance").respond(json={"response": []})
+    api.get(f"/dna/intent/api/v1/eox-status/device/{DEV_ID}").respond(json={"response": {}})
+
+
+async def issues(args: dict[str, Any]) -> dict[str, Any]:
+    async with Client(create_server(make_settings())) as c:
+        out: dict[str, Any] = await run(c, "catc_list_issues", {"response_format": "json", **args})
+    return out
+
+
+async def device_360() -> dict[str, Any]:
+    async with Client(create_server(make_settings())) as c:
+        out: dict[str, Any] = await run(c, "catc_device_360", {"device": "edge-sw1"})
+    return out
+
+
+async def test_list_issues_names_devices_in_a_running_window(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_issues(api)
+    w = running_window()
+    mock_windows(api, [w])
+    out = await issues({"device": "edge-sw1"})
+    note = out["maintenance"]
+    [row] = note["under_maintenance"]
+    assert row["devices"] == ["edge-sw1.lab.local"] and row["window"] == "mcp-chg1 uplink swap"
+    assert row["until"] == to_iso(w["maintenanceSchedule"]["endTime"]) and row["until"].endswith("Z")
+    assert "raises no issues" in note["note"] and "starting_soon" not in note
+
+
+async def test_list_issues_without_device_lists_every_running_window(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_issues(api)
+    mock_windows(api, [running_window(devices=[DEV_ID, OTHER_DEV])])
+    out = await issues({})
+    [row] = out["maintenance"]["under_maintenance"]
+    # OTHER_DEV is not in the inventory mock: shown by id rather than dropped.
+    assert row["devices"] == ["edge-sw1.lab.local", OTHER_DEV]
+
+
+async def test_list_issues_no_window_no_note(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_issues(api)
+    other = running_window(devices=[OTHER_DEV])  # a running window, but not for this device
+    mock_windows(api, [other])
+    assert "maintenance" not in await issues({"device": "edge-sw1"})
+    mock_windows(api, [])
+    assert "maintenance" not in await issues({})
+
+
+async def test_list_issues_upcoming_window_only(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    mock_issues(api)
+    later = window("UPCOMING", wid=WIN_ID)  # 2099: beyond the horizon, not mentioned
+    soon = soon_window()
+    mock_windows(api, [later, soon])
+    note = (await issues({"device": "edge-sw1"}))["maintenance"]
+    assert "under_maintenance" not in note
+    [row] = note["starting_soon"]
+    assert row["id"] == OTHER_DEV and row["starts"] == to_iso(soon["maintenanceSchedule"]["startTime"])
+    assert "No device here is in maintenance now" in note["note"]
+
+
+async def test_list_issues_maintenance_read_fails_to_a_note(api: respx.MockRouter) -> None:
+    mock_device_lookup(api)
+    api.get("/dna/data/api/v1/assuranceIssues").respond(
+        json={"response": [{"id": "i1", "name": "infra_link_down", "priority": "P1"}], "page": {"count": 1}}
+    )
+    api.get(PATH).respond(500, text="Http Error Code:500")
+    out = await issues({"device": "edge-sw1"})
+    assert out["returned"] == 1 and out["results"][0]["name"] == "infra_link_down"
+    assert "unavailable" in out["maintenance"]
+    assert "catc_list_maintenance_windows" in out["maintenance"]["note"]
+
+
+async def test_list_issues_skips_the_note_for_resolved_and_client_issues(api: respx.MockRouter) -> None:
+    mock_issues(api)
+    route = mock_windows(api, [running_window()])
+    await issues({"status": "resolved"})
+    await issues({"mac": "aa:bb:cc:dd:ee:ff"})
+    assert route.call_count == 0
+
+
+async def test_device_360_running_window(api: respx.MockRouter) -> None:
+    mock_360(api)
+    w = running_window()
+    mock_windows(api, [w])
+    out = await device_360()
+    [row] = out["maintenance"]["under_maintenance"]
+    assert row["devices"] == ["edge-sw1.lab.local"]
+    assert row["until"] == to_iso(w["maintenanceSchedule"]["endTime"])
+    assert "unavailable" not in out
+
+
+async def test_device_360_no_window_and_upcoming_only(api: respx.MockRouter) -> None:
+    mock_360(api)
+    mock_windows(api, [])
+    assert "maintenance" not in await device_360()
+    mock_windows(api, [soon_window()])
+    note = (await device_360())["maintenance"]
+    assert "under_maintenance" not in note and note["starting_soon"][0]["id"] == OTHER_DEV
+
+
+async def test_device_360_maintenance_read_fails_to_a_note(api: respx.MockRouter) -> None:
+    mock_360(api)
+    api.get(PATH).respond(500, text="Http Error Code:500")
+    out = await device_360()
+    assert "unavailable" in out["maintenance"] and "maintenance" not in out.get("unavailable", {})
+    assert out["provisioned"] is False

@@ -45,6 +45,7 @@ from catc_mcp.tools.assurance import (
     user_pattern,
 )
 from catc_mcp.tools.inventory import redact_config
+from catc_mcp.tools.maintenance import maintenance_note
 
 # --- command runner allow-list ---------------------------------------------------------------
 
@@ -355,7 +356,8 @@ def register(reg: ToolRegistrar) -> None:
         (overall, CPU, memory), tags, whether it is provisioned, active issues (last 24h, repeats grouped,
         with how long ago each last occurred), interface
         counts and the ports that are down while admin-up, compliance status and end-of-life (EoX)
-        alerts. Start device troubleshooting
+        alerts, and a maintenance note when the device is in a running maintenance window (no issues or
+        health while it runs) or one starts within 24h. Start device troubleshooting
         here; follow up with catc_get_issue, catc_get_device_config or catc_run_show_commands."""
         app: CatcApp = get_client(ctx)
         dev = await resolve_device(app, device)
@@ -373,6 +375,8 @@ def register(reg: ToolRegistrar) -> None:
                 "provisioned": app.get_response(
                     "/dna/intent/api/v1/sda/provisionDevices", {"networkDeviceId": did}
                 ),
+                # Never raises: a failed maintenance read degrades to a note (D73).
+                "maintenance": maintenance_note(app, [did]),
             }
         )
         out: dict[str, Any] = {"device": pick(dev, [*DEVICE_FIELDS, "series", "macAddress", "lastUpdated"])}
@@ -414,6 +418,8 @@ def register(reg: ToolRegistrar) -> None:
             out["active_issues"] = grouped
             if grouped:
                 out["issues_note"] = STALE_NOTE
+        if data.get("maintenance"):
+            out["maintenance"] = data["maintenance"]
         ifaces = [i for i in ensure_list(data.get("interfaces")) if isinstance(i, dict)]
         if "interfaces" in data:
             down = [

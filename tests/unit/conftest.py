@@ -65,6 +65,11 @@ def api() -> Iterator[respx.MockRouter]:
         router.get("/dna/intent/api/v1/provisioningSettings").respond(
             json={"response": {"requirePreview": False, "requireItsmApproval": False}, "version": "1.0"}
         )
+        # catc_list_issues and catc_device_360 read the maintenance windows (D73 note): none by default (the
+        # 3.2.2 lab's live answer); maintenance tests add their own route, which replaces this one.
+        router.get("/dna/intent/api/v1/networkDeviceMaintenanceSchedules").respond(
+            json={"response": [], "version": "1.0"}
+        )
         router.get("/dna/system/api/v1/user").respond(
             json={"response": {"users": [{"username": "admin", "roleList": ["SUPER-ADMIN-ROLE"]}]}}
         )

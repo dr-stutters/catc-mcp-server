@@ -297,6 +297,76 @@ async def windows_for(app: CatcApp, ids: list[str]) -> list[dict[str, Any]]:
     return list(out.values())
 
 
+QUIET = (
+    "Catalyst Center has these devices in maintenance mode: Assurance raises no issues and computes no "
+    "health for them while the window runs, so no issues for them means nothing until it ends."
+)
+NOTE_NAMES = 25  # device names per window in the maintenance note
+
+
+async def maintenance_note(
+    app: CatcApp, ids: list[str] | None = None, *, hours: float = 24
+) -> dict[str, Any] | None:
+    """The 'devices under maintenance' note for catc_list_issues and catc_device_360: the devices in a
+    running (IN_PROGRESS) window with its ISO end time, and the windows starting within the next `hours`
+    (the issue look-back length). `ids` limits it to windows that include any of those devices (None: every
+    window). None when there is nothing to say; a failed read degrades to an 'unavailable' note, never an
+    error, so the issue list still answers."""
+    wanted = set(ids) if ids is not None else None
+    found: dict[str, list[dict[str, Any]]] = {}
+    try:
+        for status in ("IN_PROGRESS", "UPCOMING"):
+            page = await fetch_all(app.pager, app.api, PATH, {"status": status}, cap=2000)
+            found[status] = [
+                w
+                for w in page.items
+                if isinstance(w, dict) and (wanted is None or wanted & set(device_ids(w)))
+            ]
+    except UpstreamError as exc:
+        return {
+            "unavailable": str(exc)[:200],
+            "note": "Could not read the maintenance windows: devices in a running window raise no issues, "
+            "so check catc_list_maintenance_windows(status='IN_PROGRESS') before reading quiet as healthy.",
+        }
+    horizon = now_ms() + int(hours * 3_600_000)
+    running = found["IN_PROGRESS"]
+    upcoming = []
+    for w in found["UPCOMING"]:
+        with contextlib.suppress(KeyError, TypeError, ValueError):
+            if int(sched(w)["startTime"]) <= horizon:
+                upcoming.append(w)
+    if not running and not upcoming:
+        return None
+    names = await inventory_names(app, [i for w in running + upcoming for i in device_ids(w)]) or {}
+
+    def entry(w: dict[str, Any], running: bool) -> dict[str, Any]:
+        s = sched(w)
+        devs = [i for i in device_ids(w) if wanted is None or i in wanted]
+        row: dict[str, Any] = {"window": w.get("description") or w.get("id"), "id": w.get("id")}
+        if running:
+            row["until"] = None if ended_early(s) else to_iso(s.get("endTime"))
+        else:
+            row["starts"] = to_iso(s.get("startTime"))
+            row["until"] = to_iso(s.get("endTime"))
+        row["devices"] = [names.get(i, i) for i in devs[:NOTE_NAMES]]
+        if len(devs) > NOTE_NAMES:
+            row["more_devices"] = len(devs) - NOTE_NAMES
+        return row
+
+    out: dict[str, Any] = {}
+    if running:
+        out["under_maintenance"] = [entry(w, True) for w in running]
+        out["note"] = QUIET
+    if upcoming:
+        out["starting_soon"] = [entry(w, False) for w in upcoming]
+        if not running:
+            out["note"] = (
+                "No device here is in maintenance now; from each window's start Assurance raises no issues "
+                "for its devices until the window ends."
+            )
+    return out
+
+
 def overlaps(windows: list[dict[str, Any]], start: int, end: int, skip: str | None = None) -> list[str]:
     hits: list[str] = []
     for w in windows:
