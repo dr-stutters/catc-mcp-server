@@ -376,7 +376,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (109)
+### Read (110)
 
 | Tool | What it does |
 |---|---|
@@ -456,6 +456,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_list_event_notifications` | Catalyst Center platform event notifications, newest first: device unreachable, link and OSPF/BGP alerts raised as notifications, config-change (drift) events, provisioning, SWIM, licensing and system/service health. |
 | `catc_list_events` | Assurance events (syslog, SNMP traps, client onboarding events) for network devices or clients, newest first. |
 | `catc_list_global_credentials` | Global device credentials (CLI, SNMPv2c read/write, SNMPv3, NETCONF port, HTTP(S)) that discovery and sites use: description, type, username/port and id. |
+| `catc_list_health_score_definitions` | Assurance health score settings: per device family (router, switch, WLC, AP, wired and wireless client) each KPI behind the health score, its threshold (e.g. router CPU 95%), whether it counts towards overall health, whether it follows the issue threshold, and DEFAULT or MODIFIED (with the factory threshold beside a changed one). |
 | `catc_list_images` | Software images known to Catalyst Center (imported into the repository, or suggested from cisco.com): name, version, product families, golden tag, integrity status and id. |
 | `catc_list_ip_pools` | IP address pools: global pools and the subpools reserved from them for sites, with subnet, gateway, DHCP/DNS servers, type (Generic/LAN/Management/Service/WAN) and usage (assigned/total addresses). |
 | `catc_list_issue_definitions` | Assurance issue definitions: for each built-in (system) one its name and display name, whether it is enabled, its priority next to the factory default, the threshold where it has one (e.g. minutes BGP may be down), device type and category; for custom ones the syslog rule in words (severity, %FACILITY-SEV-MNEMONIC, text regex, N times in M minutes), priority and whether it notifies. |
@@ -543,6 +544,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_trigger_lifecycle_scan` | Start Catalyst Center's field notice, network bug and/or security advisory scans now instead of waiting for the scheduled run (EoX has no on-demand scan). |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
+| `catc_update_health_score_definition` | Tune Assurance health scores to the customer's standard: change a KPI's threshold per device family (router CPU 95% -> 85%), leave a KPI out of overall health, or tie it to the issue threshold; reset_to_default puts KPIs back. |
 | `catc_update_issue_definition` | Enable or disable a built-in Assurance issue, or change its priority (P1..P4, or back to the default) or threshold: "stop paging me about X". |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
 | `catc_update_maintenance_window` | Change a maintenance window's start, end, description or recurrence (times ISO 8601 with an offset), or end a running window now (end_now=true). |
