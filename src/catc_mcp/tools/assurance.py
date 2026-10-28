@@ -38,6 +38,7 @@ from catc_mcp.common import (
     resolve_site,
     window,
 )
+from catc_mcp.tools.maintenance import maintenance_note
 
 HEALTH_SCAN_CAP = 5000
 
@@ -708,8 +709,9 @@ def register(reg: ToolRegistrar) -> None:
         """Assurance issues (problems Catalyst Center detected) with priority, the device they are about,
         summary, status, site and how long ago each last occurred, newest first. Issues stay 'active'
         until Catalyst Center re-evaluates them, so an old last_seen may already have cleared; issues of
-        devices deleted from the inventory are marked. Use catc_get_issue for root cause and suggested
-        actions."""
+        devices deleted from the inventory are marked. Devices in a running maintenance window raise no
+        issues: a `maintenance` note names them and the window's end time (and windows starting within the
+        look-back length). Use catc_get_issue for root cause and suggested actions."""
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {**window(hours), "sortBy": "mostRecentOccurredTime", "order": "desc"}
         if priority:
@@ -726,7 +728,13 @@ def register(reg: ToolRegistrar) -> None:
             params["networkDeviceId"] = (await resolve_device(app, device))["id"]
         if mac:
             params["macAddress"] = norm_mac(mac)
-        page = await issues_page(app, params, limit=limit, offset=offset)
+        page, maint = await asyncio.gather(
+            issues_page(app, params, limit=limit, offset=offset),
+            # Devices in a running maintenance window raise no issues: say so (D73).
+            maintenance_note(app, [str(params["networkDeviceId"])] if device else None, hours=min(hours, 24))
+            if status in (None, "active") and not mac
+            else asyncio.sleep(0, None),
+        )
         raw = [i for i in page.items if isinstance(i, dict)]
         page.items = [issue_row(i) for i in raw]
         gone = await mark_unmanaged(app, raw, page.items)
@@ -738,6 +746,8 @@ def register(reg: ToolRegistrar) -> None:
                 f"Issues for devices no longer in the inventory: {', '.join(gone)} (Catalyst Center keeps "
                 "them until they age out)."
             )
+        if maint:
+            extra["maintenance"] = maint
         return list_result(
             page,
             fmt=response_format,
