@@ -127,7 +127,17 @@ user's approval, then repeat the call with the confirm token. Stop and report if
 10. Summarise: device name, IP, site, provisioning result, what was pushed, compliance, and anything
     left to do."""
 
-    @reg.prompt(title="Run a Day-N template change window", uses=["catc"], tier=Tier.WRITE)
+    @reg.prompt(
+        title="Run a Day-N template change window",
+        uses=["catc"],
+        tier=Tier.WRITE,
+        example={
+            "template": "mcp-example/loopback",
+            "targets": "sw1,sw2",
+            "window_end": "2026-01-01T12:00:00+00:00",
+            "params": '{"loopback_id": 77}',
+        },
+    )
     def catc_change_window(
         template: Annotated[
             str, Field(description="Template to deploy: 'Project/Template name', a unique name or its id")
@@ -270,6 +280,14 @@ with the confirm token. Keep a short log of each step's result for the summary.
         title="Onboard an access switch with 802.1X/MAB (Catalyst Center + ISE)",
         uses=["catc", "ise"],
         tier=Tier.WRITE,
+        example={
+            "switch_ip": "192.0.2.21",
+            "site_path": "Global/Area/Building",
+            "access_port": "GigabitEthernet1/0/2",
+            "test_mac": "52:54:00:12:34:56",
+            "cli_credential": "mcp-cli",
+            "snmp_credential": "mcp-snmp",
+        },
     )
     def catc_onboard_switch_with_nac(
         switch_ip: Annotated[str, Field(description="Management IP of the switch to onboard")],
@@ -503,6 +521,12 @@ preview to the user and confirm only after they approve. Stop if a step fails an
         title="Catalyst Center admin login through ISE",
         uses=["catc", "ise", "win"],
         tier=Tier.DANGEROUS,
+        example={
+            "catc_ip": "192.0.2.10",
+            "ad_group": "mcp-catc-admins",
+            "ad_user": "mcp-catc-user",
+            "role": "OBSERVER-ROLE",
+        },
     )
     def catc_admin_access_via_ise(
         catc_ip: Annotated[
@@ -643,7 +667,17 @@ using Catalyst Center while external authentication is on.
     the login results with the roles granted, the fallback finding from step 9, and the undo list.
 {end}"""
 
-    @reg.prompt(title="Troubleshoot a client", uses=["catc", "ise"], tier=Tier.READ)
+    @reg.prompt(
+        title="Troubleshoot a client",
+        uses=["catc", "ise"],
+        tier=Tier.READ,
+        example={
+            "client": "52:54:00:12:34:56",
+            "destination_ip": "198.51.100.10",
+            "expected_vlan": "100",
+            "hours": "24",
+        },
+    )
     def catc_client_troubleshoot(
         client: Annotated[
             str, Field(description="The client: MAC (best), IPv4 address or the username it logged in with")
@@ -767,7 +801,12 @@ missing, skip steps 5 and say ISE could not be checked.
 9. Summary: the client, the diagnosis in one line, the evidence (one line per step), and the fix (proposed,
    or applied and verified)."""
 
-    @reg.prompt(title="Weekly site health review", uses=["catc"], tier=Tier.READ)
+    @reg.prompt(
+        title="Weekly site health review",
+        uses=["catc"],
+        tier=Tier.READ,
+        example={"site": "Global/Area/Building", "hours": "168"},
+    )
     def catc_site_health_review(
         site: Annotated[
             str,
@@ -863,7 +902,21 @@ healthy one.
    {tool_ref("catc_device_360")} for a POOR device.
    Run nothing from the next steps here: the user picks them."""
 
-    @reg.prompt(title="Build an SD-Access fabric site", uses=["catc", "ise"], tier=Tier.DANGEROUS)
+    @reg.prompt(
+        title="Build an SD-Access fabric site",
+        uses=["catc", "ise"],
+        tier=Tier.DANGEROUS,
+        example={
+            "building": "Global/Area/Building",
+            "border": "192.0.2.1",
+            "edges": "192.0.2.2,192.0.2.3",
+            "client_pool": "198.51.100.0/24",
+            "dhcp_server": "203.0.113.10",
+            "client_ports": "192.0.2.2:GigabitEthernet1/0/2",
+            "virtual_network": "MCP_VN",
+            "border_asn": "65001",
+        },
+    )
     def catc_build_fabric_site(
         building: Annotated[
             str, Field(description="Building to make a fabric site, e.g. 'Global/Area/Building'")
@@ -1040,7 +1093,18 @@ first failure; never skip a check.
    site's VN membership, fabric devices, then the fabric site; the devices stay provisioned, the pool and the
    site stay)."""
 
-    @reg.prompt(title="Roll out and prove a group-based policy", uses=["catc", "ise"], tier=Tier.WRITE)
+    @reg.prompt(
+        title="Roll out and prove a group-based policy",
+        uses=["catc", "ise"],
+        tier=Tier.WRITE,
+        example={
+            "source_group": "Contractors",
+            "destination_group": "Production_Servers",
+            "edge": "edge1",
+            "policy": "deny",
+            "client_ips": "198.51.100.10,198.51.100.20",
+        },
+    )
     def catc_group_policy_rollout(
         source_group: Annotated[
             str, Field(description="Source security group (name or tag), e.g. Contractors")
