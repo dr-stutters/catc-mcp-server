@@ -53,6 +53,12 @@ def test_allowlist_is_scoped_to_its_key() -> None:
     assert [f.key for f in rep.findings] == ["bogusKey"] and rep.unused_allowlist == list(only)
 
 
+def test_allowlist_key_is_a_regex() -> None:
+    upd = "/dna/campus/api/v1/wirelessControllers/w1/intended/ssids/update"
+    rep = check([Recorded("POST", upd, body=frozenset({"ssids", "bogusField"}))])
+    assert [f.key for f in rep.findings] == ["bogusField"] and len(rep.allowed) == 1
+
+
 def test_record_reads_query_and_json_body_keys() -> None:
     req = httpx.Request(
         "POST",

@@ -1,7 +1,8 @@
 """D52: requests the tools make on purpose that the bundled catc-3.2.2 spec doesn't describe.
 
 Every entry needs a reason. `path` is a regex matched against the request path (unmatched paths)
-or the spec template (method/query/body findings); `key` is the query or body key, or '*'.
+or the spec template (method/query/body findings); `key` is a regex matched against the query or
+body key, or '*' for any key. Name the keys: '*' on a query/body entry hides drift on that operation.
 Add an entry only when the live appliance is known to accept the request (cite the proof).
 """
 
@@ -15,7 +16,7 @@ class Allowed:
     kind: str  # path | method | query | body
     method: str  # HTTP method or '*'
     path: str  # regex
-    key: str = "*"
+    key: str = "*"  # regex, or '*'
     reason: str = ""
 
 
@@ -47,7 +48,7 @@ ALLOWLIST: tuple[Allowed, ...] = (
         r"/dna/campus/api/v1/wirelessControllers/\{networkDeviceId\}/(intended|deployed)/ssids/"
         r"(policyTags/\{policyTagId\}/policyTag(Wlan|Rlan)Policies|"
         r"wlanProfiles/\{wlanProfileId\}/(mpskKeyConfigs|radioPolicyConfigs))",
-        key="*",
+        key="offset|limit",
         reason="catc_get_wlc_config(children=true) pages every feature model with offset/limit, the "
         "sub-collections too; the spec leaves both off these four, the appliance accepts them (children=true "
         "read with no error on 3.2.2 and a 17.18 WLC, 2026-10-28).",
@@ -56,7 +57,7 @@ ALLOWLIST: tuple[Allowed, ...] = (
         "body",
         "POST",
         r"/dna/campus/api/v1/wirelessControllers/\{networkDeviceId\}/intended/ssids/update",
-        key="*",
+        key="ssids|snmp",
         reason="test_api_call_masking sends a synthetic body through catc_api_call (caller-supplied, "
         "not a curated tool's request) to prove secrets are masked; the curated tools send wlanProfiles.",
     ),

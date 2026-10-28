@@ -186,7 +186,8 @@ def match(path: str, method: str) -> tuple[str | None, Operation | None]:
 
 def _allowed(f: Finding, allowlist: Iterable[Allowed]) -> Allowed | None:
     for a in allowlist:
-        same = a.kind == f.kind and a.method in ("*", f.method) and a.key in ("*", f.key)
+        key = a.key == "*" or re.fullmatch(a.key, f.key) is not None
+        same = a.kind == f.kind and a.method in ("*", f.method) and key
         if same and re.fullmatch(a.path, f.path):
             return a
     return None

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -32,7 +33,7 @@ def main() -> int:
         proc = subprocess.run(
             [sys.executable, "-m", "pytest", "tests/unit", "-q", "-p", "no:cacheprovider", *args.pytest_args],
             cwd=ROOT,
-            env={**__import__("os").environ, "CATC_SPEC_AUDIT_OUT": str(out)},
+            env={**os.environ, "CATC_SPEC_AUDIT_OUT": str(out)},
             capture_output=True,
             text=True,
         )
