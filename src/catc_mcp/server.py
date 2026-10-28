@@ -28,6 +28,7 @@ from catc_mcp.tools import (
     group_policy,
     inventory,
     ipam,
+    issue_definitions,
     lifecycle,
     maintenance,
     network_services,
@@ -135,6 +136,9 @@ Workflows:
 - Backups (before the group-based policy migration or an upgrade): catc_get_backup_status (target configured?,
   ready?, last backup, running jobs) -> catc_create_backup (dangerous, SUPER-ADMIN-ROLE) ->
   catc_get_backup_status(execution=...) -> catc_list_backups. Restores are GUI-only.
+- Issue settings ("stop paging me about X", "alert when this syslog appears"): catc_list_issue_definitions
+  (enabled, priority vs default, threshold) -> catc_update_issue_definition (enable/disable, priority,
+  threshold); syslog-pattern issues: catc_create_custom_issue / catc_delete_custom_issue.
 - Maintenance windows (silence a planned change's alerts):
   catc_schedule_maintenance(devices|site|tag, start, end) -> catc_list_maintenance_windows ->
   catc_update_maintenance_window / catc_cancel_maintenance. Devices in a running window raise no issues
@@ -160,6 +164,7 @@ REGISTER = [
     inventory.register,
     assurance.register,
     assurance_analytics.register,
+    issue_definitions.register,
     network_services.register,
     smart.register,
     snapshot.register,
