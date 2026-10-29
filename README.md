@@ -237,7 +237,8 @@ Typical flows:
   (`deploymentMode=Preview`) and the undo call; one device for `CATC_MAX_DEVICES_PER_CHANGE`.
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
-  called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
+  called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs` (`grouped=true`:
+  one row per action with its child-record count, and the window's record and action totals).
 - **What happened to this client?** `catc_client_timeline(mac=..., hours=... or since=...)` merges its
   onboarding steps, assurance events (ISE authentications, roams, failures) and issues by time.
 - **Template versions:** `catc_list_template_versions` → `catc_diff_template_versions`;
