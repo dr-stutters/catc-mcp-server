@@ -23,6 +23,7 @@ from catc_mcp._core.http import fetch_all, page_of
 from catc_mcp.client import CatcApp
 from catc_mcp.common import DEVICE_FIELDS, ensure_list, pick, resolve_device, resolve_site
 from catc_mcp.safety import ASSIGNED, devices_by_id, site_assignments
+from catc_mcp.tools.device_settings import SSH_KEY_HINT, ssh_key_failure
 from catc_mcp.tools.udfs import device_udfs
 
 DeviceRef = Annotated[str, Field(description="Device hostname, management IP, serial number or id")]
@@ -209,6 +210,8 @@ def register(reg: ToolRegistrar) -> None:
         dev = await resolve_device(app, device)
         with contextlib.suppress(UpstreamError):  # releases without the USER_DEFINED_FIELDS view
             dev["userDefinedFields"] = await device_udfs(app, str(dev["id"]))
+        if key := ssh_key_failure(dev):
+            dev["ssh_key_change"] = {"failure": key, "hint": SSH_KEY_HINT}
         return object_result(dev)
 
     @reg.read(title="List device interfaces")
