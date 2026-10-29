@@ -401,7 +401,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (116)
+### Read (119)
 
 | Tool | What it does |
 |---|---|
@@ -516,6 +516,7 @@ device at a time). Legs whose tools a server does not ship yet are marked pendin
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_security_advisories` | Cisco security advisories (PSIRTs) Catalyst Center matched against the devices: per device the scan status, scan mode and advisory count, and the advisories themselves (id, impact rating, CVSS, CVEs, first fixed releases per vulnerable version, Cisco link, affected devices), highest CVSS first. |
 | `catc_site_health_report` | One report on a site over a window: health now, the device and client trends with their dips and direction, when issues were raised, the worst devices and clients with the issue behind each, issues that keep coming back, AI-driven insights where available, and a one-line verdict. |
+| `catc_site_inventory` | What is at a site, in one read: the sites below it (areas, buildings, floors) and the devices assigned to the site or any site below it, grouped by family and role, each with management IP, platform, software version, reachability and the floor or building it is on; the devices in the inventory not assigned to any site yet; and the site's physical links (between its own devices, and uplinks to devices outside it). `format='mermaid'` or `'drawio'` draws the site. |
 | `catc_snapshot` | Take a compact, versioned snapshot of Cisco Catalyst Center health for a pre/post change check: device reachability, health score and software version, health per site, compliance per device and type, open P1/P2 Assurance issues. |
 | `catc_status` | Check the connection to Cisco Catalyst Center: product version and API user, which API surfaces answer, and this MCP server's configuration (writes enabled?, TLS verification). |
 | `catc_template_drift` | Template drift per device: for every device a template was deployed to, the version it last received against the template's latest committed version. |
