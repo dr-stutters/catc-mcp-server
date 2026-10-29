@@ -1291,6 +1291,10 @@
       "tier": "write",
       "title": "Run compliance check"
     },
+    "catc_run_issue_commands": {
+      "tier": "read",
+      "title": "Run an issue's suggested commands"
+    },
     "catc_run_show_commands": {
       "tier": "read",
       "title": "Run show commands"
