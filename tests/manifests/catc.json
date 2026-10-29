@@ -1434,6 +1434,10 @@
       "tier": "read",
       "title": "Site health report"
     },
+    "catc_site_inventory": {
+      "tier": "read",
+      "title": "Site inventory"
+    },
     "catc_snapshot": {
       "tier": "read",
       "title": "Cisco Catalyst Center snapshot"
