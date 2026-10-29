@@ -1,5 +1,5 @@
 {
-  "core_version": "0.15.0",
+  "core_version": "0.19.0",
   "manifest": 1,
   "prefix": "ise",
   "prompts": {
@@ -222,6 +222,55 @@
         "catsdwan"
       ]
     },
+    "ise_phased_8021x_rollout": {
+      "arguments": [
+        "ndg",
+        "phase",
+        "policy_set",
+        "days",
+        "switch",
+        "interfaces",
+        "name_prefix"
+      ],
+      "references": [
+        "ise_list_ndgs",
+        "ise_list_nads",
+        "ise_list_policy_sets",
+        "ise_get_policy_set",
+        "ise_policy_explain",
+        "ise_get_auth_list",
+        "ise_recent_auth_failures",
+        "ise_list_active_sessions",
+        "ise_list_endpoints",
+        "ise_endpoint_360",
+        "ise_list_endpoint_groups",
+        "ise_list_authz_profiles",
+        "ise_get_authz_profile",
+        "ise_list_dacls",
+        "ise_get_dacl",
+        "ise_snapshot",
+        "ise_compare_snapshot",
+        "ise_update_policy_rule",
+        "ise_set_dacl",
+        "ise_create_authz_profile",
+        "ise_update_authz_profile",
+        "ise_set_endpoint",
+        "catc_list_devices",
+        "catc_run_show_commands",
+        "catc_get_device_config",
+        "catc_create_template",
+        "catc_commit_template",
+        "catc_preview_template",
+        "cml_run_commands"
+      ],
+      "rendered": true,
+      "tier": "read",
+      "uses": [
+        "ise",
+        "catc",
+        "cml"
+      ]
+    },
     "ise_quarantine_host": {
       "arguments": [
         "reason",
@@ -274,13 +323,71 @@
         "catc"
       ]
     },
+    "suite_access_review": {
+      "arguments": [
+        "stale_days",
+        "scope",
+        "servers"
+      ],
+      "references": [
+        "ise_list_admin_users",
+        "ise_get_admin_access",
+        "catc_list_users",
+        "catc_get_external_authentication",
+        "fmc_list_users",
+        "fmc_list_roles",
+        "fmc_get_external_auth",
+        "catsdwan_list_users",
+        "catsdwan_get_aaa",
+        "cml_list_users",
+        "cml_get_auth_config",
+        "win_list_ad_groups",
+        "win_get_ad_user",
+        "win_run_powershell_json"
+      ],
+      "rendered": true,
+      "suite": true,
+      "tier": "read",
+      "uses": [
+        "ise",
+        "catc",
+        "fmc",
+        "catsdwan",
+        "cml",
+        "win"
+      ]
+    },
+    "suite_asbuilt_drift": {
+      "arguments": [
+        "site",
+        "device",
+        "checks",
+        "servers"
+      ],
+      "references": [
+        "netbox_site_summary",
+        "netbox_list_objects",
+        "catc_list_devices",
+        "catc_list_device_interfaces",
+        "catc_get_physical_topology",
+        "catc_get_vlan_topology"
+      ],
+      "rendered": true,
+      "suite": true,
+      "tier": "read",
+      "uses": [
+        "netbox",
+        "catc"
+      ]
+    },
     "suite_change_check": {
       "arguments": [
         "site",
         "phase",
         "change",
         "before",
-        "servers"
+        "servers",
+        "expected"
       ],
       "references": [
         "catsdwan_snapshot",
@@ -300,6 +407,94 @@
         "ise",
         "catc",
         "fmc"
+      ]
+    },
+    "suite_decommission_site": {
+      "arguments": [
+        "site",
+        "subnets",
+        "dns_zone",
+        "servers"
+      ],
+      "references": [
+        "catsdwan_list_devices",
+        "catsdwan_get_device_config",
+        "catsdwan_remove_device",
+        "catsdwan_associate_config_group",
+        "catsdwan_set_edge_validity",
+        "catc_get_site",
+        "catc_list_devices",
+        "catc_get_sda_fabric",
+        "catc_list_ip_pools",
+        "catc_delete_fabric_site",
+        "catc_delete_device",
+        "catc_delete_ip_pool",
+        "catc_delete_site",
+        "ise_list_ndgs",
+        "ise_list_nads",
+        "ise_get_nad",
+        "ise_delete_nad",
+        "ise_delete_object",
+        "fmc_find_address",
+        "fmc_list_objects",
+        "fmc_where_used",
+        "fmc_delete_object",
+        "fmc_delete_objects",
+        "win_list_dhcp_scopes",
+        "win_list_dhcp_leases",
+        "win_list_dns_zones",
+        "win_get_dns_records",
+        "win_remove_dns_record",
+        "win_run_powershell_json"
+      ],
+      "rendered": true,
+      "suite": true,
+      "tier": "dangerous",
+      "uses": [
+        "catsdwan",
+        "catc",
+        "ise",
+        "fmc",
+        "win"
+      ]
+    },
+    "suite_maintenance_window": {
+      "arguments": [
+        "site",
+        "sdwan_version",
+        "catc_image",
+        "ise_patch",
+        "mode",
+        "window",
+        "servers"
+      ],
+      "references": [
+        "catsdwan_list_devices",
+        "catsdwan_list_software",
+        "catsdwan_snapshot",
+        "catsdwan_upgrade_software",
+        "catsdwan_compare_snapshot",
+        "catc_list_device_images",
+        "catc_list_images",
+        "catc_snapshot",
+        "catc_distribute_image",
+        "catc_activate_image",
+        "catc_compare_snapshot",
+        "ise_list_nodes",
+        "ise_list_patches",
+        "ise_deployment_health",
+        "ise_get_backup_status",
+        "ise_snapshot",
+        "ise_create_backup",
+        "ise_compare_snapshot"
+      ],
+      "rendered": true,
+      "suite": true,
+      "tier": "dangerous",
+      "uses": [
+        "catsdwan",
+        "catc",
+        "ise"
       ]
     }
   },
@@ -417,6 +612,10 @@
       "tier": "dangerous",
       "title": "Delete a certificate"
     },
+    "ise_delete_condition": {
+      "tier": "write",
+      "title": "Delete a policy condition"
+    },
     "ise_delete_csr": {
       "tier": "write",
       "title": "Delete a CSR"
@@ -476,6 +675,10 @@
     "ise_endpoint_360": {
       "tier": "read",
       "title": "Endpoint 360"
+    },
+    "ise_endpoint_summary": {
+      "tier": "read",
+      "title": "Endpoint summary"
     },
     "ise_explain_profile": {
       "tier": "read",
@@ -557,9 +760,17 @@
       "tier": "read",
       "title": "ISE license status"
     },
+    "ise_get_mac_randomization": {
+      "tier": "read",
+      "title": "Random MAC (RCM) and endpoint ownership settings"
+    },
     "ise_get_nad": {
       "tier": "read",
       "title": "Get a network device"
+    },
+    "ise_get_patch_readiness": {
+      "tier": "read",
+      "title": "Patch / upgrade / rollback pre-check report"
     },
     "ise_get_policy_set": {
       "tier": "read",
@@ -584,6 +795,10 @@
     "ise_import_config": {
       "tier": "dangerous",
       "title": "Import ISE configuration from an export"
+    },
+    "ise_import_system_certificate": {
+      "tier": "dangerous",
+      "title": "Import a system certificate with its private key"
     },
     "ise_import_trusted_cert": {
       "tier": "write",
@@ -753,6 +968,10 @@
       "tier": "read",
       "title": "List SGACLs"
     },
+    "ise_list_sgt_vn_vlan": {
+      "tier": "read",
+      "title": "List SGT-VN-VLAN mappings"
+    },
     "ise_list_sgts": {
       "tier": "read",
       "title": "List security group tags"
@@ -773,9 +992,17 @@
       "tier": "read",
       "title": "List SXP connections"
     },
+    "ise_list_virtual_networks": {
+      "tier": "read",
+      "title": "List TrustSec virtual networks"
+    },
     "ise_nad_radius_stats": {
       "tier": "read",
       "title": "Per-NAD RADIUS latency and timeouts"
+    },
+    "ise_patch_readiness": {
+      "tier": "write",
+      "title": "Patch / upgrade / rollback readiness"
     },
     "ise_policy_audit": {
       "tier": "read",
@@ -792,6 +1019,10 @@
     "ise_push_trustsec_matrix": {
       "tier": "dangerous",
       "title": "Push TrustSec policy to devices (CoA)"
+    },
+    "ise_pxgrid_direct_status": {
+      "tier": "read",
+      "title": "pxGrid Direct connectors and their sync status"
     },
     "ise_pxgrid_status": {
       "tier": "read",
@@ -817,6 +1048,10 @@
       "tier": "dangerous",
       "title": "Reset policy hit counters"
     },
+    "ise_run_snmp_scan": {
+      "tier": "write",
+      "title": "Start, stop, enable or disable SNMP scans"
+    },
     "ise_search_spec": {
       "tier": "read",
       "title": "Search the Cisco ISE API spec"
@@ -832,6 +1067,10 @@
     "ise_set_command_set": {
       "tier": "write",
       "title": "Create or replace a TACACS+ command set"
+    },
+    "ise_set_condition": {
+      "tier": "write",
+      "title": "Create or update a policy condition"
     },
     "ise_set_custom_attribute": {
       "tier": "write",
@@ -853,6 +1092,10 @@
       "tier": "write",
       "title": "Create or update an endpoint"
     },
+    "ise_set_external_radius_server": {
+      "tier": "write",
+      "title": "Create or update an external RADIUS server"
+    },
     "ise_set_guest_type": {
       "tier": "write",
       "title": "Create or update a guest type"
@@ -865,13 +1108,25 @@
       "tier": "write",
       "title": "Create or update a static IP-SGT mapping"
     },
+    "ise_set_mac_randomization": {
+      "tier": "write",
+      "title": "Set random MAC (RCM) and endpoint ownership"
+    },
     "ise_set_profiling_rule": {
       "tier": "write",
       "title": "Create or update a custom profiling rule"
     },
+    "ise_set_pxgrid_direct_connector": {
+      "tier": "write",
+      "title": "Create or update a pxGrid Direct connector"
+    },
     "ise_set_pxgrid_settings": {
       "tier": "write",
       "title": "Set the pxGrid approval settings"
+    },
+    "ise_set_radius_server_sequence": {
+      "tier": "write",
+      "title": "Create or update a RADIUS server sequence"
     },
     "ise_set_repository": {
       "tier": "write",
@@ -884,6 +1139,10 @@
     "ise_set_shell_profile": {
       "tier": "write",
       "title": "Create or update a TACACS+ shell profile"
+    },
+    "ise_set_snmp_scan": {
+      "tier": "write",
+      "title": "Create or update a profiler SNMP scan"
     },
     "ise_set_sponsor_group": {
       "tier": "write",
@@ -901,6 +1160,10 @@
       "tier": "write",
       "title": "Create or update a TACACS+ server sequence"
     },
+    "ise_set_trusted_cert": {
+      "tier": "write",
+      "title": "Change a trusted certificate's trust and revocation settings"
+    },
     "ise_set_trustsec_settings": {
       "tier": "write",
       "title": "Change TrustSec general settings"
@@ -908,6 +1171,10 @@
     "ise_snapshot": {
       "tier": "read",
       "title": "Cisco ISE snapshot"
+    },
+    "ise_snmp_scan_history": {
+      "tier": "read",
+      "title": "SNMP scans and their history"
     },
     "ise_status": {
       "tier": "read",
@@ -924,6 +1191,10 @@
     "ise_test_command_set": {
       "tier": "read",
       "title": "Test a command against TACACS+ command sets"
+    },
+    "ise_test_pxgrid_direct": {
+      "tier": "read",
+      "title": "Test a pxGrid Direct connector"
     },
     "ise_trustsec_device_report": {
       "tier": "read",
@@ -970,5 +1241,5 @@
       "title": "Why did authentication fail?"
     }
   },
-  "version": "0.17.0"
+  "version": "0.22.0"
 }

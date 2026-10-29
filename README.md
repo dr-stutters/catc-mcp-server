@@ -359,7 +359,10 @@ Directory); `suite_asbuilt_drift` (read tier, uses **netbox**) checks whether th
 the wiring; `suite_decommission_site` (dangerous tier) removes one site everywhere it exists without leaving
 orphans (here: the site with its devices, fabric site and pool reservations); `suite_maintenance_window`
 (dangerous tier) runs one maintenance window at a site across products (here: SWIM distribute, then activate one
-device at a time). Legs whose tools a server does not ship yet are marked pending in the prompt.
+device at a time). `suite_segmentation_audit` (read tier, uses **ise**, **fmc**, **catsdwan**, **cml**) checks one
+site's segmentation intent end to end and builds an evidence pack (here: the fabric's virtual networks and pools
+from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforcement from
+`catc_get_group_policy_enforcement`). Legs whose tools a server does not ship yet are marked pending in the prompt.
 
 - **ISE / AAA:** `catc_add_ise_server` → `catc_accept_ise_certificate` (check the fingerprints) →
   `catc_update_site_aaa_settings` → `catc_provision_devices` (pushes RADIUS config and creates the
