@@ -488,8 +488,8 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_list_device_modules` | Hardware modules of one device (line cards, supervisors, power supplies, fans, transceivers) with part number, serial number and operational state. |
 | `catc_list_device_replacements` | Devices marked for replacement (RMA) and replacement workflows: faulty device name, serial and platform, the replacement serial, status (MARKED_FOR_REPLACEMENT -> READY_FOR_REPLACEMENT -> REPLACEMENT_IN_PROGRESS -> REPLACED or ERROR) and times. |
 | `catc_list_devices` | List network devices in the Catalyst Center inventory with hostname, management IP, platform, software version, role, reachability and serial. |
-| `catc_list_discoveries` | Discovery jobs with their type (range/CDP/LLDP/single), IP ranges, status, condition and number of devices found. |
-| `catc_list_discovery_devices` | Devices found by one discovery with reachability, the failure reason when unreachable, and CLI/SNMP/NETCONF credential status: the place to look when a discovery 'found nothing'. |
+| `catc_list_discoveries` | Discoveries, newest first, each with its type (RANGE/CIDR/CDP/LLDP/SINGLE), the addresses it scans, the status of its latest job (RUNNING/QUEUED/COMPLETED/TERMINATED/SCHEDULED), the number of reachable devices it found, start/end times and the job id. |
+| `catc_list_discovery_devices` | Devices one discovery job found (the latest job unless `job` is given), with discovery status (SUCCESS/UNREACHABLE/DISCARDED), reachability and the failure reason, the inventory status, and per protocol whether ping/CLI/SNMP/NETCONF/HTTP credentials worked (SUCCESS, FAILURE, NOT_PROVIDED, NOT_VALIDATED): the place to look when a discovery 'found nothing'. |
 | `catc_list_event_notifications` | Catalyst Center platform event notifications, newest first: device unreachable, link and OSPF/BGP alerts raised as notifications, config-change (drift) events, provisioning, SWIM, licensing and system/service health. |
 | `catc_list_events` | Assurance events (syslog, SNMP traps, client onboarding events) for network devices or clients, newest first. |
 | `catc_list_global_credentials` | Global device credentials (CLI, SNMPv2c read/write, SNMPv3, NETCONF port, HTTP(S)) that discovery and sites use: description, type, username/port and id. |
@@ -533,7 +533,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 | `catc_traceroute` | Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS labels and unreachable codes (!H, !N, !A ...), whether the target answered, a one-line verdict and the raw output. |
 
-### Write (66)
+### Write (67)
 
 | Tool | What it does |
 |---|---|
@@ -589,6 +589,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_set_udf` | Create a global user-defined field (asset tag, owner, CMDB id...) that devices can then carry, change its description or name, or delete it. |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
 | `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
+| `catc_stop_discovery` | Stop a running discovery job (e.g. one started on the wrong range). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
 | `catc_trigger_lifecycle_scan` | Start Catalyst Center's field notice, network bug and/or security advisory scans now instead of waiting for the scheduled run (EoX has no on-demand scan). |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |

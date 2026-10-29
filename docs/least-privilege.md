@@ -82,7 +82,7 @@ Everything in `mcp-catc-ro`, plus Write on:
 | Assurance.Settings | `catc_update_issue_definition`, `catc_create_custom_issue`, `catc_delete_custom_issue` (issue settings) |
 | Network Design.Profiles & Settings | site settings and AAA, global credentials, IP pools, network profiles and template attachment, template projects/templates/commit, `catc_preview_template` |
 | Network Design.Wireless Maps | creating, updating and deleting **floors** (`/v2/floors`) |
-| Network Management.Discovery | `catc_create_discovery` |
+| Network Management.Discovery | `catc_create_discovery`, `catc_stop_discovery` |
 | Network Management.Hierarchy | `catc_create_site`, `catc_update_site`, `catc_assign_devices_to_site` |
 | Network Management.Inventory | `catc_resync_devices`, `catc_set_device_role` (`PUT network-device/brief`), tags and tag members |
 | Network Operations.Compliance | `catc_run_compliance`, compliance policies, the field notice scan of `catc_trigger_lifecycle_scan` |
