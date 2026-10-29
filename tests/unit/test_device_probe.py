@@ -203,6 +203,42 @@ def test_parse_traceroute_named_hops() -> None:
     assert t["hops"][0]["responders"] == [{"name": "gw.example.com", "ip": "192.0.2.2"}]
 
 
+def test_parse_traceroute_exact_target_reports_reached_via() -> None:
+    t = parse_traceroute(text("traceroute_ok.txt"), "198.51.100.20", 30)
+    assert t["reached"] is True and t["reached_via"] == "198.51.100.20"
+
+
+def test_parse_traceroute_destination_answers_from_another_interface() -> None:
+    """#307 live shape: the router answers from its ingress interface, the trace stops short of max_hops."""
+    t = parse_traceroute(text("traceroute_other_interface.txt"), "198.51.100.3", 5)
+    assert t["reached"] is True and t["hop_count"] == 2
+    assert t["reached_via"] == "192.0.2.6 (destination answered from another interface)"
+    assert t["hops"][1]["timeouts"] == 1
+
+
+def test_parse_traceroute_other_ip_without_max_hops_is_not_reached() -> None:
+    t = parse_traceroute(text("traceroute_other_interface.txt"), "198.51.100.3")
+    assert t["reached"] is False and "reached_via" not in t
+
+
+TRACE_HEAD = "Tracing the route to 198.51.100.3\n  1 192.0.2.1 1 msec 1 msec 1 msec\n"
+
+
+@pytest.mark.parametrize(
+    ("last", "max_hops"),
+    [
+        ("  2 192.0.2.6 1 msec 1 msec 1 msec\n", 2),  # every hop up to max_hops tried
+        ("  2  *  *  * \n", 5),  # last hop all timeouts
+        ("  2 192.0.2.6 !H  *  !H \n", 5),
+        ("  2 192.0.2.6 !N  !N  !N \n", 5),
+        ("  2 192.0.2.6 !A  !A  !A \n", 5),
+    ],
+)
+def test_parse_traceroute_not_reached_cases(last: str, max_hops: int) -> None:
+    t = parse_traceroute(TRACE_HEAD + last, "198.51.100.3", max_hops)
+    assert t["reached"] is False and "reached_via" not in t
+
+
 # --- tools -------------------------------------------------------------------------------------
 
 
@@ -267,6 +303,21 @@ async def test_catc_traceroute_not_reached(api: respx.MockRouter) -> None:
     assert out["reached"] is False
     assert out["verdict"] == (
         "edge-r1.example.com -> 203.0.113.99: not reached after 4 hop(s); last answer from 192.0.2.6"
+    )
+
+
+async def test_catc_traceroute_destination_answers_from_another_interface(api: respx.MockRouter) -> None:
+    cmd = "traceroute 198.51.100.3 source Loopback0 numeric timeout 2 ttl 1 5"
+    mock_runner(api, {cmd: text("traceroute_other_interface.txt")})
+    out = await call(
+        "catc_traceroute",
+        {"device": "edge-r1", "target": "198.51.100.3", "source": "Loopback0", "max_hops": 5},
+    )
+    assert out["reached"] is True and out["hop_count"] == 2
+    assert out["reached_via"] == "192.0.2.6 (destination answered from another interface)"
+    assert out["verdict"] == (
+        "edge-r1.example.com -> 198.51.100.3: reached in 2 hop(s); "
+        "the destination answered from 192.0.2.6, another of its interfaces"
     )
 
 
