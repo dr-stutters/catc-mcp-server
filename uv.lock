@@ -200,7 +200,7 @@ wheels = [
 
 [[package]]
 name = "catc-mcp-server"
-version = "0.23.0"
+version = "0.24.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },

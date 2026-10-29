@@ -30,7 +30,7 @@ You need: a Catalyst Center API user for the server (read-only is enough to star
 has a wheel with stutters-mcp-core bundled in; it needs only PyPI dependencies.
 
 ```bash
-WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.23.0/catc_mcp_server-0.23.0-py3-none-any.whl
+WHEEL=https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.24.0/catc_mcp_server-0.24.0-py3-none-any.whl
 export CATC_URL=https://catalyst-center.example.com CATC_USERNAME=mcp-catc-ro CATC_PASSWORD='...'
 uvx --from "$WHEEL" catc-mcp-server check           # preflight: login, TLS, role, version, ISE integration
 claude mcp add catc -e CATC_URL=$CATC_URL -e CATC_USERNAME=$CATC_USERNAME -e CATC_PASSWORD="$CATC_PASSWORD" \
@@ -44,7 +44,7 @@ Claude Desktop (`claude_desktop_config.json`), same idea:
   "mcpServers": {
     "catc": {
       "command": "uvx",
-      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.23.0/catc_mcp_server-0.23.0-py3-none-any.whl", "catc-mcp-server"],
+      "args": ["--from", "https://github.com/dr-stutters/catc-mcp-server/releases/download/v0.24.0/catc_mcp_server-0.24.0-py3-none-any.whl", "catc-mcp-server"],
       "env": {"CATC_URL": "https://catalyst-center.example.com", "CATC_USERNAME": "mcp-catc-ro", "CATC_PASSWORD": "..."}
     }
   }

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.24.0 (2026-10-29)
+
+Discovery and tags on the v2 APIs (with a discovery stop and bulk tagging), audit logs grouped by action, and fixes
+for device licences and traceroute. Core 0.20.0. 237 tools (120 read, 69 write, 48 dangerous) and sixteen prompts.
+
+### Added
+- `catc_stop_discovery` (write) stops a running discovery job; `catc_list_discoveries` /
+  `catc_list_discovery_devices` use the v2 discoverys API with server-side paging and job details (D58, #105, #317).
+- `catc_tag_interfaces` tags interfaces and `catc_tag_devices` tags devices in bulk (tags v2, D59, #106, #316).
+- `catc_list_audit_logs(grouped=true)` lists one row per audit action (parent record) with its child-record count,
+  plus record and action totals for the window (D62, #109, #315).
+
+### Fixed
+- `catc_list_device_licenses` with no filter no longer gets 400 from Catalyst Center 3.2.2 (it sends a match-all
+  filter) (D55, #314).
+- `catc_traceroute` reports reached (with `reached_via`) when the destination router answers from another of its
+  interfaces, not only from the target address (D74, #307, #313).
+
 ## 0.23.0 (2026-10-29)
 
 A site's inventory in one read, an assurance issue's suggested commands run for you, and core 0.20.0 with the suite
