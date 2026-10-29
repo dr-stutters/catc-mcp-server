@@ -46,6 +46,7 @@ LONG = {
     "catc_diff_config",
     "catc_import_config",
     "catc_create_backup",
+    "catc_apply_site_credentials",
 }
 
 
