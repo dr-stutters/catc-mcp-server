@@ -227,7 +227,8 @@ Typical flows:
   `catc_compare_device_configs` (template deploys don't `write memory`, so running-vs-startup
   compliance goes non-compliant until the config is saved).
 - **Troubleshoot:** `catc_device_360` / `catc_client_360` → `catc_list_issues` → `catc_get_issue`
-  (Catalyst Center's suggested commands) → `catc_run_show_commands`; `catc_path_trace` (needs CDP or
+  (Catalyst Center's suggested commands) → `catc_run_issue_commands` (runs them all) or
+  `catc_run_show_commands`; `catc_path_trace` (needs CDP or
   LLDP between devices); `catc_list_events`.
 - **One port** (contain or fix a client port; dangerous tier): `catc_set_interface(device, interface,
   action=shut|no_shut|access_vlan|voice_vlan|description)` through Catalyst Center's interface API. Uplinks
@@ -394,6 +395,9 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 - `catc_run_show_commands` is **read tier** but only accepts `show ...` commands; after a `|` only
   include/exclude/begin/section/count filters are allowed (regex alternatives such as
   `| include up|down` are fine; no redirect/tee/append, no `;`, `&`, `<`, `>`).
+- `catc_run_issue_commands` is **read tier**: Catalyst Center runs every command the issue suggests, so
+  the issue is read first and the call is refused (nothing runs) unless each command passes the same
+  allow-list as `catc_ping` (show, ping, traceroute, dir).
 - `catc_ping` / `catc_traceroute` are **read tier** too: the command is built from the arguments and
   checked against a fixed allow-list (show, ping, traceroute, dir, each with a fixed grammar), never the
   command runner's own keyword list (which also accepts debug, monitor, test, crypto, verify).
@@ -404,7 +408,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (116)
+### Read (119)
 
 | Tool | What it does |
 |---|---|
@@ -515,6 +519,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_ping` | Ping from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed result: sent/received, success and loss %, min/avg/max round-trip time, reachable, a one-line verdict, and the raw output. |
 | `catc_preview_template` | Render a template with the given variable values and show the resulting CLI, without deploying anything. |
 | `catc_recent_activity` | What happened on this device or site recently? Queries Catalyst Center's assurance issues, assurance events (syslog, traps), platform event notifications and the audit log for the same window and scope, and merges them newest first with a `source` column. |
+| `catc_run_issue_commands` | Run an assurance issue's suggested commands live and return the output per device: Catalyst Center's own "Run commands" for the issue's suggested actions (execute-suggested-actions-commands), which closes the troubleshooting loop catc_get_issue starts. |
 | `catc_run_show_commands` | Run read-only `show` commands live on managed devices through Catalyst Center's command runner and return each device's output. |
 | `catc_search_spec` | Search the Cisco Catalyst Center OpenAPI spec for operations (method + path) and schemas. |
 | `catc_security_advisories` | Cisco security advisories (PSIRTs) Catalyst Center matched against the devices: per device the scan status, scan mode and advisory count, and the advisories themselves (id, impact rating, CVSS, CVEs, first fixed releases per vulnerable version, Cisco link, affected devices), highest CVSS first. |
@@ -527,7 +532,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 | `catc_traceroute` | Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS labels and unreachable codes (!H, !N, !A ...), whether the target answered, a one-line verdict and the raw output. |
 
-### Write (65)
+### Write (66)
 
 | Tool | What it does |
 |---|---|

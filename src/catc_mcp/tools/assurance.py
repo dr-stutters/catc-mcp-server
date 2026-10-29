@@ -272,6 +272,29 @@ def issue_row(i: dict[str, Any], now_ms: float | None = None) -> dict[str, Any]:
     return row
 
 
+async def fetch_issue(app: CatcApp, issue_id: str) -> Any:
+    """One assurance issue from the data API (a dict), or whatever came back when it isn't one."""
+    # No `view`: the default view is the one that carries suggestedActions.
+    data = await app.get_response(f"/dna/data/api/v1/assuranceIssues/{safe_id(issue_id, 'issue id')}")
+    return data[0] if isinstance(data, list) and data else data
+
+
+def suggested_actions(issue: dict[str, Any]) -> list[dict[str, Any]]:
+    """The issue's suggested actions: what to check and the commands Catalyst Center proposes for it."""
+    return [
+        {
+            "action": a.get("message"),
+            "commands": [
+                str(st["command"])
+                for st in a.get("steps") or []
+                if isinstance(st, dict) and st.get("command")
+            ],
+        }
+        for a in issue.get("suggestedActions") or []
+        if isinstance(a, dict)
+    ]
+
+
 async def mark_unmanaged(
     app: CatcApp, raw: list[dict[str, Any]], rows: list[dict[str, Any]]
 ) -> list[str] | None:
@@ -774,9 +797,7 @@ def register(reg: ToolRegistrar) -> None:
         (run them with catc_run_show_commands). Mark it resolved or ignored with
         catc_update_issue_status."""
         app: CatcApp = get_client(ctx)
-        # No `view`: the default view is the one that carries suggestedActions.
-        data = await app.get_response(f"/dna/data/api/v1/assuranceIssues/{safe_id(issue_id, 'issue id')}")
-        data = data[0] if isinstance(data, list) and data else data
+        data = await fetch_issue(app, issue_id)
         if not isinstance(data, dict):
             return object_result(data)
         out = issue_row(data)
@@ -784,18 +805,7 @@ def register(reg: ToolRegistrar) -> None:
             if data.get(key) not in (None, ""):
                 out[key] = data[key]
         # Suggested actions: what to check, and the command-runner commands Catalyst Center proposes.
-        out["suggested_actions"] = [
-            {
-                "action": a.get("message"),
-                "commands": [
-                    st.get("command")
-                    for st in a.get("steps") or []
-                    if isinstance(st, dict) and st.get("command")
-                ],
-            }
-            for a in data.get("suggestedActions") or []
-            if isinstance(a, dict)
-        ]
+        out["suggested_actions"] = suggested_actions(data)
         dup = {"nwDeviceName": out.get("device"), "managementIpAddr": out.get("device")}
         texts = {str(out.get("description") or ""), str(out.get("summary") or "")}
         attrs = {
