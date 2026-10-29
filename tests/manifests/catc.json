@@ -1450,9 +1450,17 @@
       "tier": "write",
       "title": "Stop discovery"
     },
+    "catc_tag_devices": {
+      "tier": "write",
+      "title": "Tag or untag devices in bulk"
+    },
     "catc_tag_golden_image": {
       "tier": "write",
       "title": "Tag golden image"
+    },
+    "catc_tag_interfaces": {
+      "tier": "write",
+      "title": "Tag or untag interfaces"
     },
     "catc_template_drift": {
       "tier": "read",

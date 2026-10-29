@@ -237,7 +237,8 @@ Typical flows:
   (`deploymentMode=Preview`) and the undo call; one device for `CATC_MAX_DEVICES_PER_CHANGE`.
 - **What happened here?** `catc_recent_activity(device=..., site=..., hours=...)` merges issues,
   assurance events, event notifications and the audit log for one window (pull-only: queried when
-  called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs`.
+  called); drill down with `catc_list_event_notifications` / `catc_list_audit_logs` (`grouped=true`:
+  one row per action with its child-record count, and the window's record and action totals).
 - **What happened to this client?** `catc_client_timeline(mac=..., hours=... or since=...)` merges its
   onboarding steps, assurance events (ISE authentications, roams, failures) and issues by time.
 - **Template versions:** `catc_list_template_versions` → `catc_diff_template_versions`;
@@ -533,7 +534,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 | `catc_traceroute` | Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS labels and unreachable codes (!H, !N, !A ...), whether the target answered, a one-line verdict and the raw output. |
 
-### Write (67)
+### Write (69)
 
 | Tool | What it does |
 |---|---|
@@ -590,7 +591,9 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |
 | `catc_set_wlan_vlan` | Stage the VLAN of a WLAN's policy profile in the WLC's per-device intended configuration (the policy profile's interfaceName). |
 | `catc_stop_discovery` | Stop a running discovery job (e.g. one started on the wrong range). |
+| `catc_tag_devices` | Add a static tag to many network devices in one request, or remove it (bulk membership over tags/networkDevices/membersAssociations/bulk; up to 500 devices). |
 | `catc_tag_golden_image` | Mark an imported software image as golden (the target version) for a device product at a site and its children, or remove the tag. |
+| `catc_tag_interfaces` | Add a static tag to interfaces of one device, or remove it (to target templates or port actions by interface tag). |
 | `catc_trigger_lifecycle_scan` | Start Catalyst Center's field notice, network bug and/or security advisory scans now instead of waiting for the scheduled run (EoX has no on-demand scan). |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
