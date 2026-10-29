@@ -322,7 +322,11 @@ async def test_list_no_filter_and_count_failure(api: respx.MockRouter) -> None:
     post_count = api.post(f"{QUERY}/count")
     api.get(f"{DEVICES}/count").mock(return_value=httpx.Response(500, json={"message": "boom"}))
     out = await call("catc_list_device_licenses", {"response_format": "json"})
-    assert "filter" not in json.loads(rows.calls.last.request.content)
+    # the appliance requires `filter` and rejects an empty list: the no-argument call sends a match-all
+    assert json.loads(rows.calls.last.request.content)["filter"] == {
+        "filters": [{"key": "hostname", "operator": "contains", "value": ""}],
+        "logicalOperator": "AND",
+    }
     # query/count requires a filter: the unfiltered total comes from GET networkDeviceLicenses/count
     assert not post_count.called
     assert out["results"][0]["licenses"].startswith("NETWORK_ADVANTAGE/network-advantage (IN_USE)")
@@ -347,6 +351,8 @@ async def test_list_unfiltered_total_from_get_count(api: respx.MockRouter) -> No
     api.get(f"{DEVICES}/count").respond(json={"response": {"count": 12}, "version": "1.0"})
     out = await call("catc_list_device_licenses", {"response_format": "json"})
     assert out["total"] == 12 and "unavailable" not in out
+    # the match-all filter is a request detail, not a filter the caller set
+    assert "filter" not in out
 
 
 def test_epoch_seconds_reads_both_units() -> None:

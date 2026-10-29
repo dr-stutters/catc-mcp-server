@@ -53,6 +53,10 @@ USAGE = "/dna/intent/api/v1/licenseUsage"
 DEVICE_SCAN = 5000  # device licence records read by the summary
 MAX_LISTED = 100  # expired / expiring devices named by the summary
 MAX_FILTERS = 20  # the spec: total filter criteria should not exceed 20
+# networkDeviceLicenses/query rejects a body without `filter` (400 "Missing required field 'filter'") and an
+# empty `filters` list (400 "Missing required field 'key'"), checked on 3.2.2. This criterion matches every
+# device, so the unfiltered list sends it.
+MATCH_ALL = {"filters": [{"key": "hostname", "operator": "contains", "value": ""}], "logicalOperator": "AND"}
 
 # Licence statuses (networkDeviceLicenses licenses[].status) and device authorization statuses that mean
 # the licence has run out or is not covered.
@@ -438,8 +442,7 @@ def register(reg: ToolRegistrar) -> None:
             # Catalyst Center counts the page offset from 1.
             "page": {"limit": limit, "offset": offset + 1, "sortBy": {"name": sort_by, "order": order}}
         }
-        if flt:
-            body["filter"] = flt
+        body["filter"] = flt or MATCH_ALL
         resp = await app.api.post(QUERY, body)
         # The total is a second query: when only it fails, the page still comes back. query/count requires
         # a non-empty `filter`, so an unfiltered list takes its total from GET networkDeviceLicenses/count.
