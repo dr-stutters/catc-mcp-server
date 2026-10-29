@@ -610,6 +610,10 @@
       "tier": "dangerous",
       "title": "Accept the ISE certificate"
     },
+    "catc_accept_ssh_key": {
+      "tier": "write",
+      "title": "Accept SSH key change"
+    },
     "catc_activate_image": {
       "tier": "dangerous",
       "title": "Activate software image"
@@ -1050,6 +1054,10 @@
       "tier": "read",
       "title": "Get site network settings"
     },
+    "catc_get_ssh_key_settings": {
+      "tier": "read",
+      "title": "Get SSH key settings"
+    },
     "catc_get_ssi_readiness": {
       "tier": "read",
       "title": "Security Service Insertion readiness"
@@ -1430,9 +1438,17 @@
       "tier": "dangerous",
       "title": "Change provisioning settings (Visibility and Control of Configurations)"
     },
+    "catc_set_resync_interval": {
+      "tier": "write",
+      "title": "Set resync interval"
+    },
     "catc_set_rf_profile": {
       "tier": "write",
       "title": "Set RF profile"
+    },
+    "catc_set_ssh_key_settings": {
+      "tier": "write",
+      "title": "Set SSH key settings"
     },
     "catc_set_udf": {
       "tier": "write",

@@ -409,7 +409,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 - `catc_api_call` does GETs in the read tier; with the dangerous tier on, it also does preview-first
   POST/PUT/PATCH/DELETE. Find endpoints with `catc_search_spec` and bodies with `catc_get_definition`.
 
-### Read (124)
+### Read (125)
 
 | Tool | What it does |
 |---|---|
@@ -460,6 +460,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_get_site` | One site: id, type, name hierarchy, address/coordinates (buildings), dimensions and RF model (floors), its direct child sites and how many network devices are assigned to it. |
 | `catc_get_site_hierarchy` | The site hierarchy (Global > areas > buildings > floors) as an indented tree with each site's type and id. |
 | `catc_get_site_settings` | Network settings for a site (Design > Network Settings): AAA servers, banner, DHCP, DNS, NTP, telemetry (syslog/SNMP/NetFlow collectors), time zone, image distribution servers and the device credentials the site uses (shown as 'TYPE:description', never secrets). |
+| `catc_get_ssh_key_settings` | The global policy for new SSH host keys: whether Catalyst Center accepts a changed device key by itself (auto-accept) or waits for catc_accept_ssh_key. |
 | `catc_get_ssi_readiness` | Security Service Insertion (SSI) readiness of the SD-Access fabric. |
 | `catc_get_system_health` | Health of the Catalyst Center appliance itself: service health events (counts by state and the ones that are not healthy), last backups and the backup target, system licence (registration/evaluation), ISE/AAA server integration status, and release version. |
 | `catc_get_task` | Status of an asynchronous Catalyst Center operation: progress, whether it finished or failed, the failure reason and any result data. |
@@ -538,10 +539,11 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 | `catc_traceroute` | Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS labels and unreachable codes (!H, !N, !A ...), whether the target answered (reached, reached_via: a trace that stops short of max_hops on an answering hop counts, since a router replies from its ingress interface rather than the probed loopback), a one-line verdict and the raw output. |
 
-### Write (70)
+### Write (73)
 
 | Tool | What it does |
 |---|---|
+| `catc_accept_ssh_key` | Accept the new SSH host key of devices whose key changed (after a reimage, an RMA or 'crypto key generate') so Catalyst Center can collect them again, and resync them. |
 | `catc_apply_telemetry_settings` | Push the site telemetry settings (external syslog and SNMP trap servers, NetFlow / application visibility collector, wired and wireless data collection) to devices without a full re-provision: Catalyst Center's 'Update Telemetry Settings' device action. |
 | `catc_assign_compliance_policy` | Change which sites a compliance policy applies to (each site includes the sites below it). |
 | `catc_assign_devices_to_site` | Assign (or move) unprovisioned network devices to a building or floor. |
@@ -590,7 +592,9 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_set_device_role` | Set the inventory role of network devices (ACCESS, CORE, DISTRIBUTION, BORDER ROUTER) and pin it (role source MANUAL) so Catalyst Center's automatic classification no longer changes it. |
 | `catc_set_device_udfs` | Set or clear user-defined field values on network devices (e.g. asset tag, owner, CMDB id from the source of truth). |
 | `catc_set_fabric_ssid_mapping` | Map fabric SSIDs to the VLANs of an SD-Access fabric site (wireless clients on the SSID land in that anycast gateway's VN and pool), unmap them, and optionally turn fabric wireless multicast on or off. |
+| `catc_set_resync_interval` | Set how often Catalyst Center re-collects inventory: for one device (heavy WLCs, a lagging config archive) or the global default the other devices follow. |
 | `catc_set_rf_profile` | Stage RF profile settings in the WLC's per-device intended configuration: state, TX power range, DCA channel width, client limit, description (only the ones given change). |
+| `catc_set_ssh_key_settings` | Set the global policy for new SSH host keys. |
 | `catc_set_udf` | Create a global user-defined field (asset tag, owner, CMDB id...) that devices can then carry, change its description or name, or delete it. |
 | `catc_set_wired_feature` | Store a change to a switch's per-device intended layer-2 configuration (Per Device Configuration enabled): add or change VLANs, STP/VTP/CDP/LLDP/snooping globals, or per-interface switchport, trunk, 802.1X/MAB settings. |
 | `catc_set_wlan_security` | Stage a WLAN's security in the WLC's per-device intended configuration: open, WPA2/WPA3 personal (PSK/SAE) or enterprise (802.1X with an AAA method list); PMF follows the mode. |

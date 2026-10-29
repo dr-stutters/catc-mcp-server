@@ -44,6 +44,7 @@ from catc_mcp.tools.assurance import (
     issue_row,
     user_pattern,
 )
+from catc_mcp.tools.device_settings import SSH_KEY_HINT, ssh_key_failure
 from catc_mcp.tools.inventory import redact_config
 from catc_mcp.tools.maintenance import maintenance_note
 
@@ -397,6 +398,8 @@ def register(reg: ToolRegistrar) -> None:
         out: dict[str, Any] = {"device": pick(dev, [*DEVICE_FIELDS, "series", "macAddress", "lastUpdated"])}
         if "reachabilityFailureReason" in dev:
             out["device"]["reachabilityFailureReason"] = dev["reachabilityFailureReason"]
+        if key := ssh_key_failure(dev):
+            out["device"]["ssh_key_change"] = {"failure": key, "hint": SSH_KEY_HINT}
         health = data.get("health")
         if isinstance(health, dict):
             out["site"] = health.get("siteHierarchy")
