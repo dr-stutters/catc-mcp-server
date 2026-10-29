@@ -270,7 +270,11 @@ def _hop_row(n: int, text: str) -> dict[str, Any]:
     return row
 
 
-def parse_traceroute(text: str, target: str) -> dict[str, Any]:
+def parse_traceroute(text: str, target: str, max_hops: int | None = None) -> dict[str, Any]:
+    """Parse IOS/IOS-XE traceroute text. ``reached`` is True when the last hop's responder is the target,
+    or when the trace stopped short of ``max_hops`` and its last hop answered without an unreachable code:
+    IOS stops once the destination replies (port unreachable), and a router sources that reply from the
+    interface the probe arrived on, not the probed loopback. ``reached_via`` names the answering address."""
     out: dict[str, Any] = {}
     target_ip = _addr(target)
     if m := _TRACING.search(text):
@@ -301,7 +305,13 @@ def parse_traceroute(text: str, target: str) -> dict[str, Any]:
     out["hops"] = hops
     out["hop_count"] = len(hops)
     last = hops[-1] if hops else {}
-    reached = bool(target_ip) and any(r.get("ip") == target_ip for r in last.get("responders", []))
+    answered = [r["ip"] for r in last.get("responders", [])]
+    reached = bool(target_ip) and target_ip in answered
+    if reached:
+        out["reached_via"] = target_ip
+    elif max_hops is not None and answered and last["hop"] < max_hops and not last.get("unreachable_codes"):
+        reached = True
+        out["reached_via"] = f"{answered[-1]} (destination answered from another interface)"
     out["reached"] = reached
     out["parsed"] = bool(hops)
     if not hops and (errs := _errors(text)):
@@ -390,8 +400,10 @@ def register(reg: ToolRegistrar) -> None:
     ) -> ToolResult:
         """Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and
         return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS
-        labels and unreachable codes (!H, !N, !A ...), whether the target answered, a one-line verdict and
-        the raw output. Numeric (no DNS lookups), 2 s per probe. The command is built from the arguments
+        labels and unreachable codes (!H, !N, !A ...), whether the target answered (reached, reached_via: a
+        trace that stops short of max_hops on an answering hop counts, since a router replies from its
+        ingress interface rather than the probed loopback), a one-line verdict and the raw output. Numeric
+        (no DNS lookups), 2 s per probe. The command is built from the arguments
         and checked against a fixed allow-list. Catalyst Center's own model of the path (interfaces,
         ACLs): catc_path_trace."""
         app: CatcApp = get_client(ctx)
@@ -399,12 +411,15 @@ def register(reg: ToolRegistrar) -> None:
         name, entry, text = await run_probe(app, ctx, device, command, max_hops * 3 * TRACE_TIMEOUT_S + 30)
         out = _base(name, command, entry)
         if text is not None:
-            out.update(parse_traceroute(text, target))
+            out.update(parse_traceroute(text, target, max_hops))
             out["output"] = text
         if out.get("parsed"):
             last = out["hops"][-1]
             if out["reached"]:
                 out["verdict"] = f"{name} -> {target}: reached in {out['hop_count']} hop(s)"
+                if out.get("reached_via") != out.get("target_ip"):
+                    via = str(out["reached_via"]).split(" ", 1)[0]
+                    out["verdict"] += f"; the destination answered from {via}, another of its interfaces"
             else:
                 where = [r["ip"] for h in out["hops"] for r in h.get("responders", [])]
                 out["verdict"] = f"{name} -> {target}: not reached after {out['hop_count']} hop(s)" + (
