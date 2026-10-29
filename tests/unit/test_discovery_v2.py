@@ -9,6 +9,7 @@ GET discoverys/count and .../discoveredNetworkDevices/count -> {"response": {"co
 a discovered device's validationStatuses say "NOT-PROVIDED" (hyphen) where the spec says NOT_PROVIDED.
 """
 
+import json
 from typing import Any
 
 import httpx
@@ -252,3 +253,55 @@ async def test_stop_discovery_named_job(api: respx.MockRouter) -> None:
 async def test_stop_discovery_is_write_tier(api: respx.MockRouter) -> None:
     async with Client(create_server(make_settings())) as c:
         assert "catc_stop_discovery" not in {t.name for t in await c.list_tools()}
+
+
+# --- #319: several ranges go out as Multi Range -----------------------------------------------------
+
+
+async def create_flow(
+    api: respx.MockRouter, args: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Preview + confirm catc_create_discovery; returns (preview, result, POST body)."""
+    api.get("/dna/intent/api/v1/globalCredentials").respond(
+        json={"response": [{"id": "c1", "type": "CLI", "description": "lab", "username": "u"}]}
+    )
+    api.get("/dna/intent/api/v1/discovery/count").respond(json={"response": 0})
+    post = api.post("/dna/intent/api/v1/discovery").respond(202, json={"response": {"taskId": "t-d"}})
+    api.get("/dna/intent/api/v1/task/t-d").respond(json={"response": {"data": DISC_ID, "progress": DISC_ID}})
+    async with Client(create_server(make_settings(mcp_enable_writes=True))) as c:
+        preview = await run(c, "catc_create_discovery", args)
+        assert preview["status"] == "preview"
+        done = await run(c, "catc_create_discovery", {**args, "confirm": preview["confirm"]})
+    return preview, done, json.loads(post.calls.last.request.content)
+
+
+THREE = ["192.0.2.1-192.0.2.254", "198.51.100.1-198.51.100.254", "203.0.113.1-203.0.113.254"]
+
+
+async def test_create_discovery_several_ranges_send_multi_range(api: respx.MockRouter) -> None:
+    preview, done, sent = await create_flow(api, {"name": "mcp-disc", "ip_ranges": THREE})
+    assert sent["discoveryType"] == "Multi Range"
+    assert sent["ipAddressList"] == ",".join(THREE)
+    assert preview["action"].startswith("Start Multi Range discovery mcp-disc on 192.0.2.1-")
+    assert preview["preview"]["note"] == "3 ranges: sent as Multi Range"
+    assert preview["preview"]["body"]["discoveryType"] == "Multi Range"
+    assert done["status"] == "applied" and done["result"]["discovery_id"] == DISC_ID
+
+
+async def test_create_discovery_comma_joined_ranges_count_too(api: respx.MockRouter) -> None:
+    _, _, sent = await create_flow(api, {"name": "mcp-disc", "ip_ranges": [",".join(THREE[:2])]})
+    assert sent["discoveryType"] == "Multi Range"
+
+
+async def test_create_discovery_one_range_stays_range(api: respx.MockRouter) -> None:
+    preview, _, sent = await create_flow(api, {"name": "mcp-disc", "ip_ranges": THREE[:1]})
+    assert sent["discoveryType"] == "Range" and sent["ipAddressList"] == THREE[0]
+    assert preview["action"].startswith("Start Range discovery") and "note" not in preview["preview"]
+
+
+async def test_create_discovery_single_unchanged(api: respx.MockRouter) -> None:
+    preview, _, sent = await create_flow(
+        api, {"name": "mcp-disc", "ip_ranges": ["192.0.2.46"], "discovery_type": "Single"}
+    )
+    assert sent["discoveryType"] == "Range" and sent["ipAddressList"] == "192.0.2.46-192.0.2.46"
+    assert preview["action"].startswith("Start Single discovery") and "note" not in preview["preview"]
