@@ -288,3 +288,21 @@ def test_status_rows_skips_empty_types() -> None:
     assert credentials.status_rows({"cli": [{"status": "Synced", "deviceCount": 2}], "snmpV3": None}) == [
         {"type": "CLI", "status": "Synced", "devices": 2}
     ]
+
+
+async def test_apply_blast_radius_sums_status_rows_per_type(api: respx.MockRouter) -> None:
+    mock_sites(api, [GLOBAL, AREA])
+    mock_creds(api)
+    site_creds(api, AREA["id"], {"cliCredentialsId": {"credentialsId": CREDS[0]["id"]}})
+    mixed = {
+        "cli": [{"status": "Synced", "deviceCount": 3}, {"status": "Not Synced", "deviceCount": 2}],
+        "snmpV2Read": [],
+        "snmpV2Write": [],
+        "snmpV3": [],
+    }
+    site_status(api, AREA["id"], mixed)
+    settings = make_settings(mcp_enable_writes=True, mcp_enable_dangerous=True, max_devices_per_change=4)
+    async with Client(create_server(settings)) as c:
+        preview = await run(c, "catc_apply_site_credentials", {"site": "Global/AU"})
+    assert preview["blast_radius"] == 5
+    assert preview["status"] == "blocked" and "CATC_MAX_DEVICES_PER_CHANGE=4" in preview["blockers"][0]

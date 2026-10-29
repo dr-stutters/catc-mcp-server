@@ -604,7 +604,11 @@ def register(reg: ToolRegistrar) -> None:
                 "catc_assign_site_credentials."
             )
         rows = status_rows(before, [a["type"] for a in apply_list])
-        devices = max((int(r.get("devices") or 0) for r in rows), default=0)
+        # A type can have several rows (one per sync status): its devices are their sum.
+        per_type: dict[str, int] = {}
+        for r in rows:
+            per_type[r["type"]] = per_type.get(r["type"], 0) + int(r.get("devices") or 0)
+        devices = max(per_type.values(), default=0)
         if apply_list and not devices:
             blockers.append(
                 "No devices at the site or below use these credentials (the sync status lists none)."
