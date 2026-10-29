@@ -222,6 +222,8 @@ Typical flows:
 - **Onboard:** `catc_create_global_credential` → `catc_create_discovery` (wait=true) →
   `catc_create_site` → `catc_update_site_settings` / `catc_assign_site_credentials` →
   `catc_assign_devices_to_site` → `catc_provision_devices`.
+- **Rotate credentials:** `catc_update_global_credential` (new secret, same id) →
+  `catc_apply_site_credentials` (push to the site's devices; sync status per type afterwards).
 - **Day-N change:** `catc_create_template` → `catc_commit_template` → `catc_preview_template` →
   `catc_deploy_template` → verify with `catc_run_show_commands` → `catc_run_compliance` /
   `catc_compare_device_configs` (template deploys don't `write memory`, so running-vs-startup
@@ -534,7 +536,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_top_problems` | The worst devices or clients over the window, each with the issue behind it. |
 | `catc_traceroute` | Traceroute from a managed IOS-XE device live through Catalyst Center's command runner and return the parsed hops: per hop the responders (IP, name when resolved), RTTs, timeouts, MPLS labels and unreachable codes (!H, !N, !A ...), whether the target answered, a one-line verdict and the raw output. |
 
-### Write (69)
+### Write (70)
 
 | Tool | What it does |
 |---|---|
@@ -597,6 +599,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_trigger_lifecycle_scan` | Start Catalyst Center's field notice, network bug and/or security advisory scans now instead of waiting for the scheduled run (EoX has no on-demand scan). |
 | `catc_unassign_profile_from_sites` | Remove a network profile's assignment from sites. |
 | `catc_update_compliance_policy` | Change an existing compliance policy: add rules (conditions, or CLI lines with require_lines/forbid_lines), delete rules by name, rename it or change its description. |
+| `catc_update_global_credential` | Rotate a global device credential in place (CLI, SNMPv2c read/write, SNMPv3, HTTP(S)): new secret(s), and optionally a new username or description. |
 | `catc_update_health_score_definition` | Tune Assurance health scores to the customer's standard: change a KPI's threshold per device family (router CPU 95% -> 85%), leave a KPI out of overall health, or tie it to the issue threshold; reset_to_default puts KPIs back. |
 | `catc_update_issue_definition` | Enable or disable a built-in Assurance issue, or change its priority (P1..P4, or back to the default) or threshold: "stop paging me about X". |
 | `catc_update_issue_status` | Mark assurance issues as resolved, or ignore them for some hours. |
@@ -608,7 +611,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_update_template` | Change a template's content or description (creates uncommitted changes; commit with catc_commit_template). |
 | `catc_write_memory` | Save the running configuration to the startup configuration (write memory) on devices, so a template deploy or other change survives a reload. |
 
-### Dangerous (48)
+### Dangerous (49)
 
 | Tool | What it does |
 |---|---|
@@ -622,6 +625,7 @@ from `catc_get_sda_fabric` / `catc_list_ip_pools`, and group-based policy enforc
 | `catc_anchor_virtual_network` | Create a layer 3 virtual network anchored at one fabric site and extend it to others (multi-site SD-Access), extend an anchored VN to more sites, or stop anchoring one (remove_anchor). |
 | `catc_api_call` | Call any Cisco Catalyst Center REST endpoint (escape hatch for things no other tool covers). |
 | `catc_apply_pending_fabric_events` | Apply a fabric site's pending fabric events. |
+| `catc_apply_site_credentials` | Push a site's current CLI and SNMP credentials to its devices (Catalyst Center's credential sync): every device at the site and at the sites below it that inherit them gets the credential configured, then is managed with it. |
 | `catc_assign_fabric_port` | Assign an edge port to a fabric VLAN (host onboarding): Catalyst Center configures the access port (VLAN, authentication template) on the edge. |
 | `catc_claim_pnp_device` | Claim an Unclaimed Plug and Play device to a site: Catalyst Center pushes the day-0 onboarding template (with its variables), optionally an image, then adds the device to the inventory at that site. |
 | `catc_create_backup` | Take an on-demand Catalyst Center system backup to the configured backup target (NFS server or physical disk), e.g. before the group-based policy migration or an upgrade. |
