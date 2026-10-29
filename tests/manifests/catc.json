@@ -1446,6 +1446,10 @@
       "tier": "read",
       "title": "Cisco Catalyst Center status"
     },
+    "catc_stop_discovery": {
+      "tier": "write",
+      "title": "Stop discovery"
+    },
     "catc_tag_devices": {
       "tier": "write",
       "title": "Tag or untag devices in bulk"
