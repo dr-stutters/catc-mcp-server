@@ -346,7 +346,7 @@ def register(reg: ToolRegistrar) -> None:
         ],
         discovery_type: Annotated[
             Literal["Range", "Multi Range", "Single", "CDP", "LLDP", "CIDR"],
-            Field(description="Discovery method"),
+            Field(description="Discovery method ('Range' with several ranges is sent as 'Multi Range')"),
         ] = "Range",
         cli_username: Annotated[
             str | None, Field(description="SSH username (omit to use global credentials)")
@@ -402,6 +402,7 @@ def register(reg: ToolRegistrar) -> None:
             raise InvalidRequest("global_credentials needs use_global_credentials=true.")
         ips = ",".join(r.strip() for r in ip_ranges)
         sent_type: str = discovery_type
+        type_note: str | None = None
         if discovery_type == "Single":
             # 3.2.2 finishes a "Single" discovery in seconds without finding anything; a one-address
             # Range works.
@@ -416,6 +417,11 @@ def register(reg: ToolRegistrar) -> None:
             if bad:
                 raise InvalidRequest(f"Not an IP or 'first-last' range: {', '.join(bad)}")
             ips = ",".join(x if "-" in x else f"{x}-{x}" for x in parts)
+            if discovery_type == "Range" and len(parts) > 1:
+                # A Range discovery takes one range ("IPAddress for Range Discovery is invalid" on
+                # confirm); several need Multi Range, which the Catalyst Center UI switches to itself.
+                sent_type = "Multi Range"
+                type_note = f"{len(parts)} ranges: sent as Multi Range"
         body: dict[str, Any] = {
             "name": name,
             "discoveryType": sent_type,
@@ -457,9 +463,13 @@ def register(reg: ToolRegistrar) -> None:
         shown = {**body, **{k: MASK for k in secrets}}
         if cred_names:
             shown["globalCredentialIdList"] = cred_names
+        details: dict[str, Any] = {"method": "POST", "path": "/dna/intent/api/v1/discovery", "body": shown}
+        if type_note:
+            details["note"] = type_note
+        title_type = sent_type if discovery_type == "Range" else discovery_type
         plan = Plan(
-            f"Start {discovery_type} discovery {name} on {body['ipAddressList']}",
-            details={"method": "POST", "path": "/dna/intent/api/v1/discovery", "body": shown},
+            f"Start {title_type} discovery {name} on {body['ipAddressList']}",
+            details=details,
             side_effects=["Devices that answer are added to the inventory and collected."],
             fingerprint=sorted(cred_ids),
             blockers=blockers,
