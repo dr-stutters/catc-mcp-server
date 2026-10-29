@@ -994,6 +994,10 @@
       "tier": "read",
       "title": "Group-based policy enforcement on a switch"
     },
+    "catc_get_image_distribution_servers": {
+      "tier": "read",
+      "title": "Image distribution servers"
+    },
     "catc_get_issue": {
       "tier": "read",
       "title": "Get assurance issue"
@@ -1098,6 +1102,14 @@
       "tier": "read",
       "title": "Health trend"
     },
+    "catc_image_readiness": {
+      "tier": "read",
+      "title": "Image readiness for a device"
+    },
+    "catc_image_update_history": {
+      "tier": "read",
+      "title": "Image update history"
+    },
     "catc_import_config": {
       "tier": "dangerous",
       "title": "Import configuration"
@@ -1129,6 +1141,10 @@
     "catc_list_activities": {
       "tier": "read",
       "title": "List activities"
+    },
+    "catc_list_addon_images": {
+      "tier": "read",
+      "title": "List add-on images"
     },
     "catc_list_ap_profiles": {
       "tier": "read",
@@ -1341,6 +1357,10 @@
     "catc_run_compliance": {
       "tier": "write",
       "title": "Run compliance check"
+    },
+    "catc_run_image_readiness_check": {
+      "tier": "write",
+      "title": "Run image readiness check"
     },
     "catc_run_issue_commands": {
       "tier": "read",

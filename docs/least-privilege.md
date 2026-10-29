@@ -89,7 +89,7 @@ Everything in `mcp-catc-ro`, plus Write on:
 | Security.Security Advisory | the security advisory scan of `catc_trigger_lifecycle_scan` |
 | Utilities.Machine Reasoner | the network bug scan of `catc_trigger_lifecycle_scan` (the permission that scans for Cisco bugs) |
 | Network Operations.Device Replacement & Refresh | `catc_mark_device_for_replacement` |
-| Network Operations.SWIM | `catc_tag_golden_image` |
+| Network Operations.SWIM | `catc_tag_golden_image`, `catc_run_image_readiness_check` |
 
 **Stays Read (dangerous-only):** Network Provision.Device Provision, Network Operations.PnP, Network Provision.SD-Access,
 System.System Settings. So Catalyst Center itself refuses provisioning, PnP claims and ISE integration changes to this

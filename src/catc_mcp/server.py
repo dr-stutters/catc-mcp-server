@@ -32,6 +32,7 @@ from catc_mcp.tools import (
     external_auth,
     group_policy,
     health_scores,
+    image_readiness,
     inventory,
     ipam,
     issue_commands,
@@ -154,6 +155,9 @@ Workflows:
 - Clients: catc_list_clients (by switch/WLC/AP, site, SSID, VLAN), then catc_client_360 for one.
 - Health: catc_get_network_health -> catc_list_device_health (health='POOR'); software per device:
   catc_list_devices or catc_list_device_images.
+- Before an upgrade ("is this switch ready?", no .bin needed): catc_image_readiness(device, image) (latest
+  pre-checks, verdict, target image fit, add-on images) -> catc_run_image_readiness_check (write; show
+  commands only); past upgrades and why they failed: catc_image_update_history.
 - "Is it the network or ISE/DHCP/DNS?": catc_network_services_health(service='aaa'|'dhcp'|'dns'|'all', site)
   (per-server success %, latency, EAP/MAB split, the failing NADs, a verdict line; Assurance lags by minutes).
 - Lifecycle and security ("what is end-of-life or vulnerable here?"): catc_lifecycle_signals(device|site)
@@ -217,6 +221,7 @@ REGISTER = [
     licensing.register,
     templates.register,
     swim.register,
+    image_readiness.register,
     discovery.register,
     tags.register,
     udfs.register,
