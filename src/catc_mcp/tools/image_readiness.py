@@ -424,6 +424,8 @@ def register(reg: ToolRegistrar) -> None:
     async def catc_list_addon_images(
         ctx: Context,
         image: Annotated[str, Field(description="Software image name or id (catc_list_images)")],
+        limit: Annotated[int, Field(ge=1, le=500)] = 50,
+        offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
     ) -> ToolResult:
         """Add-on images (SMUs, subpackages, APSP/APDP, ROMMON) that apply to one software image, with
@@ -431,11 +433,12 @@ def register(reg: ToolRegistrar) -> None:
         app: CatcApp = get_client(ctx)
         img = await resolve_image(app, image)
         rows = await addon_images(app, str(img["id"]))
-        page = Page(items=rows, offset=0, total=len(rows))
+        # The API answers the whole list (no offset/limit): page it here.
+        page = Page(items=rows[offset : offset + limit], offset=offset, total=len(rows))
         return list_result(page, fmt=response_format)
 
     @reg.read(title="Image distribution servers")
-    async def catc_list_image_distribution_servers(ctx: Context) -> ToolResult:
+    async def catc_get_image_distribution_servers(ctx: Context) -> ToolResult:
         """Remote image distribution servers (SFTP; up to two) that devices copy images from: address,
         port, root location, user and id. Catalyst Center itself is always the local distribution server
         and isn't listed. Passwords are never returned."""

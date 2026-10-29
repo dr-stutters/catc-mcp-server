@@ -283,7 +283,9 @@ async def test_addon_images(api: respx.MockRouter) -> None:
     api.get("/dna/intent/api/v1/images").respond(json={"response": [IMAGE]})
     api.get(f"/dna/intent/api/v1/images/{IMG_ID}/addonImages").respond(json={"response": [ADDON]})
     out = await call("catc_list_addon_images", {**J, "image": IMAGE["name"]})
-    assert out["results"][0]["name"].endswith(".smu.bin")
+    assert out["results"][0]["name"].endswith(".smu.bin") and out["total"] == 1
+    out = await call("catc_list_addon_images", {**J, "image": IMAGE["name"], "offset": 1})
+    assert out["results"] == []
 
 
 async def test_distribution_servers_live_shape(api: respx.MockRouter) -> None:
@@ -301,6 +303,6 @@ async def test_distribution_servers_live_shape(api: respx.MockRouter) -> None:
             "version": "1.0",
         }
     )
-    out = await call("catc_list_image_distribution_servers", {})
+    out = await call("catc_get_image_distribution_servers", {})
     assert out["servers"][0]["serverAddress"] == "198.51.100.11"
     assert "local distribution server" in out["note"]

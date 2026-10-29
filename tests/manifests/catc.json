@@ -990,6 +990,10 @@
       "tier": "read",
       "title": "Group-based policy enforcement on a switch"
     },
+    "catc_get_image_distribution_servers": {
+      "tier": "read",
+      "title": "Image distribution servers"
+    },
     "catc_get_issue": {
       "tier": "read",
       "title": "Get assurance issue"
@@ -1213,10 +1217,6 @@
     "catc_list_health_score_definitions": {
       "tier": "read",
       "title": "List health score definitions"
-    },
-    "catc_list_image_distribution_servers": {
-      "tier": "read",
-      "title": "Image distribution servers"
     },
     "catc_list_images": {
       "tier": "read",
