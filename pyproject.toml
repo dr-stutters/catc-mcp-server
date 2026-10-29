@@ -1,6 +1,6 @@
 [project]
 name = "catc-mcp-server"
-version = "0.22.0"
+version = "0.23.0"
 description = "MCP server for Cisco Catalyst Center (inventory, assurance, sites, templates, path trace)"
 readme = "README.md"
 license = "MIT"

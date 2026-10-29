@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.23.0 (2026-10-29)
+
+A site's inventory in one read, an assurance issue's suggested commands run for you, and core 0.20.0 with the suite
+segmentation audit. Core 0.20.0. 234 tools (120 read, 66 write, 48 dangerous) and sixteen prompts.
+
+### Added
+- `catc_site_inventory`: a site's members by family and role, devices not assigned to any site, and the site's
+  physical links, as markdown, json or a mermaid/draw.io diagram (D61, #108, #311).
+- `catc_run_issue_commands` runs an assurance issue's suggested commands (read-only ones only) through Catalyst
+  Center and returns the output per device (D64, #111, #310).
+- Core v0.20.0; the suite prompt segmentation audit (`suite_segmentation_audit`) is now registered (#309).
+
 ## 0.22.0 (2026-10-29)
 
 Licensing, ping and traceroute from a managed device, SD-Access fabric wireless writes, and a trusted-certificate
