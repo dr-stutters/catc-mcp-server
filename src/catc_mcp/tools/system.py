@@ -1,6 +1,7 @@
 """System tools: asynchronous task / execution status, audit log."""
 
 # No `from __future__ import annotations`: FastMCP inspects signatures at runtime.
+import asyncio
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context
@@ -8,9 +9,11 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from catc_mcp._core import (
+    InvalidRequest,
     NotFound,
     ResponseFormat,
     ToolRegistrar,
+    UpstreamError,
     ValidationFailed,
     get_client,
     list_result,
@@ -19,7 +22,33 @@ from catc_mcp._core import (
 from catc_mcp._core.http import fetch_all, page_of
 from catc_mcp.client import CatcApp, exec_summary, safe_id, task_summary
 from catc_mcp.common import PAGE_AUDIT, resolve_device, resolve_site, window
-from catc_mcp.tools.activity import AUDIT_SCAN_CAP, audit_kind, audit_rows, fetch_audit
+from catc_mcp.tools.activity import AUDIT_SCAN_CAP, audit_kind, audit_rows, fetch_audit, ts_text
+
+AUDIT_PARENTS = "/dna/data/api/v1/event/event-series/audit-log/parent-records"
+AUDIT_SUMMARY = "/dna/data/api/v1/event/event-series/audit-log/summary"
+
+
+async def audit_summary(app: CatcApp, params: dict[str, Any]) -> dict[str, Any]:
+    """Counts for the window from audit-log/summary: every record and the top-level (parent) ones,
+    with the first and last record time. Best effort: a failure becomes an `error` entry."""
+
+    async def one(parent_only: bool) -> dict[str, Any]:
+        q = {**params, **({"isParentOnly": "true"} if parent_only else {})}
+        found = await app.get_response(AUDIT_SUMMARY, q)
+        rows = found if isinstance(found, list) else [found]
+        return next((r for r in rows if isinstance(r, dict)), {})
+
+    try:
+        every, parents = await asyncio.gather(one(False), one(True))
+    except UpstreamError as e:
+        return {"error": f"audit-log summary unavailable: {e}"}
+    out = {
+        "records": every.get("count", 0),
+        "actions": parents.get("count", 0),
+        "first": ts_text(every.get("minTimestamp")),
+        "last": ts_text(every.get("maxTimestamp")),
+    }
+    return {k: v for k, v in out.items() if v is not None}
 
 
 def register(reg: ToolRegistrar) -> None:
@@ -103,6 +132,13 @@ def register(reg: ToolRegistrar) -> None:
                 "and Catalyst Center's internal provisioning steps. Use it for 'who changed what'."
             ),
         ] = False,
+        grouped: Annotated[
+            bool,
+            Field(
+                description="One row per action (the parent record) with the number of child records "
+                "under it, plus summary counts for the window. Not with device, site or changes_only."
+            ),
+        ] = False,
         limit: Annotated[int, Field(ge=1, le=500)] = 50,
         offset: Annotated[int, Field(ge=0)] = 0,
         response_format: ResponseFormat = "markdown",
@@ -111,7 +147,14 @@ def register(reg: ToolRegistrar) -> None:
         template deploys, configuration changes, API calls) with the device it concerns. For "who
         changed what" pass changes_only=true: one provisioning alone writes dozens of internal records.
         A device or site filter keeps the records Catalyst Center tagged with it plus those whose text
-        names it (most records carry no device/site tag). Times are UTC."""
+        names it (most records carry no device/site tag). Times are UTC. grouped=true lists actions,
+        not steps: one row per parent record (who, what, when, child count) with a summary on top
+        (all records, actions, first and last time in the window)."""
+        if grouped and (device or site or changes_only):
+            raise InvalidRequest(
+                "grouped=true takes the user, category, text and hours filters only "
+                "(not device, site or changes_only)."
+            )
         app: CatcApp = get_client(ctx)
         params: dict[str, Any] = {**window(hours), "isSystemEvents": str(include_system).lower()}
         if user:
@@ -124,6 +167,34 @@ def register(reg: ToolRegistrar) -> None:
         if device_id and not device:
             # Deprecated: passed through as before (works for devices no longer in inventory).
             params["deviceId"] = safe_id(device_id, "device id")
+        if grouped:
+            page, summary = await asyncio.gather(
+                app.audit_pager.fetch_page(
+                    app.api, AUDIT_PARENTS, params, limit=limit, offset=offset, max_page=PAGE_AUDIT
+                ),
+                audit_summary(app, params),
+            )
+            records = [r for r in page.items if isinstance(r, dict)]
+            rows = await audit_rows(app, records)
+            for row, r in zip(rows, records, strict=True):
+                row["children"] = int(r.get("childCount") or 0)
+            page.items = rows
+            return list_result(
+                page,
+                fmt=response_format,
+                columns=[
+                    "time",
+                    "user",
+                    "device",
+                    "what",
+                    "children",
+                    "category",
+                    "severity",
+                    "source",
+                    "id",
+                ],
+                extra={"summary": summary},
+            )
         st = await resolve_site(app, site) if site else None
         extra: dict[str, Any] | None = None
         if changes_only and dev is None and st is None:
